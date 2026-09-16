@@ -69,7 +69,7 @@ const MOMO_NAME = "Holy Family Catholic Hospital";
 const STEP_LABELS = ["Consultation", "Payment", "Confirm payment", "Done"];
 
 // ---- MOCK backend calls, replace with real Cloud Function calls ----
-function createBookingDraft({ type, mode, dateOfBirth, phone }) {
+function createBookingDraft({ type, mode, dateOfBirth, sex, location, phone }) {
   return new Promise((resolve) => {
     setTimeout(() => {
       const code =
@@ -211,6 +211,10 @@ export default function BookConsultation() {
   const [type, setType] = useState("OPD"); // "OPD" | "SURGICAL"
   const [mode, setMode] = useState("online"); // "online" | "offline"
   const [dateOfBirth, setDateOfBirth] = useState("");
+  const [sex, setSex] = useState("");
+  const [location, setLocation] = useState("");
+  // Patient details collected during booking.
+  // Current fields: date of birth, sex, location, and phone number.
   const [phone, setPhone] = useState("");
 
   const [booking, setBooking] = useState(null); // { bookingId, referenceCode }
@@ -235,6 +239,14 @@ export default function BookConsultation() {
       setError("Enter your date of birth to continue.");
       return;
     }
+    if (!sex) {
+      setError("Select your sex to continue.");
+      return;
+    }
+    if (!location.trim()) {
+      setError("Enter your location to continue.");
+      return;
+    }
     if (!phone.trim()) {
       setError("Enter a phone number (WhatsApp preferred) to continue.");
       return;
@@ -246,6 +258,8 @@ export default function BookConsultation() {
         type,
         mode,
         dateOfBirth,
+        sex,
+        location,
         phone,
       });
       setBooking(result);
@@ -289,6 +303,8 @@ export default function BookConsultation() {
     setType("OPD");
     setMode("online");
     setDateOfBirth("");
+    setSex("");
+    setLocation("");
     setPhone("");
     setBooking(null);
     setMomoName("");
@@ -489,6 +505,49 @@ export default function BookConsultation() {
                                  focus:outline-none focus:border-[var(--brand-orange)] focus:ring-1 focus:ring-[var(--brand-orange)]"
                     />
                   </div>
+
+                  <div>
+                    <label
+                      htmlFor="sex"
+                      className="block text-[15px] font-medium mb-1.5"
+                    >
+                      Sex
+                    </label>
+                    <select
+                      id="sex"
+                      required
+                      value={sex}
+                      onChange={(e) => setSex(e.target.value)}
+                      className="w-full rounded-xl border border-[#14213833] bg-white px-4 py-3 text-[16px]
+                                 focus:outline-none focus:border-[var(--brand-orange)] focus:ring-1 focus:ring-[var(--brand-orange)]"
+                    >
+                      <option value="" disabled>
+                        Select sex
+                      </option>
+                      <option value="female">Female</option>
+                      <option value="male">Male</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label
+                      htmlFor="location"
+                      className="block text-[15px] font-medium mb-1.5"
+                    >
+                      Location
+                    </label>
+                    <input
+                      id="location"
+                      type="text"
+                      required
+                      value={location}
+                      onChange={(e) => setLocation(e.target.value)}
+                      placeholder="e.g. Berekum, Kato"
+                      className="w-full rounded-xl border border-[#14213833] px-4 py-3 text-[16px]
+                                 focus:outline-none focus:border-[var(--brand-orange)] focus:ring-1 focus:ring-[var(--brand-orange)]"
+                    />
+                  </div>
+
                   <div>
                     <label
                       htmlFor="phone"

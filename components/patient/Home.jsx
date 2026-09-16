@@ -439,7 +439,7 @@ function BookingSlip({
             compact ? "mt-3 pt-3" : "mt-5 pt-4"
           }`}
         >
-          <p className="text-[11px] text-[#16211b8a]">Booking reference</p>
+          <p className="text-[11px] text-[#16211b8a]">Amount charged</p>
           {code ? (
             <p
               className={`mt-1 flex font-mono tracking-[0.06em] ${
@@ -1112,7 +1112,7 @@ export default function Home() {
                 <BookingSlip
                   type="General OPD"
                   mode="Online"
-                  code="8K3M2Q"
+                  code="GHS 300"
                   animateCode
                   compact
                   tilt
@@ -1146,7 +1146,7 @@ export default function Home() {
                     <BookingSlip
                       type={service.title}
                       mode={service.mode}
-                      placeholder="Issued once you book"
+                      placeholder="GHS 300"
                       className="max-w-none mx-auto sm:mx-0 transition duration-300 group-hover:shadow-[0_36px_70px_-24px_rgba(15,20,17,0.55)]"
                     />
                   </div>
