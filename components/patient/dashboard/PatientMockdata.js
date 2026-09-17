@@ -23,6 +23,7 @@ export const PRICING = {
   Surgical: 350,
 };
 
+
 // Where the patient sends the MoMo transfer. Real value would come from
 // hospital config, not be hardcoded in the client bundle.
 export const HOSPITAL_MOMO = {
