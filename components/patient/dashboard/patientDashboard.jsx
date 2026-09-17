@@ -130,6 +130,16 @@ export default function Dashboard() {
     (b) => b.bookingId === activeCallBookingId,
   );
 
+  // NEW: bookings whose call has already been started at least once.
+  // Once callStartedAt is set, BookingCard's own "Join" button may no
+  // longer be the way back in (that's the button meant for the *first*
+  // join, where the patient enters the consultation ID) — so give these
+  // a standing "Rejoin call" action straight from the dashboard, no
+  // re-entry of the consultation ID needed since it already joined once.
+  const liveBookings = bookings.filter(
+    (b) => b.mode === "online" && Boolean(b.callStartedAt),
+  );
+
   return (
     <div className="min-h-screen bg-white font-sans text-[#12242C] flex flex-col">
       {/* ASSUMPTION: "static" header = stays pinned to the top of the
@@ -187,6 +197,33 @@ export default function Dashboard() {
             tone={liveNow ? "live" : "default"}
           />
         </div>
+
+        {liveBookings.length > 0 && (
+          <section className="space-y-2.5">
+            <h2 className="text-base font-medium">Live consultation</h2>
+            {liveBookings.map((booking) => (
+              <div
+                key={booking.bookingId}
+                className="flex items-center justify-between gap-3 rounded-md border border-[#DCE6EC] bg-[#F5F8FA] px-4 py-3.5"
+              >
+                <div className="flex items-center gap-2">
+                  <span className="h-2 w-2 shrink-0 rounded-full bg-[#E4483C]" />
+                  <span className="text-sm text-[#12242C]">
+                    {booking.type ?? "Consultation"} · in progress
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setActiveCallBookingId(booking.bookingId)}
+                  className="rounded-sm px-3 py-1.5 text-xs font-medium text-white shrink-0"
+                  style={{ backgroundColor: "#0095D9" }}
+                >
+                  Rejoin call
+                </button>
+              </div>
+            ))}
+          </section>
+        )}
 
         <section>
           <div className="flex items-center justify-between gap-3">

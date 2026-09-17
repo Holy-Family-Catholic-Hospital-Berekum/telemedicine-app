@@ -70,9 +70,13 @@ export default function JitsiRoom({
 
         apiRef.current = api;
 
-        api.addEventListener("videoConferenceJoined", () => {
-          if (!cancelled) setStatus("ready");
-        });
+        // The iframe (including Jitsi's own "enter your name / Join
+        // meeting" prejoin screen) exists as soon as the API is
+        // constructed — that's the point to stop covering it with our
+        // own overlay, not videoConferenceJoined (which only fires
+        // *after* the user has already clicked Join, so waiting for it
+        // left the overlay sitting on top, blocking every click).
+        if (!cancelled) setStatus("ready");
 
         api.addEventListener("readyToClose", () => {
           onCallEnded?.();
@@ -106,12 +110,12 @@ export default function JitsiRoom({
   return (
     <div className="relative h-full w-full bg-black">
       {status === "loading" && (
-        <div className="absolute inset-0 flex items-center justify-center text-sm text-white">
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-sm text-white">
           Connecting to the call…
         </div>
       )}
       {status === "error" && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-6 text-center text-sm text-white">
+        <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-2 px-6 text-center text-sm text-white">
           <p>Couldn't connect to the video call.</p>
           <p className="text-white/60">{errorMessage}</p>
         </div>
