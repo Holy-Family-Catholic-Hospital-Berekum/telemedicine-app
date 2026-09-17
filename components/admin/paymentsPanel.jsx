@@ -1,5 +1,5 @@
 import { useState } from "react";
-import ConfirmDialog from "./ConfirmDialog.jsx";
+import ConfirmDialog from "./confirmDialog.jsx";
 import PaymentVerificationModal from "./paymentVerificationModal.jsx";
 import { IconCheck, IconX, IconAlert } from "./icons.jsx";
 

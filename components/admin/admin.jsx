@@ -1,14 +1,14 @@
 import { useMemo, useState } from "react";
 
-import Sidebar from "./Sidebar.jsx";
-import OverviewPanel from "./OverviewPanel.jsx";
-import BookingsPanel from "./BookingsPanel.jsx";
-import PaymentsPanel from "./PaymentsPanel.jsx";
-import HistoryPanel from "./HistoryPanel.jsx";
-import RevenuePanel from "./RevenuePanel.jsx";
-import ActivityPanel from "./ActivityPanel.jsx";
-import AuditPanel from "./AuditPanel.jsx";
-import MetricsPanel from "./MetricsPanel.jsx";
+import Sidebar from "./sidebar.jsx";
+import OverviewPanel from "./overviewPanel.jsx";
+import BookingsPanel from "./bookingsPanel.jsx";
+import PaymentsPanel from "./paymentsPanel.jsx";
+import HistoryPanel from "./historyPanel.jsx";
+import RevenuePanel from "./revenuePanel.jsx";
+import ActivityPanel from "./activityPanel.jsx";
+import AuditPanel from "./auditPanel.jsx";
+import MetricsPanel from "./metricsPanel.jsx";
 import { IconBell, IconRefresh } from "./icons.jsx";
 
 import {
