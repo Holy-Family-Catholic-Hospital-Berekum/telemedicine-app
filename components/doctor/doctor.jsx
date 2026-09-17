@@ -19,6 +19,8 @@ import {
   startVideoCall,
   markConsultationDone,
 } from "./docFirestoreService";
+// NEW: shared Jitsi video call modal (same component the patient side uses)
+import VideoCallModal from "../video/VideoCallModal";
 // TODO: point this at your actual logo file in src/assets (filename may differ).
 import hospitalLogo from "../../src/assets/logo.png";
 
@@ -44,6 +46,9 @@ export default function DoctorDashboard() {
   const [startingCallId, setStartingCallId] = useState(null);
   const [markDoneTarget, setMarkDoneTarget] = useState(null);
   const [toast, setToast] = useState(null);
+  // NEW: which consultation's call is currently open full-screen, if any
+  const [activeCallConsultationId, setActiveCallConsultationId] =
+    useState(null);
 
   const today = new Date();
 
@@ -91,6 +96,8 @@ export default function DoctorDashboard() {
     );
     setStartingCallId(null);
     showToast("Connected to the video room");
+    // NEW: actually open the video call now that the room is marked started
+    setActiveCallConsultationId(consultationId);
   }
 
   async function handleMarkDoneSubmit({ consultation, outcome }) {
@@ -278,6 +285,15 @@ export default function DoctorDashboard() {
           consultation={markDoneTarget}
           onClose={() => setMarkDoneTarget(null)}
           onSubmit={handleMarkDoneSubmit}
+        />
+      )}
+
+      {/* NEW: full-screen video call, shown whenever a call is active */}
+      {activeCallConsultationId && (
+        <VideoCallModal
+          consultationId={activeCallConsultationId}
+          displayName={currentDoctor.name}
+          onClose={() => setActiveCallConsultationId(null)}
         />
       )}
 

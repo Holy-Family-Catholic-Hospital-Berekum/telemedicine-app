@@ -116,7 +116,7 @@ export default function Header({
               </Link>
               <span className="text-white/25">|</span>
               <Link to="/signup" className="hover:text-white">
-                Sign up
+                Join
               </Link>
             </>
           )}
@@ -215,7 +215,7 @@ export default function Header({
                   }
                   focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--brand-orange)]`}
               >
-                Book a consultation
+                Get Care Now
               </Link>
             </nav>
           </div>

@@ -234,7 +234,7 @@ function CheckGlyph({ className = "" }) {
  */
 function BookingCta({
   to = "/book",
-  children = "Book a consultation",
+  children = "Get Care Now",
   size = "md",
   variant = "gold",
   className = "",

@@ -8,6 +8,8 @@ import {
 import StatTile from "./patientStatTile";
 import BookingCard from "./patientBookingCard";
 import AvailableSlots from "./patientAvailableSlots";
+// NEW: shared Jitsi video call modal (same component the doctor side uses)
+import VideoCallModal from "../../video/VideoCallModal";
 
 // ASSUMPTION: adjust this import path to wherever src/assets actually
 // sits relative to components/patient/dashboard in your project.
@@ -49,6 +51,8 @@ export default function Dashboard() {
   const [slots, setSlots] = useState([]);
   const [history, setHistory] = useState(null);
   const [loading, setLoading] = useState(true);
+  // NEW: which booking's call is currently open full-screen, if any
+  const [activeCallBookingId, setActiveCallBookingId] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -94,6 +98,16 @@ export default function Dashboard() {
     setBookings((prev) => [newBooking, ...(prev ?? [])]);
   }
 
+  // NEW: fires when BookingCard's own "Join call" flow succeeds (this is
+  // the existing onJoined callback — the patient has already entered
+  // their consultation ID inside BookingCard per architecture section
+  // 4.5, and BookingCard's join function has resolved with a
+  // callStartedAt). We just also open the full-screen call here.
+  function handleJoined(bookingId, result) {
+    updateBooking(bookingId, { callStartedAt: result.callStartedAt });
+    setActiveCallBookingId(bookingId);
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center text-sm text-[#5C6B72]">
@@ -109,6 +123,12 @@ export default function Dashboard() {
     (b) => b.state === "pending_verification",
   ).length;
   const liveNow = bookings.some((b) => Boolean(b.callStartedAt));
+
+  // NEW: look up the full booking behind the active call, so we know
+  // which consultationId to hand to Jitsi.
+  const activeCallBooking = bookings.find(
+    (b) => b.bookingId === activeCallBookingId,
+  );
 
   return (
     <div className="min-h-screen bg-white font-sans text-[#12242C] flex flex-col">
@@ -194,9 +214,7 @@ export default function Dashboard() {
                   updateBooking(id, { state: result.state })
                 }
                 onRescheduled={() => {}}
-                onJoined={(id, result) =>
-                  updateBooking(id, { callStartedAt: result.callStartedAt })
-                }
+                onJoined={handleJoined}
               />
             ))}
           </div>
@@ -248,6 +266,15 @@ export default function Dashboard() {
           </section>
         )}
       </main>
+
+      {/* NEW: full-screen video call, shown whenever a call is active */}
+      {activeCallBooking && (
+        <VideoCallModal
+          consultationId={activeCallBooking.consultationId}
+          displayName={currentPatient.name}
+          onClose={() => setActiveCallBookingId(null)}
+        />
+      )}
 
       <Footer />
     </div>
