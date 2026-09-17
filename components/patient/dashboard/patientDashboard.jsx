@@ -308,7 +308,7 @@ export default function Dashboard() {
       {activeCallBooking && (
         <VideoCallModal
           consultationId={activeCallBooking.consultationId}
-          displayName={currentPatient.name}
+          role="patient"
           onClose={() => setActiveCallBookingId(null)}
         />
       )}

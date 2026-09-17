@@ -292,7 +292,7 @@ export default function DoctorDashboard() {
       {activeCallConsultationId && (
         <VideoCallModal
           consultationId={activeCallConsultationId}
-          displayName={currentDoctor.name}
+          role="doctor"
           onClose={() => setActiveCallConsultationId(null)}
         />
       )}
