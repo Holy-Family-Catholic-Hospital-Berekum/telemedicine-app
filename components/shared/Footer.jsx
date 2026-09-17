@@ -2,43 +2,151 @@ import { Link } from "react-router-dom";
 import logo from "../../src/assets/logo.png";
 
 /**
- * Footer.jsx (components/shared)
- * Reusable site footer: hospital identity, contact placeholders, and an
- * intentionally unobtrusive "Staff login" link to /admin (not part of the
- * main nav, so the admin area stays effectively unlisted to the public).
+ * Footer.jsx
+ * Modern healthcare footer for Holy Family Catholic Hospital.
  *
- * Relies on the CSS custom properties defined in Header.jsx's <style> block
- * (--ink, etc). Make sure Header is rendered somewhere on the same page.
- *
- * Update the placeholder phone/email before shipping.
+ * Brand palette:
+ *   Orange: #F88535
+ *   Blue:   #0095D9
+ *   White:  #FFFFFF
  */
 
 export default function Footer() {
   return (
-    <footer id="contact" className="border-t border-[#14213814] py-10 sm:py-14">
-      <div className="mx-auto max-w-6xl px-5 sm:px-8 flex flex-col md:flex-row md:items-start justify-between gap-8 sm:gap-10">
-        <div className="flex items-center gap-3">
-          <img src={logo} alt="" className="h-10 w-10 rounded-full" />
+    <footer
+      id="contact"
+      className="relative overflow-hidden bg-[#0095D9] text-white"
+    >
+      {/* Subtle decorative shapes */}
+      <div
+        aria-hidden="true"
+        className="absolute -right-24 -top-24 h-72 w-72 rounded-full bg-white/[0.06]"
+      />
+      <div
+        aria-hidden="true"
+        className="absolute -bottom-32 left-1/3 h-80 w-80 rounded-full bg-[#F88535]/[0.12]"
+      />
+
+      <div className="relative mx-auto max-w-6xl px-5 sm:px-8">
+        {/* Main footer */}
+        <div className="grid gap-10 py-12 sm:py-16 md:grid-cols-[1.4fr_1fr_1fr] md:gap-12">
+          {/* Hospital identity */}
           <div>
-            <p className="font-display text-[15px] font-medium">
-              Holy Family Catholic Hospital
+            <Link
+              to="/"
+              className="group inline-flex items-center gap-3"
+              aria-label="Holy Family Catholic Hospital home"
+            >
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white shadow-lg shadow-black/10">
+                <img
+                  src={logo}
+                  alt="Holy Family Catholic Hospital"
+                  className="h-9 w-9 rounded-full object-contain"
+                />
+              </div>
+
+              <div>
+                <p className="font-display text-[17px] font-semibold leading-tight">
+                  Holy Family Catholic Hospital
+                </p>
+                <p className="mt-0.5 text-[13px] text-white/75">
+                  Berekum, Ghana
+                </p>
+              </div>
+            </Link>
+
+            <p className="mt-6 max-w-sm text-[14px] leading-6 text-white/80">
+              Quality healthcare, made simpler. Connect with our healthcare
+              services and manage your consultations with ease.
             </p>
-            <p className="text-[13px] text-[#14213899]">Berekum, Ghana</p>
+
+            {/* Brand accent */}
+            <div className="mt-6 flex items-center gap-2">
+              <span className="h-1.5 w-10 rounded-full bg-[#F88535]" />
+              <span className="h-1.5 w-2 rounded-full bg-white/60" />
+              <span className="h-1.5 w-2 rounded-full bg-white/40" />
+            </div>
+          </div>
+
+          {/* Quick links */}
+          <div>
+            <h3 className="text-[13px] font-bold uppercase tracking-[0.16em] text-white/70">
+              Quick Links
+            </h3>
+
+            <nav className="mt-5 flex flex-col items-start gap-3.5 text-[14px]">
+              <Link
+                to="/"
+                className="text-white/85 transition-colors hover:text-white"
+              >
+                Home
+              </Link>
+
+              <Link
+                to="/book"
+                className="text-white/85 transition-colors hover:text-white"
+              >
+                Book a consultation
+              </Link>
+
+              <Link
+                to="/dashboard"
+                className="text-white/85 transition-colors hover:text-white"
+              >
+                Dashboard
+              </Link>
+            </nav>
+          </div>
+
+          {/* Contact */}
+          <div>
+            <h3 className="text-[13px] font-bold uppercase tracking-[0.16em] text-white/70">
+              Contact
+            </h3>
+
+            <div className="mt-5 space-y-4 text-[14px]">
+              <div>
+                <p className="text-[12px] font-medium uppercase tracking-wide text-white/55">
+                  Location
+                </p>
+                <p className="mt-1 text-white/90">
+                  Berekum, Bono Region, Ghana
+                </p>
+              </div>
+
+              <div>
+                <p className="text-[12px] font-medium uppercase tracking-wide text-white/55">
+                  Phone
+                </p>
+                <p className="mt-1 text-white/90">[hospital line]</p>
+              </div>
+
+              <div>
+                <p className="text-[12px] font-medium uppercase tracking-wide text-white/55">
+                  Email
+                </p>
+                <p className="mt-1 text-white/90">[hospital email]</p>
+              </div>
+            </div>
           </div>
         </div>
 
-        <div className="text-[14px] text-[#142138cc] space-y-1">
-          <p>Reach us for anything not covered by the app:</p>
-          <p className="font-medium text-[var(--ink)]">
-            Phone: [hospital line] &nbsp;·&nbsp; Email: [hospital email]
-          </p>
-        </div>
+        {/* Bottom bar */}
+        <div className="border-t border-white/15 py-5">
+          <div className="flex flex-col gap-4 text-[12px] text-white/65 sm:flex-row sm:items-center sm:justify-between">
+            <p>
+              © {new Date().getFullYear()} Holy Family Catholic Hospital. All
+              rights reserved.
+            </p>
 
-        <div className="text-[13px] text-[#14213899] space-y-3">
-          <p>&copy; {new Date().getFullYear()} Holy Family Catholic Hospital</p>
-          <Link to="/admin" className="underline hover:text-[var(--ink)]">
-            Staff login
-          </Link>
+            <Link
+              to="/admin"
+              className="inline-flex w-fit items-center gap-2 rounded-full border border-white/20 px-3.5 py-2 text-white/75 transition-all hover:border-white/40 hover:bg-white/10 hover:text-white"
+            >
+              <span className="h-1.5 w-1.5 rounded-full bg-[#F88535]" />
+              Staff login
+            </Link>
+          </div>
         </div>
       </div>
     </footer>

@@ -202,6 +202,9 @@ function BackButton({ onClick, children = "Back" }) {
 }
 
 export default function BookConsultation() {
+  // MOCK — booking is currently designed as a signed-in flow.
+  // Replace this with the real auth state when authentication is wired up.
+  const [isLoggedIn] = useState(true);
   const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -326,7 +329,12 @@ export default function BookConsultation() {
         }
       `}</style>
 
-      <Header variant="minimal" cancelHref="/" cancelLabel="Cancel" />
+      <Header
+        variant="minimal"
+        cancelHref="/"
+        cancelLabel="Cancel"
+        isLoggedIn={isLoggedIn}
+      />
 
       <main className="mx-auto max-w-3xl px-5 sm:px-8 py-10 sm:py-14 flex-1 w-full">
         {/* ---------- Step indicator ---------- */}

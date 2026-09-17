@@ -27,7 +27,7 @@ import doctors from "../../src/data/doctors";
  * is shown "closed" in the privacy section to represent record erasure
  * after a visit.
  *
- * CTA system (updated):
+ * CTA system:
  * - Hero: a calm white pill. It sits on the dark forest hero, so plain white
  *   is already the highest-contrast thing on screen — no gradient or shimmer
  *   needed to be found.
@@ -42,6 +42,12 @@ import doctors from "../../src/data/doctors";
  * - public/doctors/*.jpg (doctor portraits, see src/data/doctors.js).
  *   Missing doctor photos degrade to an initials tile, they don't break.
  *
+ * Auth (mock): isLoggedIn below is a stand-in for real auth state — there's
+ * no login wired up yet. It only controls whether the header shows a
+ * "Dashboard" link, purely so that UX can be reviewed before the real
+ * flow exists. Swap it for whatever your auth hook/context ends up being,
+ * and set the default back to false.
+ *
  * Palette is scoped locally to <main> via CSS custom properties so it
  * doesn't touch the --ink / --teal / --brand-orange / --tint variables
  * Header/Footer already rely on globally.
@@ -53,18 +59,34 @@ import doctors from "../../src/data/doctors";
  * - No other dependencies required. Icons are hand-drawn inline SVG.
  */
 
+// MOCK DATA — replace with the hospital's actual sub-services before launch.
 const consultTypes = [
   {
     title: "General OPD",
     detail:
       "Everyday health concerns, check-ups, and follow-up visits with our outpatient doctors.",
     mode: "Online or in person",
+    subServices: [
+      "General consultation",
+      "Antenatal care",
+      "Child welfare & immunization",
+      "Diabetes & hypertension clinic",
+      "Family planning",
+      "Wound care & dressing",
+    ],
   },
   {
     title: "Surgical consultation",
     detail:
       "Pre-surgery assessments and post-surgery follow-ups with our surgical team.",
     mode: "Online or in person",
+    subServices: [
+      "Pre-surgical assessment",
+      "Post-surgical follow-up",
+      "General surgery",
+      "Orthopedic consultation",
+      "Gynecological surgery",
+    ],
   },
 ];
 
@@ -138,122 +160,6 @@ const quickActions = [
   },
 ];
 
-// Faint background iconography for the hero — kept low-opacity and out of
-// the way of content, just enough to read as "medical" at a glance rather
-// than as illustration competing with the headline or photo.
-const medicalSymbols = [
-  {
-    // Cross
-    path: "M12 4v16 M4 12h16",
-    box: "top-6 left-5 sm:top-10 sm:left-10",
-    size: 30,
-    rotate: -8,
-    opacity: 0.16,
-  },
-  {
-    // Heart outline
-    path: "M12 20s-7-4.35-9.5-9A5.5 5.5 0 0 1 12 6a5.5 5.5 0 0 1 9.5 5c-2.5 4.65-9.5 9-9.5 9Z",
-    box: "top-8 right-6 sm:top-14 sm:right-14",
-    size: 26,
-    rotate: 6,
-    opacity: 0.14,
-  },
-  {
-    // Stethoscope, simplified
-    path: "M6 3v5a4 4 0 0 0 8 0V3 M9 12v2.5a5.5 5.5 0 0 0 5.5 5.5 3.5 3.5 0 0 0 3.5-3.5V15 M18.5 14.5a2 2 0 1 0 0 4 2 2 0 0 0 0-4Z",
-    box: "hidden sm:block sm:bottom-10 sm:left-[8%]",
-    size: 46,
-    rotate: -10,
-    opacity: 0.1,
-  },
-  {
-    // Pill capsule
-    path: "M6.5 14 14 6.5a4 4 0 1 1 5.5 5.5L12 19.5a4 4 0 1 1-5.5-5.5Z M9 11.5l4 4",
-    box: "hidden md:block md:top-[42%] md:left-[38%]",
-    size: 34,
-    rotate: 18,
-    opacity: 0.08,
-  },
-];
-
-// The hero photo is cropped to this heart — the frame is the message, so
-// it's a real heart silhouette rather than a rounded card with a heart
-// stuck on it. Drawn in a 100x92 box; every layer of the hero frame (glow,
-// dashed outline, rim) reuses this one path so they stay in register.
-const HEART_PATH =
-  "M50 88.5 C50 88.5 5.5 60.5 5.5 31.5 C5.5 16.4 16.8 5.5 30.6 5.5 C39.6 5.5 46.9 10 50 17.2 C53.1 10 60.4 5.5 69.4 5.5 C83.2 5.5 94.5 16.4 94.5 31.5 C94.5 60.5 50 88.5 50 88.5 Z";
-
-// A handful of small sparks placed just outside the heart's edge in the
-// hero — 4-point stars and plain dots, not rays. Positions are plotted by
-// eye against the heart path so each sits in open space beside it rather
-// than on a regular ring. Kept sparse and small on purpose: this is meant
-// to read as a quiet detail, not a special effect.
-const heroSparks = [
-  {
-    x: 50,
-    y: 3,
-    size: 3.4,
-    shape: "star",
-    color: "#FFFFFF",
-    opacity: 0.95,
-    delay: 0,
-  },
-  {
-    x: 84,
-    y: 14,
-    size: 1.6,
-    shape: "dot",
-    color: "#FFFFFF",
-    opacity: 0.8,
-    delay: 900,
-  },
-  {
-    x: 92,
-    y: 40,
-    size: 2.6,
-    shape: "star",
-    color: "#F48732",
-    opacity: 0.9,
-    delay: 1700,
-  },
-  {
-    x: 80,
-    y: 68,
-    size: 1.4,
-    shape: "dot",
-    color: "#FFFFFF",
-    opacity: 0.7,
-    delay: 500,
-  },
-  {
-    x: 16,
-    y: 12,
-    size: 2.2,
-    shape: "dot",
-    color: "#FFFFFF",
-    opacity: 0.75,
-    delay: 1250,
-  },
-  {
-    x: 6,
-    y: 42,
-    size: 3,
-    shape: "star",
-    color: "#FFFFFF",
-    opacity: 0.9,
-    delay: 300,
-  },
-  {
-    x: 20,
-    y: 70,
-    size: 1.6,
-    shape: "dot",
-    color: "#F48732",
-    opacity: 0.75,
-    delay: 2000,
-  },
-];
-
 // Tiny crystals scattered behind the floating mobile CTA. Each is a small
 // rotated diamond that twinkles on its own offset, so the bar reads as
 // "lit" without any one dot being loud enough to distract.
@@ -267,19 +173,6 @@ const crystals = [
   { left: "84%", top: "26%", size: 4, color: "#7DD3FC", delay: 320 },
   { left: "93%", top: "72%", size: 3, color: "#C4B5FD", delay: 2000 },
 ];
-
-// A minimal 4-point spark glyph — two crossed diamonds, drawn with a path
-// rather than a star polygon so it reads as a soft twinkle, not a decal.
-function SparkGlyph({ x, y, size, color, opacity }) {
-  const s = size;
-  return (
-    <path
-      d={`M${x} ${y - s} Q${x + s * 0.22} ${y - s * 0.22} ${x + s} ${y} Q${x + s * 0.22} ${y + s * 0.22} ${x} ${y + s} Q${x - s * 0.22} ${y + s * 0.22} ${x - s} ${y} Q${x - s * 0.22} ${y - s * 0.22} ${x} ${y - s} Z`}
-      fill={color}
-      opacity={opacity}
-    />
-  );
-}
 
 // Small calendar-with-checkmark glyph shared by every "Book a consultation"
 // entry point, so the action is recognisable by silhouette alone.
@@ -297,6 +190,31 @@ function BookingGlyph({ className = "" }) {
         d="M6 3v2M14 3v2M4 7.5h12M5 5h10a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1Z M7.7 11.2l1.5 1.5L13 9"
         stroke="currentColor"
         strokeWidth="1.4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+// Small check glyph used on the sub-service pills under each consultation
+// type, so each item reads as "included" at a glance rather than a plain
+// bullet.
+function CheckGlyph({ className = "" }) {
+  return (
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 16 16"
+      fill="none"
+      aria-hidden="true"
+      className={className}
+    >
+      <circle cx="8" cy="8" r="7.5" fill="var(--forest)" opacity="0.12" />
+      <path
+        d="M5 8.2l2 2 4-4.4"
+        stroke="var(--forest)"
+        strokeWidth="1.6"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
@@ -399,6 +317,7 @@ function BookingSlip({
   mode,
   code,
   placeholder,
+  reassurance,
   voided = false,
   tilt = false,
   animateCode = false,
@@ -439,35 +358,73 @@ function BookingSlip({
             compact ? "mt-3 pt-3" : "mt-5 pt-4"
           }`}
         >
-          <p className="text-[11px] text-[#16211b8a]">Amount charged</p>
-          {code ? (
-            <p
-              className={`mt-1 flex font-mono tracking-[0.06em] ${
-                compact ? "text-[20px]" : "text-[25px]"
-              }`}
-            >
-              {code.split("").map((char, i) => (
-                <span
-                  key={i}
-                  className={
-                    animateCode
-                      ? "motion-safe:animate-[slipReveal_0.5s_ease-out_both]"
-                      : ""
-                  }
-                  style={
-                    animateCode
-                      ? { animationDelay: `${300 + i * 70}ms` }
-                      : undefined
-                  }
+          {reassurance ? (
+            <div className="flex items-start gap-2.5">
+              <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--forest)]/10">
+                <svg
+                  width="13"
+                  height="13"
+                  viewBox="0 0 16 16"
+                  fill="none"
+                  aria-hidden="true"
                 >
-                  {char}
-                </span>
-              ))}
-            </p>
+                  <path
+                    d="M8 1.5c2.2 1.2 3.7 1.5 5.5 1.5 0 6-2.4 9.3-5.5 11.5C4.9 12.3 2.5 9 2.5 3c1.8 0 3.3-.3 5.5-1.5Z"
+                    stroke="var(--forest)"
+                    strokeWidth="1.3"
+                    strokeLinejoin="round"
+                  />
+                  <path
+                    d="M5.6 8.1l1.6 1.6 3.2-3.4"
+                    stroke="var(--forest)"
+                    strokeWidth="1.3"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </span>
+              <div>
+                <p className="text-[12.5px] font-medium text-[var(--forest-2)]">
+                  {reassurance.label}
+                </p>
+                <p className="mt-0.5 text-[12.5px] leading-snug text-[#16211b8a]">
+                  {reassurance.text}
+                </p>
+              </div>
+            </div>
           ) : (
-            <p className="mt-1 font-mono text-[15px] text-[#16211b70]">
-              {placeholder}
-            </p>
+            <>
+              <p className="text-[11px] text-[#16211b8a]">Amount charged</p>
+              {code ? (
+                <p
+                  className={`mt-1 flex font-mono tracking-[0.06em] ${
+                    compact ? "text-[20px]" : "text-[25px]"
+                  }`}
+                >
+                  {code.split("").map((char, i) => (
+                    <span
+                      key={i}
+                      className={
+                        animateCode
+                          ? "motion-safe:animate-[slipReveal_0.5s_ease-out_both]"
+                          : ""
+                      }
+                      style={
+                        animateCode
+                          ? { animationDelay: `${300 + i * 70}ms` }
+                          : undefined
+                      }
+                    >
+                      {char}
+                    </span>
+                  ))}
+                </p>
+              ) : (
+                <p className="mt-1 font-mono text-[15px] text-[#16211b70]">
+                  {placeholder}
+                </p>
+              )}
+            </>
           )}
         </div>
       </div>
@@ -821,10 +778,15 @@ function useStampOnce() {
 export default function Home() {
   const { ref: privacyRef, ready: stampReady } = useStampOnce();
 
+  // MOCK — no auth wired up yet. Stands in for real auth state so the
+  // header's new "Dashboard" link can be reviewed; swap for a real
+  // hook/context and set the default back to false once accounts exist.
+  const [isLoggedIn] = useState(true);
+
   return (
     <div className="font-body text-[#142138] bg-white overflow-x-hidden">
       <CursorGlow />
-      <Header variant="full" />
+      <Header variant="full" isLoggedIn={isLoggedIn} />
 
       <main
         id="top"
@@ -846,7 +808,7 @@ export default function Home() {
             to { opacity: 1; transform: translateY(0); }
           }
           @keyframes heroImageIn {
-            from { opacity: 0; transform: translateY(10px) scale(0.97); }
+            from { opacity: 0; transform: translateY(14px) scale(0.985); }
             to { opacity: 1; transform: translateY(0) scale(1); }
           }
           @keyframes pulseDraw {
@@ -865,19 +827,13 @@ export default function Home() {
             from { opacity: 0; transform: rotate(-8deg) scale(1.4); }
             to { opacity: 1; transform: rotate(-8deg) scale(1); }
           }
-          /* The heart frame holds still; a few small sparks around it
-             twinkle gently on staggered offsets — a quiet detail, not an
-             effect that competes with the photo. */
-          @keyframes sparkTwinkle {
-            0%, 100% { opacity: .35; transform: scale(0.85); }
-            50% { opacity: 1; transform: scale(1); }
-          }
 
           /* ---- Custom pointer ----
              A bright orange dot inside a gold ring everywhere, switching to
              a filled heart over anything clickable, so the cursor carries the
-             same "care" idea as the hero frame. Hotspots are centred on the
-             dot / on the heart's top notch. Touch devices ignore all of this. */
+             same "care" idea that runs through the page. Hotspots are centred
+             on the dot / on the heart's top notch. Touch devices ignore all
+             of this. */
           html, body {
             cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 28 28"><circle cx="14" cy="14" r="10" fill="none" stroke="%23FFD166" stroke-width="1.5" opacity="0.9"/><circle cx="14" cy="14" r="5.5" fill="%23F88535" stroke="%23FFFFFF" stroke-width="1.5"/></svg>') 14 14, auto;
           }
@@ -910,214 +866,221 @@ export default function Home() {
         `}</style>
 
         {/* ---------- Hero ---------- */}
-        <section className="relative overflow-hidden bg-[var(--brand-blue)]">
-          {/* soft glow accents */}
+        <section className="relative isolate overflow-hidden bg-white">
           <div
             aria-hidden="true"
-            className="absolute -top-20 -right-16 h-64 w-64 rounded-full bg-white opacity-[0.14] blur-3xl"
-          />
-          <div
-            aria-hidden="true"
-            className="absolute -bottom-24 -left-10 h-56 w-56 rounded-full bg-[var(--brand-orange)] opacity-[0.12] blur-3xl"
-          />
-
-          {medicalSymbols.map((symbol, i) => (
-            <svg
-              key={i}
-              aria-hidden="true"
-              viewBox="0 0 24 24"
-              width={symbol.size}
-              height={symbol.size}
-              className={`absolute pointer-events-none ${symbol.box}`}
-              style={{ transform: `rotate(${symbol.rotate}deg)` }}
-            >
-              <path
-                d={symbol.path}
-                fill="none"
-                stroke="#FFFFFF"
-                strokeWidth="1.4"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                opacity={symbol.opacity}
-              />
-            </svg>
-          ))}
-          <div
-            aria-hidden="true"
-            className="absolute inset-0 opacity-[0.05]"
+            className="absolute -right-32 -top-36 h-[560px] w-[560px] rounded-full blur-3xl opacity-70"
             style={{
-              backgroundImage:
-                "repeating-linear-gradient(135deg, #FFFFFF 0px, #FFFFFF 1px, transparent 1px, transparent 28px)",
+              background:
+                "radial-gradient(circle, rgba(0,149,217,0.18) 0%, rgba(0,149,217,0.06) 42%, transparent 72%)",
             }}
           />
-
-          {/* Heartbeat pulse line — the one clinical motif in the hero,
-              drawn in once on load. Reduced-motion users get it already
-              drawn (see the inline strokeDashoffset default below). */}
-          <svg
+          <div
             aria-hidden="true"
-            viewBox="0 0 800 120"
-            preserveAspectRatio="none"
-            className="absolute inset-x-0 top-[34%] sm:top-1/2 -translate-y-1/2 w-full h-16 sm:h-28 opacity-[0.22]"
-          >
-            <path
-              d="M0 60 H260 L295 20 L330 100 L360 60 H430 L455 35 L480 85 L505 60 H800"
-              fill="none"
-              stroke="var(--brand-orange)"
-              strokeWidth="2.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              pathLength="1"
-              style={{ strokeDasharray: 1, strokeDashoffset: 0 }}
-              className="motion-safe:[animation:pulseDraw_2.2s_ease-out_0.3s_both]"
-            />
-          </svg>
+            className="absolute -bottom-48 left-[-12%] h-[520px] w-[520px] rounded-full blur-3xl opacity-75"
+            style={{
+              background:
+                "radial-gradient(circle, rgba(248,133,53,0.16) 0%, rgba(248,133,53,0.05) 48%, transparent 72%)",
+            }}
+          />
+          <div
+            aria-hidden="true"
+            className="absolute left-[42%] top-[34%] h-44 w-44 rounded-full bg-[#0095D9]/[0.055] blur-3xl"
+          />
+          <div
+            aria-hidden="true"
+            className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-[#0095D9]/20 to-transparent"
+          />
 
-          {/* flex-col by default, side-by-side from md up. */}
-          <div className="relative mx-auto max-w-6xl px-5 sm:px-8 pt-8 sm:pt-16 pb-14 sm:pb-24 flex flex-col md:flex-row md:items-center gap-12 md:gap-14">
-            <div className="min-w-0 text-center md:text-left md:flex-1 motion-safe:[animation:heroTextRise_0.7s_ease-out_both]">
-              <p className="text-[13px] font-medium text-[#16211B]">
-                Telemedicine from Holy Family Catholic Hospital
-              </p>
-              <h1 className="mt-4 font-display text-[clamp(28px,7.5vw,46px)] leading-[1.18] font-medium text-white">
-                Consult with a doctor in the comfort of your home.
-              </h1>
-              <p className="mt-5 text-[clamp(15px,4vw,17px)] leading-relaxed text-white/80 max-w-md mx-auto md:mx-0">
-                General OPD and surgical consultations, online or in person. No
-                card, no waiting room, just your phone and a reference code.
-              </p>
-
-              <div className="mt-8 flex flex-col sm:flex-row items-center sm:items-start gap-4 justify-center md:justify-start">
-                <BookingCta size="lg" variant="white" />
-                <a
-                  href={HOSPITAL_PHONE_TEL}
-                  className="text-[14px] font-medium text-white/85 underline decoration-[var(--brand-orange)]/60 underline-offset-4
-                             hover:text-white hover:decoration-[var(--brand-orange)] transition"
-                >
-                  Or call the hospital directly
-                </a>
-              </div>
-            </div>
-
-            {/* Photo frame: the photo is cropped into a heart — love and
-                compassion is the whole point of the hospital, so it's the
-                frame itself rather than a badge stuck on a card. The heart
-                itself is static; only a few small sparks beside it
-                flicker. Needs src/assets/hero-consult.jpg. */}
-            <div className="relative min-w-0 w-full md:flex-1 md:max-w-[440px] lg:max-w-[520px] mx-auto md:mx-0 pb-24 sm:pb-28 motion-safe:[animation:heroImageIn_0.8s_ease-out_0.15s_both]">
-              <div className="relative mx-auto w-full max-w-[300px] sm:max-w-[360px] lg:max-w-[440px]">
-                {/* white shadow/glow bleeding out from behind the heart */}
-                <div aria-hidden="true" className="absolute -inset-6">
-                  <svg
-                    viewBox="0 0 100 92"
-                    className="h-full w-full opacity-70 blur-2xl"
-                  >
-                    <path d={HEART_PATH} fill="#FFFFFF" />
-                  </svg>
-                </div>
-
-                {/* small sparks scattered just outside the heart's edge */}
-                <div aria-hidden="true" className="absolute inset-0">
-                  <svg
-                    viewBox="0 0 100 92"
-                    className="h-full w-full overflow-visible"
-                  >
-                    {heroSparks.map((spark, i) => (
-                      <g
-                        key={i}
-                        className="motion-safe:[animation:sparkTwinkle_3.4s_ease-in-out_infinite]"
-                        style={{
-                          animationDelay: `${spark.delay}ms`,
-                          transformOrigin: `${spark.x}px ${spark.y}px`,
-                        }}
+          <div className="relative mx-auto max-w-7xl px-5 sm:px-8 lg:px-10">
+            <div className="min-h-[calc(100svh-80px)] py-10 sm:py-14 lg:py-16 flex items-center">
+              <div className="grid w-full items-center gap-8 lg:grid-cols-[0.9fr_1.1fr] lg:gap-0">
+                {/* Copy */}
+                <div className="relative z-20 max-w-2xl pt-3 text-center lg:pt-0 lg:text-left motion-safe:[animation:heroTextRise_0.7s_ease-out_both]">
+                  <div className="inline-flex items-center gap-2 rounded-full border border-[#0095D9]/15 bg-[#0095D9]/[0.055] px-3.5 py-2 text-[12px] font-semibold text-[#0079B2] shadow-[0_10px_30px_-22px_rgba(0,149,217,0.5)] backdrop-blur-sm">
+                    <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white shadow-sm ring-1 ring-[#0095D9]/10">
+                      <svg
+                        width="12"
+                        height="12"
+                        viewBox="0 0 16 16"
+                        fill="none"
+                        aria-hidden="true"
                       >
-                        {spark.shape === "star" ? (
-                          <SparkGlyph
-                            x={spark.x}
-                            y={spark.y}
-                            size={spark.size}
-                            color={spark.color}
-                            opacity={spark.opacity}
-                          />
-                        ) : (
-                          <circle
-                            cx={spark.x}
-                            cy={spark.y}
-                            r={spark.size / 2}
-                            fill={spark.color}
-                            opacity={spark.opacity}
-                          />
-                        )}
-                      </g>
+                        <path
+                          d="M8 14S1.8 10.2 1.8 5.6A3.8 3.8 0 0 1 8 3a3.8 3.8 0 0 1 6.2 2.6C14.2 10.2 8 14 8 14Z"
+                          fill="#F88535"
+                        />
+                      </svg>
+                    </span>
+                    Care and compassion redefined
+                  </div>
+
+                  <h1 className="mt-6 max-w-[760px] font-display text-[clamp(40px,6vw,72px)] leading-[1.02] font-medium tracking-[-0.045em] text-[var(--ink2)]">
+                    Consult with a doctor{" "}
+                    <span className="relative inline-block text-[#0095D9]">
+                      in the comfort of your home.
+                      <span
+                        aria-hidden="true"
+                        className="absolute -bottom-2 left-0 h-[5px] w-1/2 rounded-full bg-gradient-to-r from-[#F88535] to-[#F88535]/0"
+                      />
+                    </span>
+                  </h1>
+
+                  <p className="mx-auto mt-6 max-w-xl text-[clamp(15px,2vw,18px)] leading-[1.75] text-[#142138B8] lg:mx-0">
+                    General OPD and surgical consultations, online or in person.
+                    No card, no waiting room, just your phone and a reference
+                    code.
+                  </p>
+
+                  <div className="mt-8 flex flex-col items-center gap-4 sm:flex-row sm:justify-center lg:justify-start">
+                    <BookingCta
+                      size="lg"
+                      variant="gold"
+                      className="shadow-[0_18px_38px_-16px_rgba(248,133,53,0.55)] hover:-translate-y-0.5"
+                    />
+                    <a
+                      href={HOSPITAL_PHONE_TEL}
+                      className="inline-flex items-center gap-2 rounded-full border border-[#14213820] bg-white px-5 py-3.5 text-[14px] font-semibold text-[var(--ink)] shadow-[0_12px_30px_-24px_rgba(20,33,56,0.45)] transition hover:-translate-y-0.5 hover:border-[#0095D9]/40 hover:text-[#0095D9]"
+                    >
+                      <svg
+                        width="16"
+                        height="16"
+                        viewBox="0 0 20 20"
+                        fill="none"
+                        aria-hidden="true"
+                      >
+                        <path
+                          d="M4.5 3.5h2.7c.5 0 .9.3 1 .8l.7 2.6c.1.4 0 .9-.3 1.2L7.3 9.4c1 2.1 2.7 3.8 4.8 4.8l1.3-1.3c.3-.3.8-.4 1.2-.3l2.6.7c.5.1.8.5.8 1v2.7c0 .6-.5 1-1 1-6.9 0-12.5-5.6-12.5-12.5 0-.5.4-1 1-1z"
+                          stroke="currentColor"
+                          strokeWidth="1.4"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                      Or call the hospital directly
+                    </a>
+                  </div>
+
+                  <ul className="mt-8 flex flex-wrap items-center justify-center gap-x-6 gap-y-3 lg:justify-start">
+                    {[
+                      "Confirmed by real hospital staff",
+                      "Data erased after every visit",
+                      "Same doctors as our hospital",
+                    ].map((item) => (
+                      <li
+                        key={item}
+                        className="flex items-center gap-2 text-[12.5px] font-medium text-[#142138A8]"
+                      >
+                        <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#0095D9]/[0.08] text-[#0095D9]">
+                          <svg
+                            width="12"
+                            height="12"
+                            viewBox="0 0 16 16"
+                            fill="none"
+                            aria-hidden="true"
+                          >
+                            <path
+                              d="M3.5 8.4l3 3 6-6.8"
+                              stroke="currentColor"
+                              strokeWidth="1.8"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            />
+                          </svg>
+                        </span>
+                        {item}
+                      </li>
                     ))}
-                  </svg>
+                  </ul>
                 </div>
 
-                {/* the photo, clipped to the heart, with a white rim */}
-                <svg
-                  viewBox="0 0 100 92"
-                  role="img"
-                  aria-label="A doctor at Holy Family Catholic Hospital speaking with a patient"
-                  className="relative w-full"
-                  style={{
-                    filter: "drop-shadow(0 22px 40px rgba(255,255,255,0.45))",
-                  }}
-                >
-                  <defs>
-                    <clipPath id="heroHeartClip">
-                      <path d={HEART_PATH} />
-                    </clipPath>
-                    <linearGradient
-                      id="heroHeartWash"
-                      x1="0"
-                      y1="0"
-                      x2="0"
-                      y2="1"
-                    >
-                      <stop
-                        offset="40%"
-                        stopColor="var(--brand-blue-deep)"
-                        stopOpacity="0"
-                      />
-                      <stop
-                        offset="100%"
-                        stopColor="var(--brand-blue-deep)"
-                        stopOpacity="0.85"
-                      />
-                    </linearGradient>
-                  </defs>
-                  <g clipPath="url(#heroHeartClip)">
-                    <rect width="100" height="92" fill="var(--ink2)" />
-                    <image
-                      href={heroImage}
-                      x="0"
-                      y="0"
-                      width="100"
-                      height="92"
-                      preserveAspectRatio="xMidYMid slice"
-                    />
-                    <rect width="100" height="92" fill="url(#heroHeartWash)" />
-                  </g>
-                  <path
-                    d={HEART_PATH}
-                    fill="none"
-                    stroke="#FFFFFF"
-                    strokeWidth="1.8"
-                    strokeLinejoin="round"
+                {/* Oversized hero photography with feathered edges — no card or heart frame. */}
+                <div className="relative mt-0 min-h-[430px] sm:min-h-[560px] lg:-mr-24 lg:min-h-[700px] motion-safe:[animation:heroImageIn_0.9s_ease-out_0.15s_both]">
+                  <div
+                    aria-hidden="true"
+                    className="absolute right-[8%] top-[13%] h-72 w-72 rounded-full blur-3xl opacity-80"
+                    style={{
+                      background:
+                        "radial-gradient(circle, rgba(0,149,217,0.20) 0%, rgba(0,149,217,0.08) 42%, transparent 72%)",
+                    }}
                   />
-                </svg>
-              </div>
+                  <div
+                    aria-hidden="true"
+                    className="absolute bottom-[10%] right-[8%] h-56 w-56 rounded-full blur-3xl opacity-80"
+                    style={{
+                      background:
+                        "radial-gradient(circle, rgba(248,133,53,0.22) 0%, rgba(248,133,53,0.07) 45%, transparent 72%)",
+                    }}
+                  />
 
-              <div className="absolute -bottom-2 sm:-bottom-4 left-1/2 -translate-x-1/2 sm:left-auto sm:right-0 sm:translate-x-0 motion-safe:[animation:slipFloat_5s_ease-in-out_1.3s_infinite]">
-                <BookingSlip
-                  type="General OPD"
-                  mode="Online"
-                  code="GHS 300"
-                  animateCode
-                  compact
-                  tilt
-                  className="w-[190px] sm:w-[215px] shadow-[0_24px_48px_-16px_rgba(0,0,0,0.55)]"
-                />
+                  <div
+                    className="absolute inset-0"
+                    style={{
+                      WebkitMaskImage:
+                        "radial-gradient(88% 92% at 58% 48%, #000 48%, rgba(0,0,0,.96) 64%, transparent 98%)",
+                      maskImage:
+                        "radial-gradient(88% 92% at 58% 48%, #000 48%, rgba(0,0,0,.96) 64%, transparent 98%)",
+                      filter: "drop-shadow(0 34px 55px rgba(0,70,105,0.18))",
+                    }}
+                  >
+                    <img
+                      src={heroImage}
+                      alt="A doctor at Holy Family Catholic Hospital speaking warmly with a patient"
+                      className="h-full w-full object-cover object-[58%_center]"
+                    />
+                    <div
+                      aria-hidden="true"
+                      className="absolute inset-0"
+                      style={{
+                        background:
+                          "linear-gradient(90deg, #FFFFFF 0%, rgba(255,255,255,.72) 10%, transparent 34%)",
+                      }}
+                    />
+                    <div
+                      aria-hidden="true"
+                      className="absolute inset-0"
+                      style={{
+                        background:
+                          "linear-gradient(180deg, rgba(255,255,255,.68) 0%, transparent 20%, transparent 72%, #FFFFFF 100%)",
+                      }}
+                    />
+                    <div
+                      aria-hidden="true"
+                      className="absolute inset-0"
+                      style={{
+                        background:
+                          "radial-gradient(circle at 58% 46%, transparent 42%, rgba(255,255,255,.05) 68%, rgba(255,255,255,.88) 100%)",
+                      }}
+                    />
+                  </div>
+
+                  <div className="absolute bottom-[12%] left-[7%] hidden sm:flex items-center gap-2.5 rounded-full border border-white/70 bg-white/85 px-4 py-2.5 text-[12px] font-semibold text-[#142138] shadow-[0_18px_45px_-24px_rgba(20,33,56,0.35)] backdrop-blur-md">
+                    <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#0095D9] text-white">
+                      <svg
+                        width="13"
+                        height="13"
+                        viewBox="0 0 16 16"
+                        fill="none"
+                        aria-hidden="true"
+                      >
+                        <path
+                          d="M8 1.5c2.2 1.2 3.7 1.5 5.5 1.5 0 6-2.4 9.3-5.5 11.5C4.9 12.3 2.5 9 2.5 3c1.8 0 3.3-.3 5.5-1.5Z"
+                          stroke="currentColor"
+                          strokeWidth="1.3"
+                          strokeLinejoin="round"
+                        />
+                        <path
+                          d="m5.6 8.1 1.6 1.6 3.2-3.4"
+                          stroke="currentColor"
+                          strokeWidth="1.3"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                    </span>
+                    Trusted hospital care
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -1136,43 +1099,59 @@ export default function Home() {
 
             <div className="mt-10 sm:mt-14 grid sm:grid-cols-2 gap-8 sm:gap-10">
               {consultTypes.map((service) => (
-                <Link
-                  key={service.title}
-                  to="/book"
-                  className="group block rounded-2xl transition
-                             focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--forest)]"
-                >
-                  <div className="transition duration-300 group-hover:-translate-y-1.5">
-                    <BookingSlip
-                      type={service.title}
-                      mode={service.mode}
-                      placeholder="GHS 300"
-                      className="max-w-none mx-auto sm:mx-0 transition duration-300 group-hover:shadow-[0_36px_70px_-24px_rgba(15,20,17,0.55)]"
-                    />
-                  </div>
-                  <p className="mt-4 text-[14px] leading-relaxed text-[#142138b3] text-center sm:text-left max-w-sm mx-auto sm:mx-0">
-                    {service.detail}
-                  </p>
-                  <span className="mt-2 inline-flex items-center gap-1.5 text-[13.5px] font-medium text-[var(--forest-2)] transition group-hover:text-[var(--forest)]">
-                    Book this consultation
-                    <svg
-                      width="14"
-                      height="14"
-                      viewBox="0 0 20 20"
-                      fill="none"
-                      aria-hidden="true"
-                      className="transition group-hover:translate-x-0.5"
-                    >
-                      <path
-                        d="M7 5l6 5-6 5"
-                        stroke="currentColor"
-                        strokeWidth="1.6"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
+                <div key={service.title}>
+                  <Link
+                    to="/book"
+                    className="group block rounded-2xl transition
+                               focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--forest)]"
+                  >
+                    <div className="transition duration-300 group-hover:-translate-y-1.5">
+                      <BookingSlip
+                        type={service.title}
+                        mode={service.mode}
+                        placeholder="GHS 300"
+                        className="max-w-none mx-auto sm:mx-0 transition duration-300 group-hover:shadow-[0_36px_70px_-24px_rgba(15,20,17,0.55)]"
                       />
-                    </svg>
-                  </span>
-                </Link>
+                    </div>
+                    <p className="mt-4 text-[14px] leading-relaxed text-[#142138b3] text-center sm:text-left max-w-sm mx-auto sm:mx-0">
+                      {service.detail}
+                    </p>
+                    <span className="mt-2 inline-flex items-center gap-1.5 text-[13.5px] font-medium text-[var(--forest-2)] transition group-hover:text-[var(--forest)]">
+                      Book this consultation
+                      <svg
+                        width="14"
+                        height="14"
+                        viewBox="0 0 20 20"
+                        fill="none"
+                        aria-hidden="true"
+                        className="transition group-hover:translate-x-0.5"
+                      >
+                        <path
+                          d="M7 5l6 5-6 5"
+                          stroke="currentColor"
+                          strokeWidth="1.6"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                    </span>
+                  </Link>
+
+                  {/* Sub-services: kept outside the Link above so this stays
+                      a plain list, not a nested interactive element. Mock
+                      data, see consultTypes at the top of this file. */}
+                  <ul className="mt-5 flex flex-wrap justify-center sm:justify-start gap-2 max-w-sm mx-auto sm:mx-0">
+                    {service.subServices.map((item) => (
+                      <li
+                        key={item}
+                        className="inline-flex items-center gap-1.5 rounded-full border border-[var(--forest)]/15 bg-[var(--forest)]/[0.04] px-3 py-1.5 text-[12.5px] text-[var(--forest-2)]"
+                      >
+                        <CheckGlyph />
+                        {item}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               ))}
             </div>
 
@@ -1281,7 +1260,7 @@ export default function Home() {
         <section
           id="privacy"
           ref={privacyRef}
-          className={`relative overflow-hidden bg-[var(--ink2)] py-16 sm:py-24 ${
+          className={`relative overflow-hidden bg-gradient-to-r from-[#C79A3C] via-[#E8935A] to-[#F88535] py-16 sm:py-24 ${
             stampReady ? "stamp-ready" : ""
           }`}
         >
