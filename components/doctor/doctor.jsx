@@ -13,12 +13,12 @@ import ConsultationCard from "./ui/ConsultationCard";
 import MarkDoneModal from "./ui/MarkDoneModal";
 import ProfileTab from "./Profiletab";
 import LogoutButton from "./Logoutbutton";
-import { currentDoctor } from "./mockdata";
+import { currentDoctor } from "./Docmockdata";
 import {
   fetchAssignedConsultations,
   startVideoCall,
   markConsultationDone,
-} from "./firestoreService";
+} from "./DocfirestoreService";
 // TODO: point this at your actual logo file in src/assets (filename may differ).
 import hospitalLogo from "../../src/assets/logo.png";
 
