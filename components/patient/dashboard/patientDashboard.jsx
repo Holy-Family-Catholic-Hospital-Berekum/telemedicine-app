@@ -6,8 +6,8 @@ import {
   fetchAvailableSlots,
 } from "./patientFirestoreService";
 import StatTile from "./patientStatTile";
-import BookingCard from "./bookingCard";
-import AvailableSlots from "./availableSlots";
+import BookingCard from "./patientBookingCard";
+import AvailableSlots from "./patientAvailableSlots";
 
 // ASSUMPTION: adjust this import path to wherever src/assets actually
 // sits relative to components/patient/dashboard in your project.
