@@ -1,6 +1,6 @@
 import { useState } from "react";
 import ConfirmDialog from "./ConfirmDialog.jsx";
-import PaymentVerificationModal from "./PaymentVerificationModal.jsx";
+import PaymentVerificationModal from "./paymentVerificationModal.jsx";
 import { IconCheck, IconX, IconAlert } from "./icons.jsx";
 
 // The queue below deliberately shows only who submitted and when. The MoMo

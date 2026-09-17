@@ -11,7 +11,7 @@ import {
   mockConsultations,
   mockDoctorProfile,
   FORFEIT_PERCENTAGE,
-} from "./Docmockdata";
+} from "./docMockData";
 
 const MOCK_LATENCY_MS = 350;
 

@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { Copy, Check, Loader2 } from "lucide-react";
-import { HOSPITAL_MOMO } from "./PatientMockdata";
-import { formatCurrency } from "./PatientUtils";
-import { submitPayment } from "./PatientfirestoreService";
+import { HOSPITAL_MOMO } from "./patientMockData";
+import { formatCurrency } from "./patientUtils";
+import { submitPayment } from "./patientFirestoreService";
 
 // Same convention as the public booking flow: the reference code we
 // generated for this booking IS the transaction reference the patient

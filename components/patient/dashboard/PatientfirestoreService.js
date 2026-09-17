@@ -7,7 +7,7 @@
 // signature, and the components in this folder don't need to change.
 // ---------------------------------------------------------------------------
 
-import { mockBookings, mockAvailableSlots } from "./PatientMockdata";
+import { mockBookings, mockAvailableSlots } from "./patientMockData";
 
 const MOCK_LATENCY_MS = 350;
 

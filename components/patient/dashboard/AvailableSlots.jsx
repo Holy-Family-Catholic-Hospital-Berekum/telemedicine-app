@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { CalendarPlus } from "lucide-react";
-import { PRICING } from "./PatientMockdata";
-import { createBooking } from "./PatientfirestoreService";
-import { formatDateTime } from "./PatientUtils";
-import PaymentForm from "./PaymentForm";
+import { PRICING } from "./patientMockData";
+import { createBooking } from "./patientFirestoreService";
+import { formatDateTime } from "./patientUtils";
+import PaymentForm from "./paymentForm";
 
 // Claiming a slot only records intent — per the architecture (4.8) the
 // slot itself doesn't move to "held" until payment is actually

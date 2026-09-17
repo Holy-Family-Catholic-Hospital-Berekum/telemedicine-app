@@ -4,11 +4,11 @@ import {
   formatCurrency,
   formatCountdown,
   formatDateTime,
-} from "./PatientUtils";
-import PaymentForm from "./PaymentForm";
-import RescheduleForm from "./RescheduleForm";
-import RevealId from "./RevealId";
-import JoinCallPanel from "./JoincallPanel";
+} from "./patientUtils";
+import PaymentForm from "./paymentForm";
+import RescheduleForm from "./rescheduleForm";
+import RevealId from "./revealId";
+import JoinCallPanel from "./joincallPanel";
 
 // NOTE: JoinCallPanel.jsx (as generated earlier) imports "../utils" and
 // "../firestoreService" — one directory up from itself. If every file

@@ -1,13 +1,13 @@
 import { useEffect, useState } from "react";
 import { CreditCard, Radio, LogOut, Home as HomeIcon } from "lucide-react";
-import { currentPatient } from "./PatientMockdata";
+import { currentPatient } from "./patientMockData";
 import {
   fetchMyBookings,
   fetchAvailableSlots,
-} from "./PatientfirestoreService";
-import StatTile from "./PatientStattile";
-import BookingCard from "./BookingCard";
-import AvailableSlots from "./AvailableSlots";
+} from "./patientFirestoreService";
+import StatTile from "./patientStatTile";
+import BookingCard from "./bookingCard";
+import AvailableSlots from "./availableSlots";
 
 // ASSUMPTION: adjust this import path to wherever src/assets actually
 // sits relative to components/patient/dashboard in your project.
@@ -17,7 +17,7 @@ import logo from "../../../src/assets/logo.png";
 // components/patient/dashboard/Dashboard.jsx that's two levels up
 // into components/, then into shared/. Adjust if your actual layout
 // differs.
-import Footer from "../../shared/Footer";
+import Footer from "../../shared/footer";
 
 /**
  * Dashboard.jsx
@@ -65,7 +65,7 @@ export default function Dashboard() {
       // ASSUMPTION: fetchConsultationHistory does not exist in the
       // firestoreService shown yet — add it once the backend actually
       // has somewhere to read history from (see flag above).
-      import("./PatientfirestoreService")
+      import("./patientFirestoreService")
         .then((mod) =>
           mod.fetchConsultationHistory
             ? mod.fetchConsultationHistory(currentPatient.uid)

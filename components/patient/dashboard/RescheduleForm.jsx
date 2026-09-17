@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { RefreshCw, Loader2 } from "lucide-react";
-import { requestReschedule } from "./PatientfirestoreService";
+import { requestReschedule } from "./patientFirestoreService";
 
 export default function RescheduleForm({ booking, onRequested }) {
   const [open, setOpen] = useState(false);

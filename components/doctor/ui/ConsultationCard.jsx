@@ -8,8 +8,8 @@ import {
   CheckSquare,
   History,
 } from "lucide-react";
-import SensitiveDetails from "../SensitiveDetails";
-import { getCallWindow } from "../Docutils";
+import SensitiveDetails from "../sensitiveDetails";
+import { getCallWindow } from "../docUtils";
 
 const MODE_STYLE = {
   online: { spine: "#0095D9", chipText: "#0095D9", label: "Online" },

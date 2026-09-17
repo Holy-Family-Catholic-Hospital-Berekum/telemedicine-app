@@ -8,17 +8,17 @@ import {
   CalendarDays,
   UserRound,
 } from "lucide-react";
-import StatTile from "./ui/StatTile";
-import ConsultationCard from "./ui/ConsultationCard";
-import MarkDoneModal from "./ui/MarkDoneModal";
-import ProfileTab from "./Profiletab";
-import LogoutButton from "./Logoutbutton";
-import { currentDoctor } from "./Docmockdata";
+import StatTile from "./ui/statTile";
+import ConsultationCard from "./ui/consultationCard";
+import MarkDoneModal from "./ui/markDoneModal";
+import ProfileTab from "./docProfileTab";
+import LogoutButton from "./logoutButton";
+import { currentDoctor } from "./docMockData";
 import {
   fetchAssignedConsultations,
   startVideoCall,
   markConsultationDone,
-} from "./DocfirestoreService";
+} from "./docFirestoreService";
 // TODO: point this at your actual logo file in src/assets (filename may differ).
 import hospitalLogo from "../../src/assets/logo.png";
 

@@ -12,12 +12,12 @@ import {
   fetchDoctorProfile,
   updateDoctorProfile,
   uploadDoctorProfilePicture,
-} from "./DocfirestoreService";
+} from "./docFirestoreService";
 import {
   validateProfilePhoto,
   resizeProfilePhoto,
   MAX_PROFILE_PHOTO_MB,
-} from "./Docutils";
+} from "./docUtils";
 
 const BIO_MAX_LENGTH = 400;
 

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import SchedulingModal from "./schedulingModal.jsx";
-import CreateScheduleModal from "./CreateScheduleModal.jsx";
-import ConfirmDialog from "./ConfirmDialog.jsx";
+import CreateScheduleModal from "./createScheduleModal.jsx";
+import ConfirmDialog from "./confirmDialog.jsx";
 import { IconPhone, IconCalendar, IconCheck, IconPlus, IconX } from "./icons.jsx";
 
 export default function BookingsPanel({
