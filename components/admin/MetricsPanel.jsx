@@ -1,4 +1,4 @@
-import { BarChart, Donut } from "./MiniCharts.jsx";
+import { BarChart, Donut } from "./Minicharts.jsx";
 import { IconShield } from "./icons.jsx";
 
 // metrics collection (4.6) — date, type, mode, outcome, doctorOrDept only.
