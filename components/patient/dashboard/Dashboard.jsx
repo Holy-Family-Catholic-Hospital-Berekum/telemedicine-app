@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { CreditCard, Radio, LogOut, Home as HomeIcon } from "lucide-react";
 import { currentPatient } from "./Mockdata";
-import { fetchMyBookings, fetchAvailableSlots } from "./firestoreService";
+import { fetchMyBookings, fetchAvailableSlots } from "../firestoreService";
 import StatTile from "./StatTile";
 import BookingCard from "./BookingCard";
 import AvailableSlots from "./AvailableSlots";
