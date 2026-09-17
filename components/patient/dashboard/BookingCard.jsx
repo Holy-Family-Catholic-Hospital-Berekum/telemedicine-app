@@ -1,6 +1,10 @@
 import { useState } from "react";
 import { Clock, CreditCard, ChevronDown, ChevronUp } from "lucide-react";
-import { formatCurrency, formatCountdown, formatDateTime } from "./utils";
+import {
+  formatCurrency,
+  formatCountdown,
+  formatDateTime,
+} from "./PatientUtils";
 import PaymentForm from "./PaymentForm";
 import RescheduleForm from "./RescheduleForm";
 import RevealId from "./RevealId";
@@ -13,13 +17,28 @@ import JoinCallPanel from "./JoinCallPanel";
 // and "./firestoreService" so they resolve correctly.
 
 const STATE_META = {
-  awaiting_payment: { label: "Awaiting payment", color: "#F88535", bg: "#F885351A" },
-  pending_verification: { label: "Verifying payment", color: "#0095D9", bg: "#0095D91A" },
+  awaiting_payment: {
+    label: "Awaiting payment",
+    color: "#F88535",
+    bg: "#F885351A",
+  },
+  pending_verification: {
+    label: "Verifying payment",
+    color: "#0095D9",
+    bg: "#0095D91A",
+  },
   scheduled: { label: "Confirmed", color: "#1E8E5A", bg: "#1E8E5A1A" },
 };
 
-export default function BookingCard({ booking, onPaid, onRescheduled, onJoined }) {
-  const [expanded, setExpanded] = useState(booking.state === "awaiting_payment");
+export default function BookingCard({
+  booking,
+  onPaid,
+  onRescheduled,
+  onJoined,
+}) {
+  const [expanded, setExpanded] = useState(
+    booking.state === "awaiting_payment",
+  );
   const meta = STATE_META[booking.state] ?? STATE_META.scheduled;
 
   return (
@@ -44,13 +63,23 @@ export default function BookingCard({ booking, onPaid, onRescheduled, onJoined }
           <p className="mt-0.5 text-xs text-[#5C6B72] truncate">
             {booking.mode === "online" ? "Online" : "In person"} ·{" "}
             {booking.referenceCode}
-            {booking.scheduledTime && <> · {formatDateTime(booking.scheduledTime)}</>}
+            {booking.scheduledTime && (
+              <> · {formatDateTime(booking.scheduledTime)}</>
+            )}
           </p>
         </div>
         {expanded ? (
-          <ChevronUp size={16} strokeWidth={1.75} className="shrink-0 text-[#5C6B72]" />
+          <ChevronUp
+            size={16}
+            strokeWidth={1.75}
+            className="shrink-0 text-[#5C6B72]"
+          />
         ) : (
-          <ChevronDown size={16} strokeWidth={1.75} className="shrink-0 text-[#5C6B72]" />
+          <ChevronDown
+            size={16}
+            strokeWidth={1.75}
+            className="shrink-0 text-[#5C6B72]"
+          />
         )}
       </button>
 

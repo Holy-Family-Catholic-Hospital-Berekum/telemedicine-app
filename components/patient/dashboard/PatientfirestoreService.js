@@ -7,12 +7,14 @@
 // signature, and the components in this folder don't need to change.
 // ---------------------------------------------------------------------------
 
-import { mockBookings, mockAvailableSlots } from './Mockdata';
+import { mockBookings, mockAvailableSlots } from "./PatientMockdata";
 
 const MOCK_LATENCY_MS = 350;
 
 function delay(value) {
-  return new Promise((resolve) => setTimeout(() => resolve(value), MOCK_LATENCY_MS));
+  return new Promise((resolve) =>
+    setTimeout(() => resolve(value), MOCK_LATENCY_MS),
+  );
 }
 
 function generateReferenceCode() {
@@ -58,7 +60,7 @@ export async function createBooking({ type, mode, dateOfBirth, sex, slot }) {
     type,
     mode,
     amount: undefined, // filled in by caller from PRICING — server would set this from its own config
-    state: 'awaiting_payment',
+    state: "awaiting_payment",
     expiresAt: new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString(),
     slotId: slot?.slotId ?? null,
     // dateOfBirth/sex intentionally not echoed back into this object —
@@ -81,7 +83,12 @@ export async function createBooking({ type, mode, dateOfBirth, sex, slot }) {
 // The client never sets paymentStatus or a ledger/slot state directly (6.1,
 // 6.3) — this call only ever *requests* the transition.
 export async function submitPayment({ bookingId, momoName, momoReference }) {
-  return delay({ bookingId, momoName, momoReference, state: 'pending_verification' });
+  return delay({
+    bookingId,
+    momoName,
+    momoReference,
+    state: "pending_verification",
+  });
 }
 
 // TODO(firestore): this should call an httpsCallable Cloud Function, e.g.
@@ -92,13 +99,25 @@ export async function submitPayment({ bookingId, momoName, momoReference }) {
 // This mock just checks the ID against the booking passed in; the real
 // phone check happens server-side against the authenticated account, not
 // against a value the client could spoof.
-export async function requestReschedule({ booking, consultationId, preferredTime, reason }) {
+export async function requestReschedule({
+  booking,
+  consultationId,
+  preferredTime,
+  reason,
+}) {
   if (consultationId.trim().toUpperCase() !== booking.consultationId) {
-    const err = new Error('That consultation ID doesn\u2019t match this booking.');
-    err.code = 'ID_MISMATCH';
+    const err = new Error(
+      "That consultation ID doesn\u2019t match this booking.",
+    );
+    err.code = "ID_MISMATCH";
     throw err;
   }
-  return delay({ bookingId: booking.bookingId, requested: true, preferredTime, reason });
+  return delay({
+    bookingId: booking.bookingId,
+    requested: true,
+    preferredTime,
+    reason,
+  });
 }
 
 // TODO(firestore): this should call an httpsCallable Cloud Function, e.g.
@@ -114,10 +133,16 @@ export async function requestReschedule({ booking, consultationId, preferredTime
 // the correct ID together unlock the room (4.5, 9).
 export async function joinVideoCall({ booking, enteredConsultationId }) {
   if (enteredConsultationId.trim().toUpperCase() !== booking.consultationId) {
-    const err = new Error('That consultation ID doesn\u2019t match this booking.');
-    err.code = 'ID_MISMATCH';
+    const err = new Error(
+      "That consultation ID doesn\u2019t match this booking.",
+    );
+    err.code = "ID_MISMATCH";
     throw err;
   }
   const now = new Date().toISOString();
-  return delay({ consultationId: booking.consultationId, callStartedAt: now, roomName: `mock-room-${booking.consultationId}` });
+  return delay({
+    consultationId: booking.consultationId,
+    callStartedAt: now,
+    roomName: `mock-room-${booking.consultationId}`,
+  });
 }

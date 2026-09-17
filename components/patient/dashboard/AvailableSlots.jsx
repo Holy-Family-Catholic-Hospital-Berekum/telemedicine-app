@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { CalendarPlus } from "lucide-react";
-import { PRICING } from "./Mockdata";
-import { createBooking } from "./firestoreService";
-import { formatDateTime } from "./utils";
+import { PRICING } from "./PatientMockdata";
+import { createBooking } from "./PatientfirestoreService";
+import { formatDateTime } from "./PatientUtils";
 import PaymentForm from "./PaymentForm";
 
 // Claiming a slot only records intent — per the architecture (4.8) the
@@ -49,12 +49,16 @@ export default function AvailableSlots({ slots, onClaimed }) {
       </h3>
       <div className="mt-2 space-y-2">
         {slots.map((slot) => (
-          <div key={slot.slotId} className="rounded-md border border-[#DCE6EC] p-3.5">
+          <div
+            key={slot.slotId}
+            className="rounded-md border border-[#DCE6EC] p-3.5"
+          >
             <div className="flex items-center justify-between gap-3">
               <div className="text-sm">
                 <p className="font-medium text-[#12242C]">{slot.doctorName}</p>
                 <p className="text-xs text-[#5C6B72]">
-                  {slot.type} · {slot.mode === "online" ? "Online" : "In person"} ·{" "}
+                  {slot.type} ·{" "}
+                  {slot.mode === "online" ? "Online" : "In person"} ·{" "}
                   {formatDateTime(`${slot.date}T${slot.startTime}`)}
                 </p>
               </div>
@@ -77,13 +81,17 @@ export default function AvailableSlots({ slots, onClaimed }) {
                     type="date"
                     required
                     value={form.dateOfBirth}
-                    onChange={(e) => setForm((f) => ({ ...f, dateOfBirth: e.target.value }))}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, dateOfBirth: e.target.value }))
+                    }
                     className="rounded-sm border border-[#DCE6EC] px-2.5 py-1.5 text-xs text-[#12242C] focus:border-[#0095D9] focus:outline-none"
                   />
                   <select
                     required
                     value={form.sex}
-                    onChange={(e) => setForm((f) => ({ ...f, sex: e.target.value }))}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, sex: e.target.value }))
+                    }
                     className="rounded-sm border border-[#DCE6EC] px-2.5 py-1.5 text-xs text-[#12242C] focus:border-[#0095D9] focus:outline-none"
                   >
                     <option value="">Sex</option>

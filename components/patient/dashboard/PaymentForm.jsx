@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { Copy, Check, Loader2 } from "lucide-react";
-import { HOSPITAL_MOMO } from "./Mockdata";
-import { formatCurrency } from "./utils";
-import { submitPayment } from "./firestoreService";
+import { HOSPITAL_MOMO } from "./PatientMockdata";
+import { formatCurrency } from "./PatientUtils";
+import { submitPayment } from "./PatientfirestoreService";
 
 // Same convention as the public booking flow: the reference code we
 // generated for this booking IS the transaction reference the patient
@@ -74,7 +74,11 @@ export default function PaymentForm({ booking, onSubmitted }) {
           className="flex items-center gap-1 font-mono font-medium text-[#12242C] hover:text-[#0095D9]"
         >
           {booking.referenceCode}
-          {copied ? <Check size={13} strokeWidth={2} /> : <Copy size={13} strokeWidth={2} />}
+          {copied ? (
+            <Check size={13} strokeWidth={2} />
+          ) : (
+            <Copy size={13} strokeWidth={2} />
+          )}
         </button>
       </div>
 
@@ -104,7 +108,9 @@ export default function PaymentForm({ booking, onSubmitted }) {
         className="w-full flex items-center justify-center gap-2 rounded-sm px-3.5 py-2.5 text-sm font-medium text-white transition disabled:cursor-not-allowed disabled:opacity-60"
         style={{ backgroundColor: "#0095D9" }}
       >
-        {submitting && <Loader2 size={14} strokeWidth={2} className="animate-spin" />}
+        {submitting && (
+          <Loader2 size={14} strokeWidth={2} className="animate-spin" />
+        )}
         {submitting ? "Submitting…" : "I've paid — submit for verification"}
       </button>
     </form>

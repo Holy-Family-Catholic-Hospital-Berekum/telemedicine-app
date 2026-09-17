@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Video, Lock, Loader2, ShieldQuestion, PhoneCall } from "lucide-react";
-import { getCallWindow } from "./utils";
-import { joinVideoCall } from "./firestoreService";
+import { getCallWindow } from "./PatientUtils";
+import { joinVideoCall } from "./PatientfirestoreService";
 
 // Mirrors the architecture's join flow (Section 7): "the patient logs in,
 // enters the consultation ID, and joins the video room." Typing the ID is
