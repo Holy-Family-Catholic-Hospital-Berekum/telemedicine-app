@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import Header from "../shared/Header";
-import Footer from "../shared/Footer";
+import Header from "../shared/header";
+import Footer from "../shared/footer";
 import { HOSPITAL_PHONE_TEL } from "../shared/contact";
 import landingImage from "../../src/assets/landingImage.jpg";
 // NEW — add this file: a warm, real photo of a doctor consulting a

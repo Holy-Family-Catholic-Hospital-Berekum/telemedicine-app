@@ -3,7 +3,7 @@ import BookConsultation from "../components/patient/bookConsultation";
 import { Route, Routes } from "react-router-dom";
 import Admin from "../components/admin/admin";
 import DoctorDashboard from "../components/doctor/doctor";
-import Dashboard from "../components/patient/dashboard/Dashboard";
+import Dashboard from "../components/patient/dashboard/dashboard";
 export default function App() {
   return (
     <Routes>

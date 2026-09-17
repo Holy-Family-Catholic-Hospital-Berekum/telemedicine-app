@@ -8,7 +8,7 @@ import {
 import PaymentForm from "./paymentForm";
 import RescheduleForm from "./rescheduleForm";
 import RevealId from "./revealId";
-import JoinCallPanel from "./joincallPanel";
+import JoinCallPanel from "./joinCallPanel";
 
 // NOTE: JoinCallPanel.jsx (as generated earlier) imports "../utils" and
 // "../firestoreService" — one directory up from itself. If every file

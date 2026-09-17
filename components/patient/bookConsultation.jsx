@@ -5,8 +5,8 @@ import { Link } from "react-router-dom";
 // header/footer components — I don't have their real location, so this
 // points at the conventional spot. If your project keeps them elsewhere
 // (e.g. "../components/layout/Header"), just update these two lines.
-import Header from "../shared/Header";
-import Footer from "../shared/Footer";
+import Header from "../shared/header";
+import Footer from "../shared/footer";
 
 /**
  * bookConsultation.jsx
