@@ -90,7 +90,9 @@ export default function RescheduleForm({ booking, onRequested }) {
           className="flex items-center gap-1.5 rounded-sm px-3 py-2 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-60"
           style={{ backgroundColor: "#0095D9" }}
         >
-          {submitting && <Loader2 size={13} strokeWidth={2} className="animate-spin" />}
+          {submitting && (
+            <Loader2 size={13} strokeWidth={2} className="animate-spin" />
+          )}
           Send request
         </button>
         <button
