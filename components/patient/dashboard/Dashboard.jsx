@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { CreditCard, Radio, LogOut, Home as HomeIcon } from "lucide-react";
 import { currentPatient } from "./Mockdata";
-import { fetchMyBookings, fetchAvailableSlots } from "../firestoreService";
+import { fetchMyBookings, fetchAvailableSlots } from "./Firestoreservice";
 import StatTile from "./StatTile";
 import BookingCard from "./BookingCard";
 import AvailableSlots from "./AvailableSlots";
@@ -62,7 +62,7 @@ export default function Dashboard() {
       // ASSUMPTION: fetchConsultationHistory does not exist in the
       // firestoreService shown yet — add it once the backend actually
       // has somewhere to read history from (see flag above).
-      import("./firestoreService")
+      import("./Firestoreservice")
         .then((mod) =>
           mod.fetchConsultationHistory
             ? mod.fetchConsultationHistory(currentPatient.uid)
