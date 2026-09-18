@@ -42,7 +42,7 @@
 
 import { Navigate, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "./context/authContext.jsx";
-import HealthcarePreloader from "./components/common/HealthcarePreloader.jsx";
+import HealthcarePreloader from "./components/common/healthcarePreloader.jsx";
 
 const ROLE_HOME = { patient: "/dashboard", admin: "/admin", doctor: "/doctor" };
 

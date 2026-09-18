@@ -20,7 +20,7 @@ import {
   markConsultationDone,
 } from "./docFirestoreService";
 // NEW: shared Jitsi video call modal (same component the patient side uses)
-import VideoCallModal from "../video/VideoCallModal";
+import VideoCallModal from "../video/videoCallModal";
 // TODO: point this at your actual logo file in src/assets (filename may differ).
 import hospitalLogo from "../../src/assets/logo.png";
 

@@ -10,7 +10,7 @@ import StatTile from "./patientStatTile";
 import BookingCard from "./patientBookingCard";
 import AvailableSlots from "./patientAvailableSlots";
 // NEW: shared Jitsi video call modal (same component the doctor side uses)
-import VideoCallModal from "../../video/VideoCallModal";
+import VideoCallModal from "../../video/videoCallModal";
 // Fixed, auto-slideshow brand panel — see BrandAside.jsx.
 import BrandAside from "../../shared/brandAside";
 
