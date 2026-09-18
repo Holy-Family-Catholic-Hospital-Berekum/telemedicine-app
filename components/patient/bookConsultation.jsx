@@ -4,7 +4,7 @@ import { getFunctions, httpsCallable } from "firebase/functions";
 
 // ASSUMPTION: your initialised Firebase app. Most projects export it from
 // a single src/firebase.js — adjust this path if yours lives elsewhere.
-import { app } from "../firebase";
+import { app } from "../../src/firebase";
 
 // ASSUMPTION: adjust these two import paths to match your actual shared
 // header/footer components — I don't have their real location, so this
