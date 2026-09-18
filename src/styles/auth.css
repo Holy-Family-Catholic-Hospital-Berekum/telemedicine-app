@@ -1,0 +1,551 @@
+/* auth.css
+   Styles for signIn.jsx, signUp.jsx and the shared HealthcarePreloader.
+   Brand colors for this module: #EA7321 (orange) / #0095D9 (blue) on white.
+*/
+
+@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap");
+
+.auth-root {
+  --auth-primary: #ea7321;
+  --auth-primary-dark: #ce6114;
+  --auth-primary-deep: #b85a16;
+  --auth-secondary: #0095d9;
+  --auth-secondary-dark: #0079b0;
+  --auth-secondary-deep: #063a54;
+  --auth-ink: #16232e;
+  --auth-ink-soft: #5b6b7a;
+  --auth-ink-faint: #93a2af;
+  --auth-border: #e7ecf1;
+  --auth-surface: #f7f9fc;
+  --auth-danger: #d6473f;
+  --auth-danger-bg: #fbeae9;
+  --auth-success: #1fa97d;
+
+  font-family: "Inter", sans-serif;
+  color: var(--auth-ink);
+  height: 100vh;
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  background: #fff;
+}
+.auth-root * {
+  box-sizing: border-box;
+}
+.auth-root h1,
+.auth-root h2 {
+  font-family: "Manrope", sans-serif;
+  margin: 0;
+}
+.auth-root button {
+  font-family: inherit;
+}
+.auth-root a {
+  color: var(--auth-secondary);
+  text-decoration: none;
+}
+.auth-root a:hover {
+  text-decoration: underline;
+}
+
+/* ---------- Brand aside ---------- */
+/* Static — never scrolls. Height comes from the grid row (100vh via
+   .auth-root), the form side scrolls independently next to it. */
+.auth-aside {
+  position: relative;
+  height: 100%;
+  overflow: hidden;
+  background: linear-gradient(
+    155deg,
+    var(--auth-secondary-deep) 0%,
+    var(--auth-secondary) 45%,
+    var(--auth-primary-deep) 100%
+  );
+  color: #fff;
+  padding: 40px 44px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+.auth-aside-brand {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none;
+  color: inherit;
+  width: fit-content;
+  transition: opacity 0.15s;
+}
+.auth-aside-brand:hover {
+  opacity: 0.85;
+  text-decoration: none;
+}
+.auth-aside-mark {
+  width: 38px;
+  height: 38px;
+  border-radius: 11px;
+  background: #fff;
+  padding: 6px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  box-shadow: 0 1px 2px rgba(6, 20, 30, 0.18);
+}
+.auth-aside-mark img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+.auth-aside-brand strong {
+  display: block;
+  font-size: 14.5px;
+  color: #fff;
+}
+.auth-aside-brand small {
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 11.5px;
+}
+
+.auth-aside-copy {
+  position: relative;
+  z-index: 1;
+  max-width: 380px;
+  margin-top: clamp(24px, 8vh, 90px);
+}
+.auth-aside-copy h1 {
+  font-size: 30px;
+  font-weight: 800;
+  line-height: 1.25;
+  color: #fff;
+}
+.auth-aside-copy p {
+  color: rgba(255, 255, 255, 0.88);
+  font-size: 14px;
+  line-height: 1.6;
+  margin-top: 12px;
+}
+
+.auth-aside-points {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 28px;
+}
+.auth-aside-point {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.92);
+}
+.auth-aside-point .dot {
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  flex-shrink: 0;
+  margin-top: 1px;
+  background: rgba(255, 255, 255, 0.22);
+  display: grid;
+  place-items: center;
+  color: #fff;
+}
+
+/* Background photo — sits behind the content, blended into the brand
+   gradient rather than pasted on top. soft-light lets the gradient's
+   color carry through the image; the radial mask fades it out at the
+   edges instead of showing a hard rectangle. */
+.auth-aside-photo {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background-size: cover;
+  background-position: center;
+  opacity: 0.6;
+  mix-blend-mode: soft-light;
+  -webkit-mask-image: radial-gradient(
+    120% 100% at 55% 42%,
+    #000 35%,
+    transparent 88%
+  );
+  mask-image: radial-gradient(120% 100% at 55% 42%, #000 35%, transparent 88%);
+  pointer-events: none;
+}
+
+/* Decorative ECG line, always within view since the aside itself never
+   scrolls. Gradient stroke echoes the primary button treatment. */
+.auth-aside-ecg {
+  position: absolute;
+  z-index: 1;
+  inset: auto -8% 6% -8%;
+  opacity: 0.65;
+  pointer-events: none;
+}
+.auth-aside-ecg path {
+  stroke-dasharray: 6 10;
+  animation: auth-ecg-drift 6s linear infinite;
+}
+@keyframes auth-ecg-drift {
+  to {
+    stroke-dashoffset: -160;
+  }
+}
+
+.auth-aside-footer {
+  position: relative;
+  z-index: 1;
+  font-size: 11.5px;
+  color: rgba(255, 255, 255, 0.78);
+}
+
+/* ---------- Form side ---------- */
+/* Scrolls independently of the static aside. `safe center` keeps short
+   forms centered but lets tall ones (sign-up) scroll from the top
+   instead of clipping above the fold. */
+.auth-formside {
+  height: 100%;
+  overflow-y: auto;
+  display: flex;
+  align-items: center;
+  align-items: safe center;
+  justify-content: center;
+  padding: 40px 28px;
+}
+.auth-card {
+  width: 100%;
+  max-width: 380px;
+}
+.auth-back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--auth-ink-soft);
+  margin-bottom: 18px;
+}
+.auth-back-link:hover {
+  color: var(--auth-secondary);
+  text-decoration: none;
+}
+.auth-card-head {
+  margin-bottom: 26px;
+}
+.auth-card-head h2 {
+  font-size: 22px;
+  font-weight: 800;
+}
+.auth-card-head p {
+  margin: 6px 0 0;
+  color: var(--auth-ink-soft);
+  font-size: 13px;
+}
+
+.auth-mobile-brand {
+  display: none;
+}
+
+.auth-field {
+  margin-bottom: 16px;
+}
+.auth-field label {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.auth-input-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--auth-border);
+  border-radius: 10px;
+  padding: 0 12px;
+  background: #fff;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
+}
+.auth-input-wrap:focus-within {
+  border-color: var(--auth-secondary);
+  box-shadow: 0 0 0 3px rgba(0, 149, 217, 0.12);
+}
+.auth-input-wrap.error {
+  border-color: var(--auth-danger);
+}
+.auth-input-wrap svg {
+  color: var(--auth-ink-faint);
+  flex-shrink: 0;
+}
+.auth-input-wrap input {
+  flex: 1;
+  border: none;
+  outline: none;
+  padding: 11px 0;
+  font-size: 13.5px;
+  font-family: inherit;
+  color: var(--auth-ink);
+  background: transparent;
+  min-width: 0;
+}
+.auth-input-wrap button.toggle-visibility {
+  background: none;
+  border: none;
+  padding: 4px;
+  color: var(--auth-ink-faint);
+  flex-shrink: 0;
+}
+.auth-input-wrap button.toggle-visibility:hover {
+  color: var(--auth-ink-soft);
+}
+
+.auth-field-error {
+  color: var(--auth-danger);
+  font-size: 11.5px;
+  margin-top: 5px;
+}
+.auth-field-hint {
+  color: var(--auth-ink-faint);
+  font-size: 11.5px;
+  margin-top: 5px;
+}
+
+.auth-strength {
+  display: flex;
+  gap: 4px;
+  margin-top: 8px;
+}
+.auth-strength-bar {
+  height: 4px;
+  flex: 1;
+  border-radius: 3px;
+  background: var(--auth-border);
+}
+.auth-strength-bar.filled-1 {
+  background: #e4483c;
+}
+.auth-strength-bar.filled-2 {
+  background: #e7a429;
+}
+.auth-strength-bar.filled-3 {
+  background: #29b0e7;
+}
+.auth-strength-bar.filled-4 {
+  background: var(--auth-success);
+}
+.auth-strength-label {
+  font-size: 11px;
+  color: var(--auth-ink-faint);
+  margin-top: 5px;
+}
+
+.auth-checklist {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.auth-checklist li {
+  font-size: 11.5px;
+  color: var(--auth-ink-faint);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.auth-checklist li.met {
+  color: var(--auth-success);
+}
+
+.auth-row-between {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 18px;
+  font-size: 12.5px;
+}
+.auth-remember {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--auth-ink-soft);
+}
+.auth-remember input {
+  accent-color: var(--auth-secondary);
+}
+
+.auth-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  background: var(--auth-danger-bg);
+  color: var(--auth-danger);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 12.5px;
+  margin-bottom: 16px;
+}
+.auth-alert.success {
+  background: #e8f7f1;
+  color: var(--auth-success);
+}
+
+.auth-submit {
+  width: 100%;
+  border: none;
+  border-radius: 10px;
+  padding: 12px 16px;
+  font-weight: 700;
+  font-size: 13.5px;
+  color: #fff;
+  background: linear-gradient(
+    135deg,
+    var(--auth-primary),
+    var(--auth-secondary)
+  );
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition:
+    filter 0.15s,
+    transform 0.1s;
+}
+.auth-submit:hover:not(:disabled) {
+  filter: brightness(1.05);
+}
+.auth-submit:active:not(:disabled) {
+  transform: translateY(1px);
+}
+.auth-submit:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.auth-switch {
+  text-align: center;
+  font-size: 13px;
+  color: var(--auth-ink-soft);
+  margin-top: 22px;
+}
+.auth-forgot {
+  font-size: 12.5px;
+}
+
+.auth-consent {
+  font-size: 11px;
+  color: var(--auth-ink-faint);
+  line-height: 1.5;
+  margin-top: 16px;
+}
+
+/* ---------- Healthcare preloader ---------- */
+.hp-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+.hp-ring {
+  overflow: visible;
+}
+.hp-track {
+  fill: none;
+  stroke: #eef1f4;
+  stroke-width: 5;
+}
+.hp-arc {
+  fill: none;
+  stroke-width: 5;
+  stroke-linecap: round;
+  stroke-dasharray: 60 172;
+  transform-origin: 44px 44px;
+  animation: hp-spin 1.15s linear infinite;
+}
+.hp-pulse {
+  fill: none;
+  stroke: var(--auth-ink, #16232e);
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 132;
+  stroke-dashoffset: 132;
+  animation: hp-draw 2s ease-in-out infinite;
+}
+@keyframes hp-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes hp-draw {
+  0% {
+    stroke-dashoffset: 132;
+    opacity: 0;
+  }
+  8% {
+    opacity: 1;
+  }
+  55% {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+  100% {
+    stroke-dashoffset: -132;
+    opacity: 0;
+  }
+}
+.hp-label {
+  font-family: "Inter", sans-serif;
+  font-size: 12.5px;
+  color: var(--auth-ink-soft, #5b6b7a);
+  margin: 0;
+}
+.hp-fullscreen {
+  position: fixed;
+  inset: 0;
+  background: #fff;
+  display: grid;
+  place-items: center;
+  z-index: 200;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hp-arc,
+  .hp-pulse,
+  .auth-aside-ecg path {
+    animation: none;
+  }
+}
+
+@media (max-width: 920px) {
+  .auth-root {
+    grid-template-columns: 1fr;
+    height: auto;
+    overflow: visible;
+  }
+  .auth-aside {
+    display: none;
+  }
+  .auth-formside {
+    height: auto;
+    overflow-y: visible;
+  }
+  .auth-mobile-brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    justify-content: center;
+    margin-bottom: 24px;
+  }
+  .auth-mobile-brand strong {
+    display: block;
+    font-size: 14px;
+  }
+  .auth-mobile-brand small {
+    color: var(--auth-ink-soft);
+    font-size: 11px;
+  }
+}

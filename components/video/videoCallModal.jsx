@@ -1,5 +1,19 @@
-import { Mic, MicOff, Video, VideoOff, PhoneOff } from "lucide-react";
+import {
+  Mic,
+  MicOff,
+  Video,
+  VideoOff,
+  PhoneOff,
+  ShieldCheck,
+} from "lucide-react";
 import { useWebRTCCall } from "./useWebRTCCall";
+
+// ASSUMPTION: adjust this import path to wherever src/assets actually
+// sits relative to components/video/VideoCallModal.jsx in your project
+// — same idea as the logo imports already in DoctorDashboard.jsx and
+// the patient Dashboard.jsx. This assumes components/video sits at the
+// same depth as components/doctor, so it copies that file's path.
+import hospitalLogo from "../../src/assets/logo.png";
 
 /**
  * VideoCallModal
@@ -41,12 +55,37 @@ export default function VideoCallModal({ consultationId, role, onClose }) {
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-black">
       <div className="flex items-center justify-between bg-[#12242C] px-4 py-2.5">
-        <div className="flex items-center gap-2 text-xs text-white/70">
-          <span className="inline-block h-2 w-2 rounded-full bg-[#E4483C]" />
-          {status === "connecting" && "Connecting…"}
-          {status === "connected" && "Live consultation · not recorded"}
-          {status === "ended" && "Call ended"}
-          {status === "error" && "Connection problem"}
+        <div className="flex items-center gap-2 min-w-0">
+          <img
+            src={hospitalLogo}
+            alt="Holy Family Catholic Hospital"
+            className="h-6 w-6 shrink-0 rounded-full object-contain"
+          />
+          <span className="truncate text-xs font-medium text-white/90 sm:text-sm">
+            Holy Family Catholic Hospital
+          </span>
+        </div>
+
+        <div className="flex shrink-0 items-center gap-3">
+          {/* True regardless of connection status below — WebRTC's
+              DTLS-SRTP encryption is mandatory by spec and holds even
+              when a call relays through the TURN server, since the
+              relay never holds the decryption keys. */}
+          <div
+            className="hidden items-center gap-1.5 text-xs text-white/70 sm:flex"
+            title="Video and audio are encrypted directly between you and the other participant."
+          >
+            <ShieldCheck size={13} strokeWidth={2} />
+            End-to-end encrypted
+          </div>
+
+          <div className="flex items-center gap-2 text-xs text-white/70">
+            <span className="inline-block h-2 w-2 rounded-full bg-[#E4483C]" />
+            {status === "connecting" && "Connecting…"}
+            {status === "connected" && "Live consultation · not recorded"}
+            {status === "ended" && "Call ended"}
+            {status === "error" && "Connection problem"}
+          </div>
         </div>
       </div>
 

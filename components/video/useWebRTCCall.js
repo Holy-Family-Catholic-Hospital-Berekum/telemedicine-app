@@ -1,34 +1,32 @@
 // useWebRTCCall.js
 import { useEffect, useRef, useState } from "react";
+import { httpsCallable } from "firebase/functions";
+import { functions } from "../../src/firebase";
 import { createOffer, joinCall, teardownCallSignaling } from "./signaling";
 
-// Free STUN servers (Google's, no account needed) handle NAT traversal
-// for most home/office networks.
-//
-// TURN is the fallback used when a direct connection can't be
-// established — this is the common case for mobile data connections,
-// which is exactly your patient-on-phone scenario. The credentials below
-// are the Open Relay Project's public demo TURN server: fine to get you
-// working today, but it's a shared, rate-limited, best-effort free
-// service — NOT something to depend on for real patient consultations.
-// For production, get your own TURN credentials (Metered.ca and Twilio
-// both have small free/cheap tiers, or self-host coturn on the same VPS
-// if you end up self-hosting anything else) and swap them in here.
-const ICE_SERVERS = {
-  iceServers: [
-    { urls: "stun:stun.l.google.com:19302" },
-    {
-      urls: "turn:openrelay.metered.ca:80",
-      username: "openrelayproject",
-      credential: "openrelayproject",
-    },
-    {
-      urls: "turn:openrelay.metered.ca:443",
-      username: "openrelayproject",
-      credential: "openrelayproject",
-    },
-  ],
+// Google's free STUN server. Used both as part of the normal ICE server
+// list and as the fallback if fetching TURN credentials fails — STUN
+// alone still lets most direct connections succeed, so a TURN outage
+// degrades the call rather than blocking it outright.
+const STUN_ONLY_FALLBACK = {
+  iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
 };
+
+// Fetches short-lived TURN credentials from the getTurnCredentials
+// Cloud Function (see functions/getTurnCredentials.js) instead of
+// hardcoding a secret in the frontend. Cloudflare's response already
+// includes their STUN servers too, so this alone is normally a
+// complete ICE server list.
+async function fetchIceServers() {
+  try {
+    const call = httpsCallable(functions, "getTurnCredentials");
+    const result = await call();
+    return { iceServers: result.data.iceServers };
+  } catch (err) {
+    console.warn("Couldn't fetch TURN credentials, falling back to STUN only:", err);
+    return STUN_ONLY_FALLBACK;
+  }
+}
 
 /**
  * useWebRTCCall
@@ -81,7 +79,7 @@ export function useWebRTCCall({ consultationId, role, onEnded }) {
           localVideoRef.current.srcObject = localStream;
         }
 
-        const peerConnection = new RTCPeerConnection(ICE_SERVERS);
+        const peerConnection = new RTCPeerConnection(await fetchIceServers());
         peerConnectionRef.current = peerConnection;
 
         localStream

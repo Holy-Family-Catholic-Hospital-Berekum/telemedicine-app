@@ -1,19 +1,18 @@
-// signaling.firebase.js
+// webrtcSignaling.js
 //
-// Production signaling backend, using Firestore as the message bus
-// between the doctor and patient browsers while a WebRTC connection is
-// negotiated (Firestore is only used to exchange the SDP offer/answer
-// and ICE candidates — once connected, video/audio flows directly
-// between the two browsers, not through Firestore).
+// Signaling for a 1:1 WebRTC call, using Firestore as the message bus
+// between the two browsers (this is the standard pattern from Google's
+// own WebRTC codelab, adapted to fit your existing Firestore project —
+// no extra signaling server to run).
 //
 // One document per call, keyed by consultationId, holding the SDP
 // offer/answer, plus two subcollections for ICE candidates trickling in
 // from each side.
 //
 // ASSUMPTION: adjust this import to wherever your Firestore instance is
-// initialized. If docFirestoreService.js / patientFirestoreService.js
-// already set one up, use that path and delete the firebase.js
-// placeholder in this folder.
+// initialized (the file that calls initializeApp / getFirestore).
+// docFirestoreService.js / patientFirestoreService.js presumably already
+// import it from somewhere similar.
 import { db } from "../../src/firebase";
 import {
   doc,
@@ -23,21 +22,9 @@ import {
   deleteDoc,
   collection,
   addDoc,
-  getDocs,
-  writeBatch,
   onSnapshot,
   serverTimestamp,
-  Timestamp,
 } from "firebase/firestore";
-
-// How long a call document is allowed to live before it's considered
-// abandoned. Paired with a Firestore TTL policy (see firestore.rules.example
-// and the setup note at the bottom of this file) so stale call docs get
-// deleted automatically even if a client crashes before it can call
-// teardownCallSignaling itself — the same "don't keep what you don't
-// need" principle your architecture doc already applies to consultation
-// records (section 4.6).
-const CALL_DOC_TTL_HOURS = 6;
 
 function callDocRef(consultationId) {
   return doc(db, "calls", consultationId);
@@ -61,6 +48,8 @@ export async function createOffer(consultationId, peerConnection, onAnswer) {
   const callDoc = callDocRef(consultationId);
   const offerCandidates = candidatesCollection(consultationId, "offerCandidates");
 
+  // Collect this side's ICE candidates as they trickle in and publish
+  // each one as its own document so the other side can pick them up.
   const unsubscribeIceGathering = watchLocalIceCandidates(
     peerConnection,
     offerCandidates,
@@ -69,19 +58,15 @@ export async function createOffer(consultationId, peerConnection, onAnswer) {
   const offerDescription = await peerConnection.createOffer();
   await peerConnection.setLocalDescription(offerDescription);
 
-  const expiresAt = Timestamp.fromMillis(
-    Date.now() + CALL_DOC_TTL_HOURS * 60 * 60 * 1000,
-  );
-
   await setDoc(callDoc, {
     offer: {
       sdp: offerDescription.sdp,
       type: offerDescription.type,
     },
     createdAt: serverTimestamp(),
-    expiresAt, // used by the Firestore TTL policy, see setup notes below
   });
 
+  // Watch for the patient's answer.
   const unsubscribeAnswer = onSnapshot(callDoc, (snapshot) => {
     const data = snapshot.data();
     if (!peerConnection.currentRemoteDescription && data?.answer) {
@@ -91,6 +76,7 @@ export async function createOffer(consultationId, peerConnection, onAnswer) {
     }
   });
 
+  // Watch for the patient's ICE candidates.
   const answerCandidates = candidatesCollection(consultationId, "answerCandidates");
   const unsubscribeRemoteIce = watchRemoteIceCandidates(
     peerConnection,
@@ -105,9 +91,9 @@ export async function createOffer(consultationId, peerConnection, onAnswer) {
 }
 
 /**
- * Patient side. Waits for the doctor's offer (retrying briefly in case
- * the patient's app loaded a moment before the doctor's "Start call"
- * write landed), then answers it.
+ * Patient side. Waits for the doctor's offer (retrying briefly if the
+ * patient's app loaded a moment before the doctor's "Start call" write
+ * landed), then answers it.
  */
 export async function joinCall(consultationId, peerConnection) {
   const callDoc = callDocRef(consultationId);
@@ -191,30 +177,12 @@ function watchRemoteIceCandidates(peerConnection, candidatesCollectionRef) {
 }
 
 /**
- * Cleans up the call document AND its candidate subcollections. Call
- * this once, from whichever side hangs up last (safe to call twice —
- * the second call just finds nothing left to delete).
- *
- * Deleting the parent "calls/{id}" document alone does NOT delete its
- * offerCandidates/answerCandidates subcollections — Firestore doesn't
- * cascade — so without this, every call would leave orphaned candidate
- * documents behind forever. This is separate from, and in addition to,
- * the section-4.6 erasure of the booking/consultation documents
- * themselves.
+ * Cleans up the call document and its candidate subcollections. Call
+ * this once, from whichever side hangs up last (or both — it's safe to
+ * call twice), so stale signaling data doesn't pile up in Firestore.
+ * This is separate from and in addition to the section-4.6 erasure of
+ * booking/consultation documents — this only removes WebRTC plumbing.
  */
 export async function teardownCallSignaling(consultationId) {
-  const batch = writeBatch(db);
-
-  for (const side of ["offerCandidates", "answerCandidates"]) {
-    const snapshot = await getDocs(candidatesCollection(consultationId, side));
-    snapshot.forEach((candidateDoc) => batch.delete(candidateDoc.ref));
-  }
-
-  batch.delete(callDocRef(consultationId));
-
-  await batch.commit().catch(() => {
-    // If this fails (e.g. the client lost connectivity mid-hangup), the
-    // Firestore TTL policy on `expiresAt` is the backstop that still
-    // cleans this up within CALL_DOC_TTL_HOURS.
-  });
+  await deleteDoc(callDocRef(consultationId)).catch(() => {});
 }

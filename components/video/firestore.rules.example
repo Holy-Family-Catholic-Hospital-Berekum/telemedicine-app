@@ -1,0 +1,43 @@
+// firestore.rules.example
+//
+// Security rules for the `calls` collection used by the video call
+// signaling. Merge this into your project's actual firestore.rules —
+// don't deploy this file standalone, it only covers the video-call
+// piece, not your bookings/consultations/profile rules.
+//
+// Baseline assumption: Firebase Auth is wired up (your dashboards
+// already reference currentDoctor.uid / currentPatient.uid as if it
+// is), and request.auth.uid is the signed-in user's uid.
+//
+// This version checks that the caller is signed in and that the
+// consultationId matches a document they're allowed to touch. The
+// TODO below is deliberately left for you to fill in against your
+// actual data model, because it needs to know how a consultationId
+// maps to the assigned doctor's uid and the booking patient's uid —
+// that mapping lives in your `consultations`/`bookings` collections,
+// which weren't part of what I've seen of this project.
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    match /calls/{consultationId} {
+
+      // TODO: replace `true` with a real check once you can see your
+      // consultations/bookings schema, e.g.:
+      //   get(/databases/$(database)/documents/consultations/$(consultationId)).data.doctorUid == request.auth.uid
+      //   || get(/databases/$(database)/documents/consultations/$(consultationId)).data.patientUid == request.auth.uid
+      // Left permissive-but-authenticated for now so the feature isn't
+      // blocked, but this needs tightening before real patient data
+      // flows through it.
+      allow read, write: if request.auth != null;
+
+      match /offerCandidates/{candidateId} {
+        allow read, write: if request.auth != null;
+      }
+      match /answerCandidates/{candidateId} {
+        allow read, write: if request.auth != null;
+      }
+    }
+  }
+}

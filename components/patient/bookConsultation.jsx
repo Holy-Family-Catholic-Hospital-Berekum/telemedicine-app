@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Link } from "react-router-dom";
+import { useState, useRef, useEffect } from "react";
+import { Link, useNavigate } from "react-router-dom";
 
 // ASSUMPTION: adjust these two import paths to match your actual shared
 // header/footer components — I don't have their real location, so this
@@ -7,6 +7,8 @@ import { Link } from "react-router-dom";
 // (e.g. "../components/layout/Header"), just update these two lines.
 import Header from "../shared/header";
 import Footer from "../shared/footer";
+// Fixed, auto-slideshow brand panel — see BrandAside.jsx.
+import BrandAside from "../shared/brandAside";
 
 /**
  * bookConsultation.jsx
@@ -15,47 +17,88 @@ import Footer from "../shared/footer";
  * architecture, accounts are created before booking) — wrap this route in
  * whatever auth guard / protected route pattern the rest of the app uses.
  *
- * Uses Header with variant="minimal" (logo + a "Cancel" link back to "/"),
- * not the full site header — this is a focused task flow, and the full
- * header's nav/sign-in/book items would just be noise here. This also
- * matters functionally: the "full" header is `position: fixed` and needs
- * a page to add top padding to clear it (see Home.jsx). The "minimal"
- * header is `sticky` instead, so it takes its own space in the layout and
- * needs no such padding — using it here is what fixes the header
- * previously overlapping the top of this page.
+ * ── PAYMENT MODEL ────────────────────────────────────────────────────
+ * Payment is collected ONLINE through Flutterwave (mobile money), which
+ * settles straight into the hospital's MoMo account. There is no manual
+ * "send us the money and paste your transaction ID" step any more.
  *
- * Backend integration points are marked MOCK below. Swap createBookingDraft
- * and submitPaymentProof for real calls to your Cloud Functions, e.g.:
+ * The rule the UI enforces: a booking is only ever created/confirmed
+ * once OUR SERVER says the payment is confirmed. The client never
+ * decides this. Flutterwave's browser-side callback is treated purely as
+ * a hint that the charge finished — it is not proof. The server calls
+ * Flutterwave's verify endpoint (and/or trusts the webhook) and returns
+ * the verdict, and only a "confirmed" verdict advances the patient to
+ * the success step. A "pending" verdict parks them on a waiting state
+ * with a "Check payment status" retry; a "failed" verdict keeps them on
+ * the payment step so they can try again. In no branch does the patient
+ * get a booking without a server-confirmed payment.
+ *
+ * Every backend/payment call below is a PLACEHOLDER (search "PLACEHOLDER").
+ * Replace them with your real Cloud Functions, e.g.:
  *   import { getFunctions, httpsCallable } from "firebase/functions";
- *   const createBookingDraft = httpsCallable(getFunctions(), "createBookingDraft");
+ *   const fns = getFunctions();
+ *   const createBookingDraft   = httpsCallable(fns, "createBookingDraft");
+ *   const initializePayment    = httpsCallable(fns, "initializeFlutterwavePayment");
+ *   const verifyPayment        = httpsCallable(fns, "verifyFlutterwavePayment");
+ * and swap openFlutterwaveCheckout for the real Flutterwave inline
+ * checkout (FlutterwaveCheckout / useFlutterwave) or a redirect to the
+ * hosted payment link the server returns.
+ *
+ * ── ERROR VISIBILITY ─────────────────────────────────────────────────
+ * Errors used to render once, at the very top of the page, so a patient
+ * who had scrolled down to the submit button saw nothing happen. Now:
+ *   1. The error renders directly above the button that triggered it —
+ *      i.e. where the patient is already looking.
+ *   2. On every new error the banner is scrolled into view and focused,
+ *      so it's visible and announced even in edge cases (long forms,
+ *      small viewports). See `errorRef` + the effect below. Note the
+ *      scroll container is the right-hand column, not the window —
+ *      scrollIntoView handles that automatically.
+ *   3. It's role="alert" + aria-live="assertive" and focusable
+ *      (tabIndex -1), so screen readers announce it immediately.
+ * Errors are stored as { message, id }; the id increments on every
+ * setError so re-submitting with the same mistake re-triggers the
+ * scroll/announce instead of silently doing nothing.
+ *
+ * ── LAYOUT ───────────────────────────────────────────────────────────
+ * BrandAside is `position: fixed` (see that file), so it never scrolls.
+ * Header, by contrast, is `sticky top-0` (see header.jsx) and is
+ * rendered *inside* this page's own scrollable column — that's what
+ * makes "sticky" work: it scrolls with the column until it hits the top,
+ * then sticks there, rather than floating over content from outside it.
+ * That means only one thing has to line up:
+ *   - This page's right-hand column is pushed right by exactly the
+ *     aside's width (`lg:ml-[340px] xl:ml-[380px]`), so content never
+ *     sits under the fixed aside.
+ * No manual header-height offset is needed anywhere else on the page.
+ *
+ * Uses Header with variant="minimal" — a focused-task header (logo, a
+ * "Back to home" link, and Sign out when logged in). Header reads real
+ * auth state internally (Firebase's onAuthStateChanged) and handles its
+ * own sign-out, so this page doesn't manage that state itself.
  *
  * Placeholder values to update before shipping:
  * - CONSULTATION_FEES amounts
- * - MOMO_NUMBER / MOMO_NAME
+ * - FLUTTERWAVE_PUBLIC_KEY (keep the SECRET key server-side only)
  *
- * Defaults: General OPD + Online are pre-selected on step 0, since that's
- * the most common path through this flow. Patients can still switch to
- * Surgical and/or In person before continuing.
+ * Defaults: General OPD + Online are pre-selected on step 0, since
+ * that's the most common path through this flow.
  *
- * Payment reference vs. transaction ID — these are two different codes:
- * - referenceCode: generated by US (booking.referenceCode). We tell the
- *   patient to put it in the MoMo transfer note, so our team can match an
- *   incoming transfer to this specific booking.
- * - momoTransactionId: generated by the MOBILE NETWORK, not by us. It
- *   arrives in the SMS the patient receives after sending the money. We
- *   ask them to copy it from that SMS in step 2, as a second, independent
- *   way to verify the same payment.
- * The amount field in step 2 is prepopulated with the expected fee (set
- * as soon as the booking draft is created) but stays editable, in case
- * the patient actually sent a different amount.
+ * Reference code: generated by US (booking.referenceCode) when the draft
+ * is created. It's what the patient quotes to our staff, and it's also
+ * what we send to Flutterwave as the transaction reference (tx_ref), so
+ * one code ties the patient, the booking and the payment together.
  *
- * Back navigation: steps 1 and 2 show a "Back" arrow to the previous step.
- * It only changes which step is showing — form values already entered
- * (dates, phone, MoMo name, transaction ID, amount) stay in state, so
- * going back and forward again doesn't lose anything the patient typed.
- * Step 0 has nothing to go back to (the header's Cancel link covers
- * leaving the flow entirely), and step 3 is a completed state, not
- * something to undo.
+ * Back navigation: step 1 shows a "Back" arrow to step 0. Form values
+ * already entered stay in state, so going back and forward doesn't lose
+ * anything typed. Back is hidden while a payment is in flight or
+ * awaiting confirmation, so a patient can't wander off mid-charge. Step
+ * 2 is a completed state, not something to undo.
+ *
+ * PALETTE: three colors only — brand orange (#F88535), brand blue
+ * (#0095D9), white. Body text and hairline borders use plain black at
+ * reduced opacity (a neutral, not a fourth brand color). The error
+ * banner stays in the orange family rather than introducing red.
  */
 
 const CONSULTATION_FEES = {
@@ -63,54 +106,100 @@ const CONSULTATION_FEES = {
   SURGICAL: 100,
 };
 
-const MOMO_NUMBER = "024 000 0000";
-const MOMO_NAME = "Holy Family Catholic Hospital";
+const CURRENCY = "GHS";
 
-const STEP_LABELS = ["Consultation", "Payment", "Confirm payment", "Done"];
+// PLACEHOLDER: your Flutterwave public key (safe for the browser).
+// The secret key must never appear in client code — verification happens
+// server-side.
+const FLUTTERWAVE_PUBLIC_KEY = "FLWPUBK_TEST-XXXXXXXXXXXXXXXXXXXXXXXX-X";
 
-// ---- MOCK backend calls, replace with real Cloud Function calls ----
+const STEP_LABELS = ["Consultation", "Payment", "Confirmation"];
+
+/* ===================================================================
+   PLACEHOLDER BACKEND + PAYMENT CALLS
+   Replace each of these with a real call. The shapes they resolve with
+   are what the UI below expects, so keeping the same shape means the
+   rest of this file doesn't change.
+   =================================================================== */
+
+// PLACEHOLDER: create an unpaid booking draft and reserve a reference
+// code. Nothing is bookable yet — the draft exists so the payment has
+// something to attach to.
+// Real: httpsCallable(fns, "createBookingDraft")({ ... })
 function createBookingDraft({ type, mode, dateOfBirth, sex, location, phone }) {
   return new Promise((resolve) => {
     setTimeout(() => {
       const code =
         "HFH-" + Math.random().toString(36).slice(2, 8).toUpperCase();
-      resolve({ bookingId: "draft_" + Date.now(), referenceCode: code });
+      resolve({
+        bookingId: "draft_" + Date.now(),
+        referenceCode: code,
+        amount: CONSULTATION_FEES[type],
+        currency: CURRENCY,
+      });
     }, 700);
   });
 }
 
-function submitPaymentProof({
-  bookingId,
-  momoName,
-  momoReference,
-  momoTransactionId,
-  amountPaid,
-}) {
-  return new Promise((resolve, reject) => {
+// PLACEHOLDER: ask our server to start a Flutterwave transaction for
+// this draft. The SERVER decides the amount (never trust an amount sent
+// up from the browser) and returns what checkout needs.
+// Real: httpsCallable(fns, "initializeFlutterwavePayment")({ bookingId })
+function initializePayment({ bookingId, referenceCode }) {
+  return new Promise((resolve) => {
     setTimeout(() => {
-      if (!momoReference.trim()) {
-        reject(
-          new Error("Missing reference code — please go back and try again."),
-        );
-        return;
-      }
-      if (!momoTransactionId.trim()) {
-        reject(
-          new Error(
-            "Enter the Transaction ID from your mobile money confirmation SMS.",
-          ),
-        );
-        return;
-      }
-      resolve({ status: "pending_review" });
-    }, 700);
+      resolve({
+        txRef: referenceCode,
+        // Hosted-link flow returns something like this; inline checkout
+        // returns nothing and you use the public key + tx_ref directly.
+        paymentLink:
+          "https://checkout.flutterwave.com/v3/hosted/pay/PLACEHOLDER",
+      });
+    }, 600);
   });
 }
-// ---------------------------------------------------------------------
+
+// PLACEHOLDER: open Flutterwave checkout and resolve when it closes.
+// Real (inline): call window.FlutterwaveCheckout({ public_key:
+//   FLUTTERWAVE_PUBLIC_KEY, tx_ref, amount, currency, payment_options:
+//   "mobilemoneyghana", customer: { phone_number, email, name },
+//   customizations: { title: "Holy Family Catholic Hospital" },
+//   callback: (res) => resolve(res), onclose: () => resolve({ status:
+//   "cancelled" }) })
+// Real (hosted): window.location.href = paymentLink and handle the
+//   redirect back on a /payment/return route.
+// NOTE: whatever this resolves with is only a HINT. verifyPayment is
+// the source of truth.
+function openFlutterwaveCheckout({ txRef, amount, currency, phone }) {
+  return new Promise((resolve) => {
+    setTimeout(() => {
+      resolve({ status: "successful", transactionId: "FLW_" + Date.now() });
+    }, 1600);
+  });
+}
+
+// PLACEHOLDER: server-side verification. This is the ONLY thing that may
+// confirm a booking. It should re-check the amount and currency against
+// the draft and flip the booking to "confirmed" itself.
+// Real: httpsCallable(fns, "verifyFlutterwavePayment")({ bookingId, txRef, transactionId })
+// Expected: { status: "confirmed" | "pending" | "failed",
+//             consultationId?, message? }
+function verifyPayment({ bookingId, txRef, transactionId }) {
+  return new Promise((resolve) => {
+    setTimeout(() => {
+      resolve({
+        status: "confirmed",
+        consultationId: "HFH-C" + Math.floor(1000 + Math.random() * 9000),
+      });
+    }, 1200);
+  });
+}
+
+/* =================================================================== */
 
 // Small inline copy-to-clipboard button. Falls back silently if the
 // clipboard API isn't available (e.g. non-HTTPS preview environments).
-function CopyButton({ value }) {
+function CopyButton({ value, label = "reference code" }) {
   const [copied, setCopied] = useState(false);
 
   async function handleCopy() {
@@ -127,9 +216,9 @@ function CopyButton({ value }) {
     <button
       type="button"
       onClick={handleCopy}
-      aria-label={copied ? "Copied" : "Copy reference code"}
-      className="inline-flex items-center gap-1 rounded-full border border-[#14213833] px-2.5 py-1 text-[13px] font-medium text-[#142138e6]
-                 hover:border-[var(--ink)] hover:text-[var(--ink)] transition shrink-0"
+      aria-label={copied ? "Copied" : "Copy " + label}
+      className="inline-flex items-center gap-1 rounded-full border border-black/20 px-2.5 py-1 text-[13px] font-medium text-black/70
+                 hover:border-[#0095D9] hover:text-[#0095D9] transition shrink-0"
     >
       {copied ? (
         <>
@@ -170,16 +259,17 @@ function CopyButton({ value }) {
   );
 }
 
-// Back arrow used between steps. Only steps 1 and 2 render this — see the
-// note in the file docblock on why 0 and 3 don't.
+// Back arrow between steps. Only step 1 renders this — step 0 has
+// nothing behind it (the header's "Back to home" covers leaving), and
+// step 2 is a completed state.
 function BackButton({ onClick, children = "Back" }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="inline-flex items-center gap-1.5 mb-6 text-[15px] font-medium text-[#142138b8]
-                 hover:text-[var(--ink)] transition-colors
-                 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ink)] rounded"
+      className="inline-flex items-center gap-1.5 mb-6 text-[15px] font-medium text-black/60
+                 hover:text-[#0095D9] transition-colors
+                 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0095D9] rounded"
     >
       <svg
         width="16"
@@ -201,60 +291,156 @@ function BackButton({ onClick, children = "Back" }) {
   );
 }
 
+/**
+ * The error banner. Rendered *next to the control that failed*, not at
+ * the top of the page — that was the whole problem. It takes the ref so
+ * the page can scroll it into view and focus it (see the effect in
+ * BookConsultation).
+ */
+function ErrorMessage({ error, innerRef }) {
+  if (!error) return null;
+  return (
+    <div
+      ref={innerRef}
+      role="alert"
+      aria-live="assertive"
+      tabIndex={-1}
+      className="mb-5 flex items-start gap-3 rounded-xl bg-[#F88535]/10 border border-[#F88535]/40 text-[#A85420] text-[15px] px-4 py-3
+                 scroll-mt-24 focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F88535]"
+    >
+      <svg
+        width="18"
+        height="18"
+        viewBox="0 0 20 20"
+        fill="none"
+        aria-hidden="true"
+        className="mt-0.5 shrink-0"
+      >
+        <circle cx="10" cy="10" r="8" stroke="currentColor" strokeWidth="1.6" />
+        <path
+          d="M10 6v5"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+        />
+        <circle cx="10" cy="14" r="1" fill="currentColor" />
+      </svg>
+      <span>{error.message}</span>
+    </div>
+  );
+}
+
+// Small spinner for in-flight payment states.
+function Spinner() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 20 20"
+      fill="none"
+      aria-hidden="true"
+      className="motion-safe:animate-spin"
+    >
+      <circle
+        cx="10"
+        cy="10"
+        r="7.5"
+        stroke="currentColor"
+        strokeOpacity="0.3"
+        strokeWidth="2"
+      />
+      <path
+        d="M17.5 10A7.5 7.5 0 0 0 10 2.5"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
 export default function BookConsultation() {
-  // MOCK — booking is currently designed as a signed-in flow.
-  // Replace this with the real auth state when authentication is wired up.
-  const [isLoggedIn] = useState(true);
+  const navigate = useNavigate();
+
   const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
 
-  // Pre-selected: General OPD + Online, the most common path. Patients can
-  // still change either before continuing.
+  // { message, id } — the id makes repeated identical errors re-announce.
+  const [error, setError] = useState(null);
+  const errorRef = useRef(null);
+  const errorId = useRef(0);
+
+  function showError(message) {
+    errorId.current += 1;
+    setError({ message, id: errorId.current });
+  }
+  function clearError() {
+    setError(null);
+  }
+
+  // Scroll the error into view and focus it whenever a new one appears.
+  // This is what stops an error from sitting silently above the fold.
+  useEffect(() => {
+    if (!error) return;
+    const node = errorRef.current;
+    if (!node) return;
+    node.scrollIntoView({
+      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+        ? "auto"
+        : "smooth",
+      block: "center",
+    });
+    node.focus({ preventScroll: true });
+  }, [error]);
+
+  // Pre-selected: General OPD + Online, the most common path.
   const [type, setType] = useState("OPD"); // "OPD" | "SURGICAL"
   const [mode, setMode] = useState("online"); // "online" | "offline"
   const [dateOfBirth, setDateOfBirth] = useState("");
   const [sex, setSex] = useState("");
   const [location, setLocation] = useState("");
-  // Patient details collected during booking.
-  // Current fields: date of birth, sex, location, and phone number.
   const [phone, setPhone] = useState("");
 
-  const [booking, setBooking] = useState(null); // { bookingId, referenceCode }
+  // { bookingId, referenceCode, amount, currency }
+  const [booking, setBooking] = useState(null);
 
-  const [momoName, setMomoName] = useState("");
-  const [momoTransactionId, setMomoTransactionId] = useState("");
-  const [amountPaid, setAmountPaid] = useState("");
+  // "idle" | "starting" | "checkout" | "verifying" | "pending" | "confirmed"
+  const [paymentState, setPaymentState] = useState("idle");
+  const [payment, setPayment] = useState(null); // { txRef, transactionId, consultationId }
 
-  const fee = type ? CONSULTATION_FEES[type] : null;
+  const fee = booking?.amount ?? CONSULTATION_FEES[type];
+  const paying =
+    paymentState === "starting" ||
+    paymentState === "checkout" ||
+    paymentState === "verifying";
 
   function goToStep(n) {
-    setError("");
+    clearError();
     setStep(n);
   }
 
   async function handleContinueFromDetails() {
     if (!type || !mode) {
-      setError("Choose a consultation type and a mode to continue.");
+      showError("Choose a consultation type and a mode to continue.");
       return;
     }
     if (!dateOfBirth) {
-      setError("Enter your date of birth to continue.");
+      showError("Enter your date of birth to continue.");
       return;
     }
     if (!sex) {
-      setError("Select your sex to continue.");
+      showError("Select your sex to continue.");
       return;
     }
     if (!location.trim()) {
-      setError("Enter your location to continue.");
+      showError("Enter your location to continue.");
       return;
     }
     if (!phone.trim()) {
-      setError("Enter a phone number (WhatsApp preferred) to continue.");
+      showError("Enter a phone number (WhatsApp preferred) to continue.");
       return;
     }
-    setError("");
+    clearError();
     setLoading(true);
     try {
       const result = await createBookingDraft({
@@ -266,38 +452,120 @@ export default function BookConsultation() {
         phone,
       });
       setBooking(result);
-      // Prepopulate the amount with the expected fee for the chosen
-      // consultation type — the patient can still correct it in step 2 if
-      // they actually sent a different amount.
-      setAmountPaid(String(CONSULTATION_FEES[type]));
+      setPaymentState("idle");
       setStep(1);
     } catch (e) {
-      setError("Something went wrong creating your booking. Please try again.");
+      showError(
+        "We couldn't set up your booking. Check your connection and try again.",
+      );
     } finally {
       setLoading(false);
     }
   }
 
-  async function handleSubmitProof(e) {
-    e.preventDefault();
-    setError("");
-    setLoading(true);
+  /**
+   * The whole payment path: start the transaction, open checkout, then
+   * hand the result to the server to verify. The patient only reaches
+   * step 2 on a server-confirmed payment.
+   */
+  async function handlePay() {
+    clearError();
+    setPaymentState("starting");
     try {
-      await submitPaymentProof({
+      const session = await initializePayment({
         bookingId: booking.bookingId,
-        momoName,
-        momoReference: booking.referenceCode,
-        momoTransactionId,
-        amountPaid,
+        referenceCode: booking.referenceCode,
       });
-      setStep(3);
-    } catch (e) {
-      setError(
-        e.message ||
-          "Could not submit your payment details. Please check and try again.",
+
+      setPaymentState("checkout");
+      const result = await openFlutterwaveCheckout({
+        txRef: session.txRef,
+        amount: booking.amount,
+        currency: booking.currency,
+        phone,
+        publicKey: FLUTTERWAVE_PUBLIC_KEY,
+      });
+
+      if (result.status === "cancelled") {
+        setPaymentState("idle");
+        showError(
+          "Payment was cancelled. Your booking isn't confirmed yet — you can start the payment again below.",
+        );
+        return;
+      }
+
+      // Client-side result is only a hint. Ask the server.
+      setPaymentState("verifying");
+      const verdict = await verifyPayment({
+        bookingId: booking.bookingId,
+        txRef: session.txRef,
+        transactionId: result.transactionId,
+      });
+
+      setPayment({
+        txRef: session.txRef,
+        transactionId: result.transactionId,
+        consultationId: verdict.consultationId,
+      });
+
+      if (verdict.status === "confirmed") {
+        setPaymentState("confirmed");
+        setStep(2);
+        return;
+      }
+      if (verdict.status === "pending") {
+        setPaymentState("pending");
+        return;
+      }
+
+      setPaymentState("idle");
+      showError(
+        verdict.message ||
+          "Your payment didn't go through, so no booking was made. Nothing was charged — try again below.",
       );
-    } finally {
-      setLoading(false);
+    } catch (e) {
+      setPaymentState("idle");
+      showError(
+        "We couldn't reach the payment service. Your booking isn't confirmed — please try again.",
+      );
+    }
+  }
+
+  /**
+   * Re-check a payment that the network hasn't settled yet. Same rule:
+   * only a server "confirmed" advances the patient.
+   */
+  async function handleCheckPaymentStatus() {
+    clearError();
+    setPaymentState("verifying");
+    try {
+      const verdict = await verifyPayment({
+        bookingId: booking.bookingId,
+        txRef: payment?.txRef ?? booking.referenceCode,
+        transactionId: payment?.transactionId,
+      });
+
+      if (verdict.status === "confirmed") {
+        setPayment((p) => ({ ...p, consultationId: verdict.consultationId }));
+        setPaymentState("confirmed");
+        setStep(2);
+        return;
+      }
+      if (verdict.status === "pending") {
+        setPaymentState("pending");
+        showError(
+          "Your payment still hasn't been confirmed by the network. Give it a moment, then check again.",
+        );
+        return;
+      }
+      setPaymentState("idle");
+      showError(
+        verdict.message ||
+          "That payment didn't complete, so no booking was made. You can start it again below.",
+      );
+    } catch (e) {
+      setPaymentState("pending");
+      showError("We couldn't check your payment just now. Try again shortly.");
     }
   }
 
@@ -310,17 +578,24 @@ export default function BookConsultation() {
     setLocation("");
     setPhone("");
     setBooking(null);
-    setMomoName("");
-    setMomoTransactionId("");
-    setAmountPaid("");
-    setError("");
+    setPayment(null);
+    setPaymentState("idle");
+    clearError();
   }
 
+  const payButtonLabel = {
+    idle: `Pay ${CURRENCY} ${fee} with mobile money`,
+    starting: "Starting secure payment…",
+    checkout: "Waiting for your payment…",
+    verifying: "Confirming your payment…",
+    pending: "Confirming your payment…",
+    confirmed: "Payment confirmed",
+  }[paymentState];
+
   return (
-    <div className="font-body text-[#142138] bg-white min-h-screen overflow-x-hidden flex flex-col">
+    <div className="font-body text-black bg-white min-h-screen overflow-x-hidden">
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600;700&display=swap');
-        :root { --brand-orange:#F88535; --ink:#142138; --teal:#1F7A6C; --tint:#FFF4EA; }
         .font-display { font-family: 'Fraunces', serif; }
         .font-body { font-family: 'Inter', sans-serif; }
         @keyframes stepIn {
@@ -329,510 +604,507 @@ export default function BookConsultation() {
         }
       `}</style>
 
-      <Header
-        variant="minimal"
-        cancelHref="/"
-        cancelLabel="Cancel"
-        isLoggedIn={isLoggedIn}
+      <BrandAside
+        heading={step === 2 ? "You're all set." : "Booking made simple."}
+        body="Pick a consultation type, pay securely by mobile money, and our team confirms your appointment directly with you."
+        points={[
+          "General OPD or surgical consultation",
+          "Pay by MoMo in a few taps, confirmed instantly",
+          "Appointment shared by phone or WhatsApp",
+        ]}
       />
 
-      <main className="mx-auto max-w-3xl px-5 sm:px-8 py-10 sm:py-14 flex-1 w-full">
-        {/* ---------- Step indicator ---------- */}
-        <ol className="flex items-center gap-2 sm:gap-3 mb-3 sm:mb-12">
-          {STEP_LABELS.map((label, i) => (
-            <li key={label} className="flex items-center flex-1 last:flex-none">
-              <div className="flex items-center gap-2 sm:gap-2.5">
-                <span
-                  className={
-                    "flex items-center justify-center h-7 w-7 sm:h-8 sm:w-8 rounded-full text-[14px] font-medium shrink-0 " +
-                    (i < step
-                      ? "bg-[var(--teal)] text-white"
-                      : i === step
-                        ? "bg-[var(--brand-orange)] text-white"
-                        : "bg-[#1421381f] text-[#142138b8]")
-                  }
+      {/* Right-hand column: pushed clear of the fixed aside, and the
+          scroll container for the sticky header. Needs `h-screen`, not
+          `min-h-screen` — see the original note: min-h lets the div grow
+          past the viewport so it never scrolls itself, which breaks the
+          sticky header. */}
+      <div className="lg:ml-[340px] xl:ml-[380px] h-screen flex flex-col overflow-y-auto">
+        <Header variant="minimal" cancelHref="/" cancelLabel="Back to home" />
+
+        <div className="flex-1">
+          {/* Page header band, carrying the current step name. */}
+          <div
+            className="text-white"
+            style={{
+              background: "linear-gradient(100deg, #F88535 0%, #0095D9 100%)",
+            }}
+          >
+            <div className="mx-auto max-w-3xl px-5 sm:px-8 py-6 sm:py-8">
+              <p className="text-[12.5px] font-medium uppercase tracking-wide text-white/70">
+                Book a consultation
+              </p>
+              <h1 className="mt-1 font-display text-[24px] sm:text-[28px] font-medium">
+                {STEP_LABELS[step]}
+              </h1>
+            </div>
+          </div>
+
+          <main className="mx-auto max-w-3xl px-5 sm:px-8 py-8 sm:py-12 w-full">
+            {/* ---------- Step indicator ---------- */}
+            <ol className="flex items-center gap-2 sm:gap-3 mb-3 sm:mb-12">
+              {STEP_LABELS.map((label, i) => (
+                <li
+                  key={label}
+                  className="flex items-center flex-1 last:flex-none"
                 >
-                  {i < step ? (
-                    <svg width="13" height="13" viewBox="0 0 20 20" fill="none">
+                  <div className="flex items-center gap-2 sm:gap-2.5">
+                    <span
+                      className={
+                        "flex items-center justify-center h-7 w-7 sm:h-8 sm:w-8 rounded-full text-[14px] font-medium shrink-0 " +
+                        (i < step
+                          ? "bg-[#0095D9] text-white"
+                          : i === step
+                            ? "bg-[#F88535] text-white"
+                            : "bg-black/10 text-black/60")
+                      }
+                    >
+                      {i < step ? (
+                        <svg
+                          width="13"
+                          height="13"
+                          viewBox="0 0 20 20"
+                          fill="none"
+                        >
+                          <path
+                            d="M4 10l4 4l8-8"
+                            stroke="white"
+                            strokeWidth="2.4"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                      ) : (
+                        i + 1
+                      )}
+                    </span>
+                    <span
+                      className={
+                        "hidden sm:inline text-[14px] " +
+                        (i === step
+                          ? "text-black font-medium"
+                          : "text-black/60")
+                      }
+                    >
+                      {label}
+                    </span>
+                  </div>
+                  {i < STEP_LABELS.length - 1 && (
+                    <span className="flex-1 h-px bg-black/10 mx-2 sm:mx-3" />
+                  )}
+                </li>
+              ))}
+            </ol>
+            {/* Mobile equivalent of the desktop step labels. */}
+            <p className="sm:hidden mb-9 text-[14px] text-black/60">
+              Step {step + 1} of {STEP_LABELS.length} — {STEP_LABELS[step]}
+            </p>
+
+            <div
+              key={step}
+              className="motion-safe:[animation:stepIn_0.35s_ease-out_both]"
+            >
+              {/* ---------- Step 0: consultation details ---------- */}
+              {step === 0 && (
+                <section>
+                  <h2 className="font-display text-[22px] sm:text-[24px] font-medium">
+                    What kind of consultation do you need?
+                  </h2>
+                  <p className="mt-2 text-[16px] text-black/80">
+                    You'll pay on the next step, and choose a doctor and time
+                    once your payment is confirmed.
+                  </p>
+
+                  <fieldset className="mt-8">
+                    <legend className="text-[15px] font-medium mb-3">
+                      Consultation type
+                    </legend>
+                    <div className="grid sm:grid-cols-2 gap-3">
+                      {[
+                        {
+                          key: "OPD",
+                          title: "General OPD",
+                          desc: "Everyday health concerns and check-ups.",
+                        },
+                        {
+                          key: "SURGICAL",
+                          title: "Surgical",
+                          desc: "Pre- or post-surgery consultations.",
+                        },
+                      ].map((opt) => (
+                        <button
+                          key={opt.key}
+                          type="button"
+                          onClick={() => setType(opt.key)}
+                          aria-pressed={type === opt.key}
+                          className={
+                            "text-left rounded-2xl p-5 border-2 transition-colors " +
+                            (type === opt.key
+                              ? "border-[#F88535] bg-[#F88535]/10"
+                              : "border-black/10 hover:border-black/30")
+                          }
+                        >
+                          <span className="block font-medium text-[16px]">
+                            {opt.title}
+                          </span>
+                          <span className="block mt-1 text-[14px] text-black/80">
+                            {opt.desc}
+                          </span>
+                          <span className="block mt-3 text-[14px] font-medium text-[#F88535]">
+                            {CURRENCY} {CONSULTATION_FEES[opt.key]}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </fieldset>
+
+                  <fieldset className="mt-8">
+                    <legend className="text-[15px] font-medium mb-3">
+                      Mode
+                    </legend>
+                    <div className="grid sm:grid-cols-2 gap-3">
+                      {[
+                        {
+                          key: "online",
+                          title: "Online",
+                          desc: "Video consultation from your phone or computer.",
+                        },
+                        {
+                          key: "offline",
+                          title: "In person",
+                          desc: "Visit the hospital for your appointment.",
+                        },
+                      ].map((opt) => (
+                        <button
+                          key={opt.key}
+                          type="button"
+                          onClick={() => setMode(opt.key)}
+                          aria-pressed={mode === opt.key}
+                          className={
+                            "text-left rounded-2xl p-5 border-2 transition-colors " +
+                            (mode === opt.key
+                              ? "border-[#F88535] bg-[#F88535]/10"
+                              : "border-black/10 hover:border-black/30")
+                          }
+                        >
+                          <span className="block font-medium text-[16px]">
+                            {opt.title}
+                          </span>
+                          <span className="block mt-1 text-[14px] text-black/80">
+                            {opt.desc}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </fieldset>
+
+                  <fieldset className="mt-8">
+                    <legend className="text-[15px] font-medium mb-3">
+                      Your details
+                    </legend>
+                    <div className="grid sm:grid-cols-2 gap-4">
+                      <div>
+                        <label
+                          htmlFor="dateOfBirth"
+                          className="block text-[15px] font-medium mb-1.5"
+                        >
+                          Date of birth
+                        </label>
+                        <input
+                          id="dateOfBirth"
+                          type="date"
+                          required
+                          value={dateOfBirth}
+                          onChange={(e) => setDateOfBirth(e.target.value)}
+                          className="w-full rounded-xl border border-black/20 px-4 py-3 text-[16px]
+                                     focus:outline-none focus:border-[#F88535] focus:ring-1 focus:ring-[#F88535]"
+                        />
+                      </div>
+
+                      <div>
+                        <label
+                          htmlFor="sex"
+                          className="block text-[15px] font-medium mb-1.5"
+                        >
+                          Sex
+                        </label>
+                        <select
+                          id="sex"
+                          required
+                          value={sex}
+                          onChange={(e) => setSex(e.target.value)}
+                          className="w-full rounded-xl border border-black/20 bg-white px-4 py-3 text-[16px]
+                                     focus:outline-none focus:border-[#F88535] focus:ring-1 focus:ring-[#F88535]"
+                        >
+                          <option value="" disabled>
+                            Select sex
+                          </option>
+                          <option value="female">Female</option>
+                          <option value="male">Male</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label
+                          htmlFor="location"
+                          className="block text-[15px] font-medium mb-1.5"
+                        >
+                          Location
+                        </label>
+                        <input
+                          id="location"
+                          type="text"
+                          required
+                          value={location}
+                          onChange={(e) => setLocation(e.target.value)}
+                          placeholder="e.g. Berekum, Kato"
+                          className="w-full rounded-xl border border-black/20 px-4 py-3 text-[16px]
+                                     focus:outline-none focus:border-[#F88535] focus:ring-1 focus:ring-[#F88535]"
+                        />
+                      </div>
+
+                      <div>
+                        <label
+                          htmlFor="phone"
+                          className="block text-[15px] font-medium mb-1.5"
+                        >
+                          Phone number (WhatsApp preferred)
+                        </label>
+                        <input
+                          id="phone"
+                          type="tel"
+                          required
+                          value={phone}
+                          onChange={(e) => setPhone(e.target.value)}
+                          placeholder="e.g. 024 000 0000"
+                          className="w-full rounded-xl border border-black/20 px-4 py-3 text-[16px]
+                                     focus:outline-none focus:border-[#F88535] focus:ring-1 focus:ring-[#F88535]"
+                        />
+                        <p className="mt-1.5 text-[13px] text-black/60">
+                          We'll also use this number for your mobile money
+                          payment.
+                        </p>
+                      </div>
+                    </div>
+                  </fieldset>
+
+                  {/* Error sits with the button that produced it. */}
+                  <div className="mt-10">
+                    <ErrorMessage error={error} innerRef={errorRef} />
+                    <button
+                      type="button"
+                      onClick={handleContinueFromDetails}
+                      disabled={loading}
+                      className="w-full sm:w-auto rounded-full bg-[#F88535] text-white text-[16px] font-medium px-7 py-3.5
+                                 hover:brightness-95 active:brightness-90 transition disabled:opacity-60"
+                    >
+                      {loading
+                        ? "Setting up your booking…"
+                        : "Continue to payment"}
+                    </button>
+                  </div>
+                </section>
+              )}
+
+              {/* ---------- Step 1: pay online via Flutterwave ---------- */}
+              {step === 1 && booking && (
+                <section>
+                  {!paying && paymentState !== "pending" && (
+                    <BackButton onClick={() => goToStep(0)}>
+                      Back to consultation details
+                    </BackButton>
+                  )}
+
+                  <h2 className="font-display text-[22px] sm:text-[24px] font-medium">
+                    Pay for your consultation
+                  </h2>
+                  <p className="mt-2 text-[16px] text-black/80">
+                    Payment is by mobile money and goes straight to the
+                    hospital. You'll get a prompt on your phone to approve it,
+                    and your booking is created the moment the payment clears.
+                  </p>
+
+                  <div className="mt-7 rounded-2xl border border-black/10 p-6 sm:p-7 space-y-5">
+                    <div className="flex items-center justify-between gap-4">
+                      <span className="text-[15px] text-black/80">
+                        Consultation
+                      </span>
+                      <span className="text-right text-[16px] font-medium">
+                        {type === "OPD" ? "General OPD" : "Surgical"}
+                        <span className="block text-[14px] font-normal text-black/60">
+                          {mode === "online" ? "Online" : "In person"}
+                        </span>
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between gap-3 border-t border-black/10 pt-5">
+                      <span className="text-[15px] text-black/80 shrink-0">
+                        Reference code
+                      </span>
+                      <span className="flex items-center gap-2 min-w-0">
+                        <span className="font-display text-[16px] sm:text-[19px] font-medium tracking-normal sm:tracking-wide text-[#F88535] whitespace-nowrap">
+                          {booking.referenceCode}
+                        </span>
+                        <CopyButton value={booking.referenceCode} />
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between gap-4 border-t border-black/10 pt-5">
+                      <span className="text-[15px] text-black/80">
+                        Amount due
+                      </span>
+                      <span className="font-display text-[20px] font-medium">
+                        {booking.currency} {booking.amount}
+                      </span>
+                    </div>
+                  </div>
+
+                  <p className="mt-5 text-[14px] bg-[#0095D9] px-4 py-2.5 rounded text-white leading-relaxed">
+                    Your booking is only created once we've confirmed the
+                    payment, so please don't close this page until it's done.
+                  </p>
+
+                  {/* Awaiting-network state: payment left the phone but the
+                      server hasn't confirmed it yet. No booking yet. */}
+                  {paymentState === "pending" && (
+                    <div
+                      role="status"
+                      className="mt-6 rounded-2xl border border-[#0095D9]/40 bg-[#0095D9]/5 px-5 py-4 text-[15px] text-black/80"
+                    >
+                      <span className="font-medium text-black">
+                        Waiting for the network to confirm your payment.
+                      </span>{" "}
+                      This can take up to a few minutes. Keep this page open —
+                      we'll finish your booking as soon as it clears.
+                    </div>
+                  )}
+
+                  <div className="mt-8">
+                    <ErrorMessage error={error} innerRef={errorRef} />
+
+                    <div className="flex flex-wrap items-center gap-3">
+                      {paymentState === "pending" ? (
+                        <button
+                          type="button"
+                          onClick={handleCheckPaymentStatus}
+                          disabled={paying}
+                          className="inline-flex items-center gap-2 rounded-full bg-[#F88535] text-white text-[16px] font-medium px-7 py-3.5
+                                     hover:brightness-95 active:brightness-90 transition disabled:opacity-60"
+                        >
+                          {paying && <Spinner />}
+                          {paying
+                            ? "Checking payment…"
+                            : "Check payment status"}
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={handlePay}
+                          disabled={paying}
+                          className="inline-flex items-center gap-2 rounded-full bg-[#F88535] text-white text-[16px] font-medium px-7 py-3.5
+                                     hover:brightness-95 active:brightness-90 transition disabled:opacity-60"
+                        >
+                          {paying && <Spinner />}
+                          {payButtonLabel}
+                        </button>
+                      )}
+
+                      {paymentState === "checkout" && (
+                        <span className="text-[14px] text-black/60">
+                          Approve the prompt on your phone to continue.
+                        </span>
+                      )}
+                    </div>
+
+                    <p className="mt-4 text-[13px] text-black/60">
+                      Payments are processed by Flutterwave. We never see or
+                      store your mobile money PIN.
+                    </p>
+                  </div>
+                </section>
+              )}
+
+              {/* ---------- Step 2: payment confirmed ---------- */}
+              {step === 2 && booking && (
+                <section className="text-center sm:text-left">
+                  <div className="mx-auto sm:mx-0 h-14 w-14 rounded-full bg-[#0095D9]/10 flex items-center justify-center">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
                       <path
-                        d="M4 10l4 4l8-8"
-                        stroke="white"
+                        d="M5 13l4 4l10-10"
+                        stroke="#0095D9"
                         strokeWidth="2.4"
                         strokeLinecap="round"
                         strokeLinejoin="round"
                       />
                     </svg>
-                  ) : (
-                    i + 1
-                  )}
-                </span>
-                <span
-                  className={
-                    "hidden sm:inline text-[14px] " +
-                    (i === step
-                      ? "text-[var(--ink)] font-medium"
-                      : "text-[#142138b8]")
-                  }
-                >
-                  {label}
-                </span>
-              </div>
-              {i < STEP_LABELS.length - 1 && (
-                <span className="flex-1 h-px bg-[#14213822] mx-2 sm:mx-3" />
+                  </div>
+                  <h2 className="mt-5 font-display text-[22px] sm:text-[24px] font-medium">
+                    Payment confirmed, your booking is in
+                  </h2>
+                  <p className="mt-2 text-[16px] text-black/80 max-w-md mx-auto sm:mx-0">
+                    We've received {booking.currency} {booking.amount}. Our team
+                    will call or WhatsApp you on {phone || "your number"} with
+                    your appointment time and doctor.
+                  </p>
+
+                  <div className="mt-7 grid gap-3 sm:grid-cols-2 max-w-xl mx-auto sm:mx-0 text-left">
+                    <div className="rounded-2xl border border-black/10 px-5 py-4">
+                      <span className="block text-[14px] text-black/60">
+                        Booking reference
+                      </span>
+                      <span className="mt-1 flex items-center gap-2">
+                        <span className="font-display text-[17px] sm:text-[20px] font-medium text-[#F88535] whitespace-nowrap overflow-x-auto">
+                          {booking.referenceCode}
+                        </span>
+                        <CopyButton value={booking.referenceCode} />
+                      </span>
+                    </div>
+                    {payment?.consultationId && (
+                      <div className="rounded-2xl border border-black/10 px-5 py-4">
+                        <span className="block text-[14px] text-black/60">
+                          Consultation ID
+                        </span>
+                        <span className="mt-1 flex items-center gap-2">
+                          <span className="font-display text-[17px] sm:text-[20px] font-medium text-[#0095D9] whitespace-nowrap overflow-x-auto">
+                            {payment.consultationId}
+                          </span>
+                          <CopyButton
+                            value={payment.consultationId}
+                            label="consultation ID"
+                          />
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  <p className="mt-6 text-[14px] text-black/60">
+                    Keep your reference code, you'll need it together with your
+                    account to request a reschedule later.
+                  </p>
+
+                  <div className="mt-8 flex flex-wrap justify-center sm:justify-start gap-3">
+                    <Link
+                      to="/"
+                      className="rounded-full border border-black/20 text-[16px] font-medium px-6 py-3
+                                 hover:border-black/40 transition"
+                    >
+                      Back to home
+                    </Link>
+                    <button
+                      type="button"
+                      onClick={resetFlow}
+                      className="rounded-full bg-[#F88535] text-white text-[16px] font-medium px-6 py-3
+                                 hover:brightness-95 active:brightness-90 transition"
+                    >
+                      Book another consultation
+                    </button>
+                  </div>
+                </section>
               )}
-            </li>
-          ))}
-        </ol>
-        {/* Mobile equivalent of the desktop step labels, which are hidden
-            below sm to keep the dots from crowding a narrow screen. */}
-        <p className="sm:hidden mb-9 text-[14px] text-[#142138b8]">
-          Step {step + 1} of {STEP_LABELS.length} — {STEP_LABELS[step]}
-        </p>
+            </div>
+          </main>
 
-        {error && (
-          <div className="mb-6 rounded-xl bg-[#c0392b0d] border border-[#c0392b33] text-[#c0392b] text-[15px] px-4 py-3">
-            {error}
-          </div>
-        )}
-
-        <div
-          key={step}
-          className="motion-safe:[animation:stepIn_0.35s_ease-out_both]"
-        >
-          {/* ---------- Step 0: consultation details ---------- */}
-          {step === 0 && (
-            <section>
-              <h1 className="font-display text-[26px] sm:text-[30px] font-medium">
-                What kind of consultation do you need?
-              </h1>
-              <p className="mt-2 text-[16px] text-[#142138e6]">
-                You'll be able to choose a doctor and time after payment is
-                confirmed.
-              </p>
-
-              <fieldset className="mt-8">
-                <legend className="text-[15px] font-medium mb-3">
-                  Consultation type
-                </legend>
-                <div className="grid sm:grid-cols-2 gap-3">
-                  {[
-                    {
-                      key: "OPD",
-                      title: "General OPD",
-                      desc: "Everyday health concerns and check-ups.",
-                    },
-                    {
-                      key: "SURGICAL",
-                      title: "Surgical",
-                      desc: "Pre- or post-surgery consultations.",
-                    },
-                  ].map((opt) => (
-                    <button
-                      key={opt.key}
-                      type="button"
-                      onClick={() => setType(opt.key)}
-                      aria-pressed={type === opt.key}
-                      className={
-                        "text-left rounded-2xl p-5 border-2 transition-colors " +
-                        (type === opt.key
-                          ? "border-[var(--brand-orange)] bg-[var(--tint)]"
-                          : "border-[#14213822] hover:border-[#14213855]")
-                      }
-                    >
-                      <span className="block font-medium text-[16px]">
-                        {opt.title}
-                      </span>
-                      <span className="block mt-1 text-[14px] text-[#142138e6]">
-                        {opt.desc}
-                      </span>
-                      <span className="block mt-3 text-[14px] font-medium text-[var(--brand-orange)]">
-                        GHS {CONSULTATION_FEES[opt.key]}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </fieldset>
-
-              <fieldset className="mt-8">
-                <legend className="text-[15px] font-medium mb-3">Mode</legend>
-                <div className="grid sm:grid-cols-2 gap-3">
-                  {[
-                    {
-                      key: "online",
-                      title: "Online",
-                      desc: "Video consultation from your phone or computer.",
-                    },
-                    {
-                      key: "offline",
-                      title: "In person",
-                      desc: "Visit the hospital for your appointment.",
-                    },
-                  ].map((opt) => (
-                    <button
-                      key={opt.key}
-                      type="button"
-                      onClick={() => setMode(opt.key)}
-                      aria-pressed={mode === opt.key}
-                      className={
-                        "text-left rounded-2xl p-5 border-2 transition-colors " +
-                        (mode === opt.key
-                          ? "border-[var(--brand-orange)] bg-[var(--tint)]"
-                          : "border-[#14213822] hover:border-[#14213855]")
-                      }
-                    >
-                      <span className="block font-medium text-[16px]">
-                        {opt.title}
-                      </span>
-                      <span className="block mt-1 text-[14px] text-[#142138e6]">
-                        {opt.desc}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </fieldset>
-
-              <fieldset className="mt-8">
-                <legend className="text-[15px] font-medium mb-3">
-                  Your details
-                </legend>
-                <div className="grid sm:grid-cols-2 gap-4">
-                  <div>
-                    <label
-                      htmlFor="dateOfBirth"
-                      className="block text-[15px] font-medium mb-1.5"
-                    >
-                      Date of birth
-                    </label>
-                    <input
-                      id="dateOfBirth"
-                      type="date"
-                      required
-                      value={dateOfBirth}
-                      onChange={(e) => setDateOfBirth(e.target.value)}
-                      className="w-full rounded-xl border border-[#14213833] px-4 py-3 text-[16px]
-                                 focus:outline-none focus:border-[var(--brand-orange)] focus:ring-1 focus:ring-[var(--brand-orange)]"
-                    />
-                  </div>
-
-                  <div>
-                    <label
-                      htmlFor="sex"
-                      className="block text-[15px] font-medium mb-1.5"
-                    >
-                      Sex
-                    </label>
-                    <select
-                      id="sex"
-                      required
-                      value={sex}
-                      onChange={(e) => setSex(e.target.value)}
-                      className="w-full rounded-xl border border-[#14213833] bg-white px-4 py-3 text-[16px]
-                                 focus:outline-none focus:border-[var(--brand-orange)] focus:ring-1 focus:ring-[var(--brand-orange)]"
-                    >
-                      <option value="" disabled>
-                        Select sex
-                      </option>
-                      <option value="female">Female</option>
-                      <option value="male">Male</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label
-                      htmlFor="location"
-                      className="block text-[15px] font-medium mb-1.5"
-                    >
-                      Location
-                    </label>
-                    <input
-                      id="location"
-                      type="text"
-                      required
-                      value={location}
-                      onChange={(e) => setLocation(e.target.value)}
-                      placeholder="e.g. Berekum, Kato"
-                      className="w-full rounded-xl border border-[#14213833] px-4 py-3 text-[16px]
-                                 focus:outline-none focus:border-[var(--brand-orange)] focus:ring-1 focus:ring-[var(--brand-orange)]"
-                    />
-                  </div>
-
-                  <div>
-                    <label
-                      htmlFor="phone"
-                      className="block text-[15px] font-medium mb-1.5"
-                    >
-                      Phone number (WhatsApp preferred)
-                    </label>
-                    <input
-                      id="phone"
-                      type="tel"
-                      required
-                      value={phone}
-                      onChange={(e) => setPhone(e.target.value)}
-                      placeholder="e.g. 024 000 0000"
-                      className="w-full rounded-xl border border-[#14213833] px-4 py-3 text-[16px]
-                                 focus:outline-none focus:border-[var(--brand-orange)] focus:ring-1 focus:ring-[var(--brand-orange)]"
-                    />
-                  </div>
-                </div>
-              </fieldset>
-
-              <button
-                type="button"
-                onClick={handleContinueFromDetails}
-                disabled={loading}
-                className="mt-10 w-full sm:w-auto rounded-full bg-[var(--brand-orange)] text-white text-[16px] font-medium px-7 py-3.5
-                           hover:brightness-95 active:brightness-90 transition disabled:opacity-60"
-              >
-                {loading ? "Setting up your booking…" : "Continue to payment"}
-              </button>
-            </section>
-          )}
-
-          {/* ---------- Step 1: payment instructions ---------- */}
-          {step === 1 && booking && (
-            <section>
-              <BackButton onClick={() => goToStep(0)}>
-                Back to consultation details
-              </BackButton>
-
-              <h1 className="font-display text-[26px] sm:text-[30px] font-medium">
-                Pay by mobile money
-              </h1>
-              <p className="mt-2 text-[16px] text-[#142138e6]">
-                Please transfer the fee below using the reference code provided
-                below as the payment reference. After completing the
-                transaction, copy the transaction ID from the transaction
-                message you receive and get back here.
-              </p>
-
-              <div className="mt-7 rounded-2xl border border-[#14213822] p-6 sm:p-7 space-y-5">
-                <div className="flex items-center justify-between gap-4">
-                  <span className="text-[15px] text-[#142138e6]">
-                    Amount to pay
-                  </span>
-                  <span className="font-display text-[20px] font-medium">
-                    GHS {fee}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between gap-4 border-t border-[#14213814] pt-5">
-                  <span className="text-[15px] text-[#142138e6]">Send to</span>
-                  <span className="text-right">
-                    <span className="block font-medium text-[16px]">
-                      {MOMO_NUMBER}
-                    </span>
-                    <span className="block text-[14px] text-[#142138b8]">
-                      {MOMO_NAME}
-                    </span>
-                  </span>
-                </div>
-                <div className="flex items-center justify-between gap-3 border-t border-[#14213814] pt-5">
-                  <span className="text-[15px] text-[#142138e6] shrink-0">
-                    Reference code
-                  </span>
-                  <span className="flex items-center gap-2 min-w-0">
-                    <span className="font-display text-[16px] sm:text-[19px] font-medium tracking-normal sm:tracking-wide text-[var(--brand-orange)] whitespace-nowrap">
-                      {booking.referenceCode}
-                    </span>
-                    <CopyButton value={booking.referenceCode} />
-                  </span>
-                </div>
-              </div>
-
-              <p className="mt-5 text-[14px] bg-[#16211B] px-4 py-2 rounded text-yellow-500 leading-relaxed">
-                Important: use{" "}
-                <span className="font-medium text-white">
-                  {booking.referenceCode}
-                </span>{" "}
-                as the transfer reference, so our team can confirm your payment.
-              </p>
-
-              <button
-                type="button"
-                onClick={() => goToStep(2)}
-                className="mt-8 w-full sm:w-auto rounded-full bg-[var(--brand-orange)] text-white text-[16px] font-medium px-7 py-3.5
-                           hover:brightness-95 active:brightness-90 transition"
-              >
-                I've made the payment
-              </button>
-            </section>
-          )}
-
-          {/* ---------- Step 2: submit payment proof ---------- */}
-          {step === 2 && booking && (
-            <section>
-              <BackButton onClick={() => goToStep(1)}>
-                Back to payment instructions
-              </BackButton>
-
-              <h1 className="font-display text-[26px] sm:text-[30px] font-medium">
-                Confirm your payment
-              </h1>
-              <p className="mt-2 text-[16px] text-[#142138e6]">
-                Tell us the details from your mobile money transfer so our team
-                can verify it.
-              </p>
-
-              <form
-                onSubmit={handleSubmitProof}
-                className="mt-7 space-y-5 max-w-md"
-              >
-                <div>
-                  <span className="block text-[15px] font-medium mb-1.5">
-                    Transaction reference
-                  </span>
-                  <div className="flex items-center gap-2.5 rounded-xl border border-[#14213822] bg-[#14213808] px-4 py-3">
-                    <span className="flex-1 min-w-0 text-[16px] font-medium tracking-normal sm:tracking-wide whitespace-nowrap overflow-x-auto">
-                      {booking.referenceCode}
-                    </span>
-                    <CopyButton value={booking.referenceCode} />
-                  </div>
-                  <p className="mt-1.5 text-[13px] text-[#142138b8]">
-                    This is the code you used as your transfer note, it's fixed
-                    to this booking.
-                  </p>
-                </div>
-
-                <div>
-                  <label
-                    htmlFor="momoTransactionId"
-                    className="block text-[15px] font-medium mb-1.5"
-                  >
-                    Mobile money transaction ID
-                  </label>
-                  <input
-                    id="momoTransactionId"
-                    type="text"
-                    required
-                    value={momoTransactionId}
-                    onChange={(e) => setMomoTransactionId(e.target.value)}
-                    className="w-full rounded-xl border border-[#14213833] px-4 py-3 text-[16px]
-                               focus:outline-none focus:border-[var(--brand-orange)] focus:ring-1 focus:ring-[var(--brand-orange)]"
-                    placeholder="e.g. CI250915.1234.A56789"
-                  />
-                  <p className="mt-1.5 text-[13px] text-[#142138b8] leading-relaxed">
-                    Check the SMS you received after sending the money, it
-                    contains a Transaction ID. Copy that ID and paste it here.
-                  </p>
-                </div>
-
-                <div>
-                  <label
-                    htmlFor="momoName"
-                    className="block text-[15px] font-medium mb-1.5"
-                  >
-                    Name on the MoMo account used
-                  </label>
-                  <input
-                    id="momoName"
-                    type="text"
-                    required
-                    value={momoName}
-                    onChange={(e) => setMomoName(e.target.value)}
-                    className="w-full rounded-xl border border-[#14213833] px-4 py-3 text-[16px]
-                               focus:outline-none focus:border-[var(--brand-orange)] focus:ring-1 focus:ring-[var(--brand-orange)]"
-                    placeholder="e.g. Ama Serwaa"
-                  />
-                </div>
-
-                <div>
-                  <label
-                    htmlFor="amountPaid"
-                    className="block text-[15px] font-medium mb-1.5"
-                  >
-                    Amount sent (GHS)
-                  </label>
-                  <input
-                    id="amountPaid"
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    required
-                    value={amountPaid}
-                    onChange={(e) => setAmountPaid(e.target.value)}
-                    className="w-full rounded-xl border border-[#14213833] px-4 py-3 text-[16px]
-                               focus:outline-none focus:border-[var(--brand-orange)] focus:ring-1 focus:ring-[var(--brand-orange)]"
-                  />
-                  <p className="mt-1.5 text-[13px] text-[#142138b8]">
-                    Pre-filled with the expected fee, change it only if you
-                    actually sent a different amount.
-                  </p>
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="w-full sm:w-auto rounded-full bg-[var(--brand-orange)] text-white text-[16px] font-medium px-7 py-3.5
-                             hover:brightness-95 active:brightness-90 transition disabled:opacity-60"
-                >
-                  {loading ? "Submitting…" : "Submit payment details"}
-                </button>
-              </form>
-            </section>
-          )}
-
-          {/* ---------- Step 3: confirmation / pending ---------- */}
-          {step === 3 && booking && (
-            <section className="text-center sm:text-left">
-              <div className="mx-auto sm:mx-0 h-14 w-14 rounded-full bg-[var(--tint)] flex items-center justify-center">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-                  <path
-                    d="M5 13l4 4l10-10"
-                    stroke="var(--teal)"
-                    strokeWidth="2.4"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-              </div>
-              <h1 className="mt-5 font-display text-[26px] sm:text-[30px] font-medium">
-                Your booking is being reviewed
-              </h1>
-              <p className="mt-2 text-[16px] text-[#142138e6] max-w-md mx-auto sm:mx-0">
-                Our team is verifying your payment. Once confirmed, we'll call
-                or WhatsApp you with your appointment time and consultation ID.
-              </p>
-
-              <div className="mt-7 inline-flex items-center gap-3 rounded-2xl border border-[#14213822] px-6 py-4 text-left max-w-full">
-                <span className="min-w-0">
-                  <span className="block text-[14px] text-[#142138b8]">
-                    Your reference code
-                  </span>
-                  <span className="block font-display text-[17px] sm:text-[21px] font-medium tracking-normal sm:tracking-wide text-[var(--brand-orange)] whitespace-nowrap overflow-x-auto">
-                    {booking.referenceCode}
-                  </span>
-                </span>
-                <CopyButton value={booking.referenceCode} />
-              </div>
-
-              <p className="mt-6 text-[14px] text-[#142138b8]">
-                Keep this code, you'll need it together with your account to
-                request a reschedule later.
-              </p>
-
-              <div className="mt-8 flex flex-wrap justify-center sm:justify-start gap-3">
-                <Link
-                  to="/"
-                  className="rounded-full border border-[#14213833] text-[16px] font-medium px-6 py-3
-                             hover:border-[var(--ink)] transition"
-                >
-                  Back to home
-                </Link>
-                <button
-                  type="button"
-                  onClick={resetFlow}
-                  className="rounded-full bg-[var(--brand-orange)] text-white text-[16px] font-medium px-6 py-3
-                             hover:brightness-95 active:brightness-90 transition"
-                >
-                  Book another consultation
-                </button>
-              </div>
-            </section>
-          )}
+          <Footer />
         </div>
-      </main>
-
-      <Footer />
+      </div>
     </div>
   );
 }

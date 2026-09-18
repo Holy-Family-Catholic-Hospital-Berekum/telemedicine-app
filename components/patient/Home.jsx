@@ -1016,17 +1016,22 @@ export default function Home() {
                   <div
                     className="absolute inset-0"
                     style={{
+                      // Widened and re-centred so the fade timing is the same
+                      // "distance" from the visible frame on both sides — the
+                      // old 58%-centred circle sat closer to the right edge
+                      // than the left, so the right side hit its fade-out
+                      // sooner even though the numbers looked symmetric.
                       WebkitMaskImage:
-                        "radial-gradient(88% 92% at 58% 48%, #000 48%, rgba(0,0,0,.96) 64%, transparent 98%)",
+                        "radial-gradient(94% 92% at 62% 48%, #000 50%, rgba(0,0,0,.96) 70%, transparent 100%)",
                       maskImage:
-                        "radial-gradient(88% 92% at 58% 48%, #000 48%, rgba(0,0,0,.96) 64%, transparent 98%)",
+                        "radial-gradient(94% 92% at 62% 48%, #000 50%, rgba(0,0,0,.96) 70%, transparent 100%)",
                       filter: "drop-shadow(0 34px 55px rgba(0,70,105,0.18))",
                     }}
                   >
                     <img
                       src={heroImage}
                       alt="A doctor at Holy Family Catholic Hospital speaking warmly with a patient"
-                      className="h-full w-full object-cover object-[58%_center]"
+                      className="h-full w-full object-cover object-[68%_center]"
                     />
                     <div
                       aria-hidden="true"
@@ -1048,8 +1053,14 @@ export default function Home() {
                       aria-hidden="true"
                       className="absolute inset-0"
                       style={{
+                        // Was a default "circle" (sized to the farthest
+                        // corner), which is a much longer reach on the left
+                        // than the right once the centre sits right-of-middle
+                        // — that's what was quietly washing out the right
+                        // edge sooner than the left. Giving it explicit,
+                        // equal-ish radii fixes that lopsidedness directly.
                         background:
-                          "radial-gradient(circle at 58% 46%, transparent 42%, rgba(255,255,255,.05) 68%, rgba(255,255,255,.88) 100%)",
+                          "radial-gradient(92% 90% at 60% 46%, transparent 50%, rgba(255,255,255,.05) 74%, rgba(255,255,255,.85) 100%)",
                       }}
                     />
                   </div>
