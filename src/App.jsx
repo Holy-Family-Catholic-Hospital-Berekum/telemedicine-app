@@ -8,8 +8,8 @@ import { AuthProvider } from "./context/authContext";
 import { ProtectedRoute, PublicOnlyRoute } from "./protectedRoutes";
 import SignIn from "./pages/auth/signIn";
 import SignUp from "./pages/auth/signUp";
-import VerifyEmailNotice from "./pages/auth/VerifyEmailNotice";
-import Unauthorized from "./pages/auth/Unauthorized";
+import VerifyEmailNotice from "./pages/auth/verifyEmailNotice";
+import Unauthorized from "./pages/auth/unauthorized";
 
 export default function App() {
   return (

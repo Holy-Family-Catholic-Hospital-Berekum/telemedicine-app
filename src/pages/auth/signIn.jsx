@@ -14,8 +14,8 @@
 import { useState } from "react";
 import { useNavigate, useLocation, Link } from "react-router-dom";
 import { useAuth } from "../../context/authContext.jsx";
-import HealthcarePreloader from "../../components/common/HealthcarePreloader.jsx";
-import AuthAside from "../../components/auth/AuthAside.jsx";
+import HealthcarePreloader from "../../components/common/healthcarePreloader.jsx";
+import AuthAside from "../../components/auth/authAside.jsx";
 import {
   IconMail,
   IconLock,
