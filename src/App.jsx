@@ -36,13 +36,13 @@ export default function App() {
           <Route path="/book" element={<BookConsultation />} />
         </Route>
 
-        <Route element={<ProtectedRoute allowedRoles={["admin"]} />}>
+       {/*<Route element={<ProtectedRoute allowedRoles={["admin"]} />}>*/}
           <Route path="/admin" element={<Admin />} />
-        </Route>
+        {/*</Route>*/}
 
-        <Route element={<ProtectedRoute allowedRoles={["doctor"]} />}>
+        {/*<Route element={<ProtectedRoute allowedRoles={["doctor"]} />}>*/}
           <Route path="/doctor" element={<DoctorDashboard />} />
-        </Route>
+       {/* </Route>*/}
       </Routes>
     </AuthProvider>
   );

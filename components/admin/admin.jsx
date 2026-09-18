@@ -3,8 +3,8 @@ import { useMemo, useState } from "react";
 import Sidebar from "./sidebar.jsx";
 import OverviewPanel from "./overviewPanel.jsx";
 import BookingsPanel from "./bookingsPanel.jsx";
-import PaymentsPanel from "./paymentsPanel.jsx";
 import HistoryPanel from "./historyPanel.jsx";
+import Users from "./users.jsx";
 import RevenuePanel from "./revenuePanel.jsx";
 import ActivityPanel from "./activityPanel.jsx";
 import AuditPanel from "./auditPanel.jsx";
@@ -14,8 +14,7 @@ import { IconBell, IconRefresh } from "./icons.jsx";
 import {
   doctors as seedDoctors,
   bookings as seedBookings,
-  pendingReferenceClaims as seedClaims,
-  ledgerCounts as seedLedgerCounts,
+  users as seedUsers, // ASSUMPTION: add this export to mockAdminData.js — see note below
   activityEvents as seedActivity,
   auditLogEntries as seedAudit,
   confirmedPayments as seedPayments,
@@ -43,16 +42,16 @@ const TAB_TITLES = {
     sub: "Today at a glance across bookings, payments and consultations",
   },
   bookings: {
-    title: "Bookings & scheduling",
+    title: "New bookings",
     sub: "Assign a doctor and time slot to paid bookings",
-  },
-  payments: {
-    title: "Payments & reference codes",
-    sub: "Verify mobile money transfers against the hospital statement",
   },
   history: {
     title: "Consultation history",
     sub: "When sessions ran and how they ended",
+  },
+  users: {
+    title: "Users",
+    sub: "Manage patient and doctor accounts",
   },
   revenue: {
     title: "Revenue",
@@ -74,7 +73,6 @@ const TAB_TITLES = {
 
 let auditSeq = 100;
 let activitySeq = 100;
-let paymentSeq = 100;
 let historySeq = 100;
 let slotSeq = 1004;
 
@@ -86,11 +84,10 @@ export default function Admin({ onLogout = () => {} }) {
   // snapshot listener update the UI.
   const [doctors] = useState(seedDoctors);
   const [bookings, setBookings] = useState(seedBookings);
-  const [claims, setClaims] = useState(seedClaims);
-  const [ledger, setLedger] = useState(seedLedgerCounts);
+  const [users, setUsers] = useState(seedUsers);
   const [activity, setActivity] = useState(seedActivity);
   const [audit, setAudit] = useState(seedAudit);
-  const [payments, setPayments] = useState(seedPayments);
+  const [payments] = useState(seedPayments);
   const [history, setHistory] = useState(seedHistory);
   const [slots, setSlots] = useState(seedSlots);
 
@@ -142,70 +139,6 @@ export default function Admin({ onLogout = () => {} }) {
     pushAudit("Scheduled consultation", bookingId);
   };
 
-  // 4.3 Payment Service. The verification modal has already matched the
-  // admin's reading of the MoMo SMS against the patient's submission — that
-  // comparison must move into the confirmPayment Cloud Function before launch.
-  const handleConfirmPayment = (claim, extra = {}) => {
-    setClaims((prev) =>
-      prev.filter((c) => c.referenceCode !== claim.referenceCode),
-    );
-    setLedger((prev) => ({
-      ...prev,
-      pending: Math.max(0, prev.pending - 1),
-      confirmed: prev.confirmed + 1,
-    }));
-    setBookings((prev) => [
-      {
-        bookingId: `BK-${Math.floor(48000 + Math.random() * 999)}`,
-        patientName: claim.patientName,
-        phone: claim.phone ?? "—",
-        type: claim.type,
-        mode: claim.mode,
-        paymentStatus: "paid",
-        referenceCode: claim.referenceCode,
-        amountPaid: claim.amount,
-        confirmedBy: CURRENT_ADMIN.uid,
-        confirmedAt: new Date().toISOString(),
-        consultationId: null,
-        scheduledTime: null,
-        doctorId: null,
-        callStartedAt: null,
-        rescheduleRequested: false,
-      },
-      ...prev,
-    ]);
-    // Permanent, anonymised — survives session-close erasure.
-    setPayments((prev) => [
-      {
-        id: `pay-${paymentSeq++}`,
-        referenceCode: claim.referenceCode,
-        type: claim.type,
-        amount: claim.amount,
-        confirmedBy: CURRENT_ADMIN.uid,
-        confirmedAt: new Date().toISOString(),
-        transactionId: extra.transactionId ?? null,
-      },
-      ...prev,
-    ]);
-    pushActivity("confirmed", claim.referenceCode);
-    pushAudit("Confirmed payment", claim.referenceCode);
-  };
-
-  // A rejection releases the code back to available, so a mistaken submission
-  // never permanently locks out the real payer.
-  const handleRejectPayment = (claim) => {
-    setClaims((prev) =>
-      prev.filter((c) => c.referenceCode !== claim.referenceCode),
-    );
-    setLedger((prev) => ({
-      ...prev,
-      pending: Math.max(0, prev.pending - 1),
-      available: prev.available + 1,
-    }));
-    pushActivity("rejected", claim.referenceCode);
-    pushAudit("Rejected reference code", claim.referenceCode);
-  };
-
   // 4.6 Metrics and Data Erasure. In the real system this is one Cloud
   // Function running in a single transaction: write the anonymised history
   // row, expire the consultation ID, then delete the booking. Admin may only
@@ -244,7 +177,14 @@ export default function Admin({ onLogout = () => {} }) {
   // a transaction before committing, the same pattern used for reference
   // codes (architecture 4.3), since two admins could otherwise create
   // overlapping slots for the same doctor at the same time.
-  const handleCreateSlot = ({ doctorId, type, mode, date, startTime, endTime }) => {
+  const handleCreateSlot = ({
+    doctorId,
+    type,
+    mode,
+    date,
+    startTime,
+    endTime,
+  }) => {
     const id = `SLOT-${slotSeq++}`;
     setSlots((prev) => [
       {
@@ -269,16 +209,65 @@ export default function Admin({ onLogout = () => {} }) {
     pushAudit("Cancelled available slot", slot.id);
   };
 
+  // ── Users tab handlers ─────────────────────────────────────────────
+  // Client-side convenience only. The real create/deactivate/delete
+  // operations MUST be Cloud Functions that re-check, server-side, that
+  // the caller is an admin and that the target is neither an admin nor
+  // the caller themselves — see users.jsx's own comment on this.
+  const handleCreateDoctor = async (form) => {
+    // ASSUMPTION: replace with a call to a callable Cloud Function, e.g.
+    //   const fns = getFunctions(app, FUNCTIONS_REGION);
+    //   await httpsCallable(fns, "createDoctorAccount")(form);
+    const id = `doc-${Math.floor(1000 + Math.random() * 9000)}`;
+    const newDoctor = {
+      id,
+      name: form.name,
+      email: form.email,
+      phone: form.phone,
+      specialty: form.specialty,
+      role: "doctor",
+      status: "active",
+      createdAt: new Date().toISOString(),
+    };
+    setUsers((prev) => [newDoctor, ...prev]);
+    pushAudit("Created doctor account", id);
+  };
+
+  const handleDeactivateUser = (user) => {
+    setUsers((prev) =>
+      prev.map((u) => (u.id === user.id ? { ...u, status: "deactivated" } : u)),
+    );
+    pushAudit("Deactivated account", user.id);
+  };
+
+  const handleReactivateUser = (user) => {
+    setUsers((prev) =>
+      prev.map((u) => (u.id === user.id ? { ...u, status: "active" } : u)),
+    );
+    pushAudit("Reactivated account", user.id);
+  };
+
+  const handleDeleteUser = (user) => {
+    setUsers((prev) => prev.filter((u) => u.id !== user.id));
+    pushAudit("Deleted account", user.id);
+  };
+
+  const toSchedule = useMemo(
+    () =>
+      bookings.filter((b) => b.paymentStatus !== "failed" && !b.consultationId),
+    [bookings],
+  );
+
   const stats = useMemo(
     () => ({
       ...seedStats,
-      pendingPayments: claims.length,
+      pendingPayments: toSchedule.length,
       doctorsOnDuty: doctors.filter((d) => d.available).length,
     }),
-    [claims.length, doctors],
+    [toSchedule.length, doctors],
   );
 
-  const heading = TAB_TITLES[tab];
+  const heading = TAB_TITLES[tab] ?? TAB_TITLES.overview;
 
   return (
     <div className="admin-shell">
@@ -286,7 +275,7 @@ export default function Admin({ onLogout = () => {} }) {
         active={tab}
         onChange={setTab}
         admin={CURRENT_ADMIN}
-        pendingCount={claims.length}
+        pendingCount={toSchedule.length}
         onLogout={onLogout}
       />
 
@@ -310,7 +299,7 @@ export default function Admin({ onLogout = () => {} }) {
             </button>
             <button className="admin-icon-btn" title="Notifications">
               <IconBell size={17} />
-              {claims.length > 0 && <span className="dot" />}
+              {toSchedule.length > 0 && <span className="dot" />}
             </button>
           </div>
         </header>
@@ -336,16 +325,18 @@ export default function Admin({ onLogout = () => {} }) {
             />
           )}
 
-          {tab === "payments" && (
-            <PaymentsPanel
-              claims={claims}
-              ledger={ledger}
-              onConfirm={handleConfirmPayment}
-              onReject={handleRejectPayment}
+          {tab === "history" && <HistoryPanel history={history} />}
+
+          {tab === "users" && (
+            <Users
+              users={users}
+              currentAdminId={CURRENT_ADMIN.uid}
+              onCreateDoctor={handleCreateDoctor}
+              onDeactivate={handleDeactivateUser}
+              onReactivate={handleReactivateUser}
+              onDelete={handleDeleteUser}
             />
           )}
-
-          {tab === "history" && <HistoryPanel history={history} />}
 
           {tab === "revenue" && <RevenuePanel payments={payments} />}
 

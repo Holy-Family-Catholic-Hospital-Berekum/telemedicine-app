@@ -2,7 +2,13 @@ import { useState } from "react";
 import SchedulingModal from "./schedulingModal.jsx";
 import CreateScheduleModal from "./createScheduleModal.jsx";
 import ConfirmDialog from "./confirmDialog.jsx";
-import { IconPhone, IconCalendar, IconCheck, IconPlus, IconX } from "./icons.jsx";
+import {
+  IconPhone,
+  IconCalendar,
+  IconCheck,
+  IconPlus,
+  IconX,
+} from "./icons.jsx";
 
 export default function BookingsPanel({
   bookings,
@@ -19,8 +25,13 @@ export default function BookingsPanel({
   const [creatingSlot, setCreatingSlot] = useState(false);
   const [cancellingSlot, setCancellingSlot] = useState(null);
 
+  // Every booking that reaches this dashboard has already been paid —
+  // the server only writes a booking record after Flutterwave confirms
+  // the charge, so there's no "pending payment" state to filter on here
+  // any more. This just guards against a stray/failed record slipping
+  // through rather than doing any real gating.
   const toSchedule = bookings.filter(
-    (b) => b.paymentStatus === "paid" && !b.consultationId,
+    (b) => b.paymentStatus !== "failed" && !b.consultationId,
   );
   const scheduled = bookings.filter((b) => b.consultationId);
   const reschedules = bookings.filter((b) => b.rescheduleRequested);
@@ -42,10 +53,16 @@ export default function BookingsPanel({
       <section className="admin-panel">
         <div className="admin-panel-head">
           <div>
-            <h2>Bookings &amp; scheduling</h2>
-            <p>Assign doctors to paid bookings, or open a slot for patients to book directly</p>
+            <h2>New bookings</h2>
+            <p>
+              Assign a doctor and time to each paid booking, or open a slot for
+              patients to book directly
+            </p>
           </div>
-          <button className="btn btn-primary" onClick={() => setCreatingSlot(true)}>
+          <button
+            className="btn btn-primary"
+            onClick={() => setCreatingSlot(true)}
+          >
             <IconPlus size={14} /> Create schedule
           </button>
         </div>
@@ -98,7 +115,9 @@ export default function BookingsPanel({
                 <tbody>
                   {slots.map((s) => (
                     <tr key={s.id}>
-                      <td className="admin-cell-name">{doctorName(s.doctorId)}</td>
+                      <td className="admin-cell-name">
+                        {doctorName(s.doctorId)}
+                      </td>
                       <td>
                         <div>{s.type}</div>
                         <div className="admin-cell-sub">{s.mode}</div>
@@ -143,7 +162,6 @@ export default function BookingsPanel({
                 <tr>
                   <th>Patient</th>
                   <th>Type / mode</th>
-                  <th>Reference code</th>
                   {subtab !== "toSchedule" && <th>Schedule</th>}
                   <th></th>
                 </tr>
@@ -158,11 +176,6 @@ export default function BookingsPanel({
                     <td>
                       <div>{b.type}</div>
                       <div className="admin-cell-sub">{b.mode}</div>
-                    </td>
-                    <td>
-                      <span className="code-chip confirmed">
-                        {b.referenceCode}
-                      </span>
                     </td>
                     {subtab !== "toSchedule" && (
                       <td>
@@ -256,10 +269,11 @@ export default function BookingsPanel({
           title="Cancel this slot?"
           body={
             <>
-              This removes the {cancellingSlot.startTime}–{cancellingSlot.endTime}{" "}
-              opening for {doctorName(cancellingSlot.doctorId)} on{" "}
-              {new Date(cancellingSlot.date).toLocaleDateString()}. Patients will
-              no longer see it as bookable.
+              This removes the {cancellingSlot.startTime}–
+              {cancellingSlot.endTime} opening for{" "}
+              {doctorName(cancellingSlot.doctorId)} on{" "}
+              {new Date(cancellingSlot.date).toLocaleDateString()}. Patients
+              will no longer see it as bookable.
             </>
           }
           confirmLabel="Cancel slot"

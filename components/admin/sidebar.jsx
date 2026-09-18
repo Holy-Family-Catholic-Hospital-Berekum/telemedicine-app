@@ -1,21 +1,22 @@
 import {
   IconOverview,
   IconCalendar,
-  IconCard,
   IconClock,
   IconTag,
   IconPulse,
   IconShield,
   IconChart,
+  IconUsers, // ASSUMPTION: swap for whatever icon your icons.jsx actually exports for this
   IconLogout,
 } from "./icons.jsx";
 
 import logo from "./logo.png";
+
 const NAV_ITEMS = [
   { key: "overview", label: "Overview", icon: IconOverview },
-  { key: "bookings", label: "Scheduling", icon: IconCalendar },
-  { key: "payments", label: "New Bookings", icon: IconCard },
+  { key: "bookings", label: "New Bookings", icon: IconCalendar },
   { key: "history", label: "Consultation History", icon: IconClock },
+  { key: "users", label: "Users", icon: IconUsers },
   { key: "revenue", label: "Revenue", icon: IconTag },
   { key: "activity", label: "Activity", icon: IconPulse },
   { key: "audit", label: "Audit Log", icon: IconShield },
@@ -50,7 +51,7 @@ export default function Sidebar({
           >
             <Icon size={17} />
             {label}
-            {key === "payments" && pendingCount > 0 && (
+            {key === "bookings" && pendingCount > 0 && (
               <span className="admin-nav-badge">{pendingCount}</span>
             )}
           </button>
