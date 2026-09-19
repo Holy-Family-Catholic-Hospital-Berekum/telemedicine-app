@@ -97,24 +97,23 @@ const steps = [
       "Sign up with your name, phone number and email, then verify your email before booking.",
   },
   {
-    title: "Book and get a reference",
+    title: "Book a Consultation",
     detail:
-      "Choose General OPD or Surgical, online or in person, and you'll be issued a booking reference code.",
+      "Choose General OPD or Surgical, online or in person. You may select a doctor.",
   },
   {
     title: "Pay by mobile money",
-    detail:
-      "Transfer the fee to the hospital's MoMo line with your reference in the note, then submit your details in the app.",
+    detail: "Transfer the fee to the hospital's account.",
   },
   {
-    title: "We confirm and schedule you",
+    title: "We schedule you",
     detail:
-      "Our team checks your payment against our own MoMo records, then assigns you a doctor and a time.",
+      "Our team receives your booking, then assigns you a doctor and a time.",
   },
   {
     title: "Join your consultation",
     detail:
-      "We call or WhatsApp you your appointment time and consultation ID. Enter it to join by video, or visit us in person.",
+      "We call or WhatsApp you your appointment time. Join by video, or visit us in person.",
   },
 ];
 
@@ -394,7 +393,6 @@ function BookingSlip({
             </div>
           ) : (
             <>
-              <p className="text-[11px] text-[#16211b8a]">Amount charged</p>
               {code ? (
                 <p
                   className={`mt-1 flex font-mono tracking-[0.06em] ${
@@ -916,9 +914,9 @@ export default function Home() {
                   </div>
 
                   <h1 className="mt-6 max-w-[760px] font-display text-[clamp(40px,6vw,72px)] leading-[1.02] font-medium tracking-[-0.045em] text-[var(--ink2)]">
-                    Consult with a doctor{" "}
+                    Quality healthcare{" "}
                     <span className="relative inline-block text-[#0095D9]">
-                      in the comfort of your home.
+                      at your doorstep.
                       <span
                         aria-hidden="true"
                         className="absolute -bottom-2 left-0 h-[5px] w-1/2 rounded-full bg-gradient-to-r from-[#F88535] to-[#F88535]/0"
@@ -928,8 +926,7 @@ export default function Home() {
 
                   <p className="mx-auto mt-6 max-w-xl text-[clamp(15px,2vw,18px)] leading-[1.75] text-[#142138B8] lg:mx-0">
                     General OPD and surgical consultations, online or in person.
-                    No card, no waiting room, just your phone and a reference
-                    code.
+                    No card, no waiting room, just your phone or laptop.
                   </p>
 
                   <div className="mt-8 flex flex-col items-center gap-4 sm:flex-row sm:justify-center lg:justify-start">
@@ -963,7 +960,6 @@ export default function Home() {
 
                   <ul className="mt-8 flex flex-wrap items-center justify-center gap-x-6 gap-y-3 lg:justify-start">
                     {[
-                      "Confirmed by real hospital staff",
                       "Data erased after every visit",
                       "Same doctors as our hospital",
                     ].map((item) => (
@@ -1097,6 +1093,34 @@ export default function Home() {
           </div>
         </section>
 
+        {/* ---------- How it works ---------- */}
+        <section
+          id="how-it-works"
+          className="py-16 sm:py-24 bg-[var(--parchment)]"
+        >
+          <div className="mx-auto max-w-3xl px-5 sm:px-8">
+            <h2 className="font-display text-[26px] sm:text-[30px] font-medium text-[var(--ink2)]">
+              How you get Quality Healthcare
+            </h2>
+
+            <ol className="mt-10 sm:mt-14 relative border-l-2 border-dashed border-[var(--forest)]/25 pl-6 sm:pl-8 space-y-9 sm:space-y-10">
+              {steps.map((item, i) => (
+                <li key={item.title} className="relative">
+                  <span className="absolute -left-[31px] sm:-left-[39px] top-0 flex h-6 w-6 items-center justify-center rounded-full bg-[var(--forest)] text-[12px] font-medium text-[var(--parchment)]">
+                    {i + 1}
+                  </span>
+                  <h3 className="font-medium text-[15px] sm:text-[16px] text-[var(--ink2)]">
+                    {item.title}
+                  </h3>
+                  <p className="mt-1 text-[14px] sm:text-[15px] leading-relaxed text-[#16211bb3]">
+                    {item.detail}
+                  </p>
+                </li>
+              ))}
+            </ol>
+          </div>
+        </section>
+
         {/* ---------- Consultation types ---------- */}
         <section id="services" className="py-16 sm:py-24">
           <div className="mx-auto max-w-5xl px-5 sm:px-8">
@@ -1120,7 +1144,7 @@ export default function Home() {
                       <BookingSlip
                         type={service.title}
                         mode={service.mode}
-                        placeholder="GHS 300"
+                        placeholder=""
                         className="max-w-none mx-auto sm:mx-0 transition duration-300 group-hover:shadow-[0_36px_70px_-24px_rgba(15,20,17,0.55)]"
                       />
                     </div>
@@ -1199,34 +1223,6 @@ export default function Home() {
           </div>
         </section>
 
-        {/* ---------- How it works ---------- */}
-        <section
-          id="how-it-works"
-          className="py-16 sm:py-24 bg-[var(--parchment)]"
-        >
-          <div className="mx-auto max-w-3xl px-5 sm:px-8">
-            <h2 className="font-display text-[26px] sm:text-[30px] font-medium text-[var(--ink2)]">
-              How your booking gets confirmed
-            </h2>
-
-            <ol className="mt-10 sm:mt-14 relative border-l-2 border-dashed border-[var(--forest)]/25 pl-6 sm:pl-8 space-y-9 sm:space-y-10">
-              {steps.map((item, i) => (
-                <li key={item.title} className="relative">
-                  <span className="absolute -left-[31px] sm:-left-[39px] top-0 flex h-6 w-6 items-center justify-center rounded-full bg-[var(--forest)] text-[12px] font-medium text-[var(--parchment)]">
-                    {i + 1}
-                  </span>
-                  <h3 className="font-medium text-[15px] sm:text-[16px] text-[var(--ink2)]">
-                    {item.title}
-                  </h3>
-                  <p className="mt-1 text-[14px] sm:text-[15px] leading-relaxed text-[#16211bb3]">
-                    {item.detail}
-                  </p>
-                </li>
-              ))}
-            </ol>
-          </div>
-        </section>
-
         {/* ---------- CTA banner ---------- */}
         <section className="px-5 sm:px-8 py-16 sm:py-24">
           <div className="mx-auto max-w-6xl rounded-3xl bg-[#0095D9] text-[var(--parchment)] px-6 sm:px-10 py-10 sm:py-14 flex flex-col md:flex-row md:items-center gap-8 md:gap-10">
@@ -1278,20 +1274,20 @@ export default function Home() {
           <div className="relative mx-auto max-w-6xl px-5 sm:px-8 grid md:grid-cols-[1.1fr_0.9fr] gap-10 items-center">
             <div className="max-w-xl text-center md:text-left">
               <h2 className="font-display text-[24px] sm:text-[28px] font-medium text-[var(--parchment)]">
-                Your consultation, then it's gone
+                How We Handle Your data
               </h2>
               <p className="mt-4 text-[15px] sm:text-[16px] leading-relaxed text-[var(--parchment)]/75">
-                Once your appointment ends, the booking and consultation details
-                are permanently deleted from our systems. We don't keep a record
-                of what was discussed. Only anonymous, non-identifying
+                Once your appointment ends, the booking details are permanently
+                deleted from our systems. We keep an audio record of what was
+                discussed for security purposes and anonymous, non-identifying
                 statistics are kept to help us improve the service.
               </p>
             </div>
             <div className="flex justify-center md:justify-end">
               <BookingSlip
-                type="General OPD"
-                mode="Closed"
-                code="8K3M2Q"
+                type="Telemedicine"
+                mode="Online or In-person"
+                code=""
                 voided
                 className="opacity-90"
               />

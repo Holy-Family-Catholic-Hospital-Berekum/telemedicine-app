@@ -188,9 +188,8 @@ export default function Dashboard() {
       {/* Fixed, auto-slideshow brand panel. */}
       <BrandAside
         heading="Your care, one place."
-        body="Track bookings, confirm payments, and join your video consultation without ever visiting the hospital in person."
+        body="Track bookings, and join your video consultation without ever visiting the hospital in person."
         points={[
-          "Confirmed by real hospital staff",
           "Session details erased after every visit",
           "Same doctors as our hospital",
         ]}

@@ -29,9 +29,9 @@ import "../../styles/auth.css";
 import logo from "../../assets/logo.png";
 
 const ASIDE_POINTS = [
-  "Role-based access for patients, doctors and admin staff",
+  "Secured role-based access",
   "Every payment confirmation and schedule change is logged",
-  "Encrypted video consultations, no call recordings",
+  "Encrypted video consultations",
 ];
 
 export default function SignIn() {
@@ -98,7 +98,7 @@ export default function SignIn() {
     <div className="auth-root">
       <AuthAside
         heading="Sign in to your account"
-        body="Patients, doctors and hospital staff all sign in here — you'll land on the right dashboard for your role."
+        body=""
         points={ASIDE_POINTS}
       />
 

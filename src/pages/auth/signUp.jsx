@@ -35,8 +35,8 @@ import "../../styles/auth.css";
 import logo from "../../assets/logo.png";
 
 const ASIDE_POINTS = [
-  "Book General OPD or Surgical consultations, online or offline",
-  "Pay by mobile money — confirmed by hospital staff, never automated",
+  "Book General OPD or Surgical consultations, online or in-person",
+  "Pay by mobile money",
   "Your consultation details are deleted once the session closes",
 ];
 
@@ -110,7 +110,7 @@ export default function SignUp() {
   return (
     <div className="auth-root">
       <AuthAside
-        heading="Create your patient account"
+        heading="Your First step to a Better Healthcare"
         body="Sign up to book a consultation with Holy Family Catholic Hospital's telemedicine service."
         points={ASIDE_POINTS}
       />
@@ -133,10 +133,6 @@ export default function SignUp() {
 
           <div className="auth-card-head">
             <h2>Create your account</h2>
-            <p>
-              For patients booking a consultation. Staff accounts are set up by
-              the hospital directly.
-            </p>
           </div>
 
           {error && (
@@ -204,7 +200,7 @@ export default function SignUp() {
                 <div className="auth-field-error">{fieldErrors.email}</div>
               )}
               <div className="auth-field-hint">
-                We'll send a verification link here — you'll need to confirm it
+                We'll send a verification link here, you'll need to confirm it
                 before booking.
               </div>
             </div>

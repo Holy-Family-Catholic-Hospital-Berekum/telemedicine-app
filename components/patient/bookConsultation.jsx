@@ -106,8 +106,8 @@ import BrandAside from "../shared/brandAside";
  */
 
 const CONSULTATION_FEES = {
-  OPD: 50,
-  SURGICAL: 100,
+  OPD: 250,
+  SURGICAL: 300,
 };
 
 const CURRENCY = "GHS";
@@ -543,7 +543,7 @@ export default function BookConsultation() {
     } catch (e) {
       setPaymentState("idle");
       showError(
-        "We couldn't reach the payment service. Your booking isn't confirmed — please try again.",
+        "We couldn't reach the payment service. Your booking isn't confirmed, please try again.",
       );
     }
   }
@@ -617,8 +617,8 @@ export default function BookConsultation() {
       `}</style>
 
       <BrandAside
-        heading={step === 2 ? "You're all set." : "Booking made simple."}
-        body="Pick a consultation type, pay securely by mobile money, and our team confirms your appointment directly with you."
+        heading={step === 2 ? "You're all set." : "Quality Healthcare at Your Door Step."}
+        body="Pick a consultation type, pay securely by mobile money, and our team shares your appointment directly with you."
         points={[
           "General OPD or surgical consultation",
           "Pay by MoMo in a few taps, confirmed instantly",
