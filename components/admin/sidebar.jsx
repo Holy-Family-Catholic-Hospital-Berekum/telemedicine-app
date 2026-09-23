@@ -7,6 +7,7 @@ import {
   IconShield,
   IconChart,
   IconUsers, // ASSUMPTION: swap for whatever icon your icons.jsx actually exports for this
+  IconSettings, // NEW — used for the Control Panel tab, added to icons.jsx.
   IconLogout,
 } from "./icons.jsx";
 
@@ -18,9 +19,11 @@ const NAV_ITEMS = [
   { key: "history", label: "Consultation History", icon: IconClock },
   { key: "users", label: "Users", icon: IconUsers },
   { key: "revenue", label: "Revenue", icon: IconTag },
-  { key: "activity", label: "Activity", icon: IconPulse },
   { key: "audit", label: "Audit Log", icon: IconShield },
   { key: "metrics", label: "Metrics & Reports", icon: IconChart },
+  // NEW — site content admins can change without a code deploy: home page
+  // photo, consultation prices, BrandAside slideshow, sign-in/sign-up photo.
+  { key: "control", label: "Control Panel", icon: IconSettings },
 ];
 
 export default function Sidebar({

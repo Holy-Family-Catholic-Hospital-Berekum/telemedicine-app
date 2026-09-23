@@ -41,7 +41,7 @@
 //   signUp.jsx's utils — update the import path if this file doesn't sit
 //   at the same depth as bookingsPanel.jsx.
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import ConfirmDialog from "./confirmDialog.jsx";
 import {
   IconPlus,
@@ -49,6 +49,7 @@ import {
   IconUserCheck,
   IconTrash,
   IconAlert,
+  IconX,
 } from "./icons.jsx";
 import {
   isValidEmail,
@@ -62,6 +63,61 @@ const ROLE_LABELS = {
   admin: "Admin",
 };
 
+// Inline so this file doesn't depend on bookingsPanel.jsx's local
+// components — move into a shared file if you'd rather not duplicate it
+// a third time when the next panel needs a search box.
+function IconSearch({ size = 14 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <circle cx="8.5" cy="8.5" r="5.5" stroke="currentColor" strokeWidth="1.6" />
+      <path d="M17 17l-3.8-3.8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function SearchInput({ value, onChange, placeholder }) {
+  return (
+    <div
+      className="admin-search"
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        border: "1px solid var(--admin-border, #DCE6EC)",
+        borderRadius: 8,
+        padding: "6px 10px",
+        maxWidth: 320,
+        marginBottom: 14,
+      }}
+    >
+      <IconSearch />
+      <input
+        type="text"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        style={{ border: "none", outline: "none", flex: 1, fontSize: 13.5 }}
+      />
+      {value && (
+        <button
+          type="button"
+          onClick={() => onChange("")}
+          aria-label="Clear search"
+          style={{ display: "flex", color: "inherit" }}
+        >
+          <IconX size={13} />
+        </button>
+      )}
+    </div>
+  );
+}
+
+// Was rendering with `modal-overlay` / `modal-card`, classes that belong
+// to the auth pages (signIn/signUp) and aren't defined in admin.css — so
+// nothing here actually painted as an overlay. Switched to the
+// `admin-modal-backdrop` / `admin-modal` pattern used by SchedulingModal
+// and ConfirmDialog elsewhere in this dashboard, plus click-outside-to-
+// close for consistency with those.
 function CreateDoctorModal({ onClose, onCreate }) {
   const [form, setForm] = useState({
     name: "",
@@ -105,10 +161,15 @@ function CreateDoctorModal({ onClose, onCreate }) {
   };
 
   return (
-    <div className="modal-overlay" role="dialog" aria-modal="true">
-      <div className="modal-card">
+    <div
+      className="admin-modal-backdrop"
+      onClick={() => !submitting && onClose()}
+      role="dialog"
+      aria-modal="true"
+    >
+      <div className="admin-modal" onClick={(e) => e.stopPropagation()}>
         <h3>Create a doctor account</h3>
-        <p className="modal-sub">
+        <p className="sub">
           The doctor is emailed a link to set their own password — no separate
           approval step once you submit this.
         </p>
@@ -121,7 +182,7 @@ function CreateDoctorModal({ onClose, onCreate }) {
         )}
 
         <form onSubmit={handleSubmit} noValidate>
-          <div className="auth-field">
+          <div className="admin-field">
             <label htmlFor="doc-name">Full name</label>
             <input
               id="doc-name"
@@ -134,7 +195,7 @@ function CreateDoctorModal({ onClose, onCreate }) {
             )}
           </div>
 
-          <div className="auth-field">
+          <div className="admin-field">
             <label htmlFor="doc-email">Email</label>
             <input
               id="doc-email"
@@ -148,7 +209,7 @@ function CreateDoctorModal({ onClose, onCreate }) {
             )}
           </div>
 
-          <div className="auth-field">
+          <div className="admin-field">
             <label htmlFor="doc-phone">Phone number</label>
             <input
               id="doc-phone"
@@ -161,7 +222,7 @@ function CreateDoctorModal({ onClose, onCreate }) {
             )}
           </div>
 
-          <div className="auth-field">
+          <div className="admin-field">
             <label htmlFor="doc-specialty">Specialty</label>
             <input
               id="doc-specialty"
@@ -174,7 +235,7 @@ function CreateDoctorModal({ onClose, onCreate }) {
             )}
           </div>
 
-          <div className="modal-actions">
+          <div className="admin-modal-actions">
             <button
               type="button"
               className="btn btn-outline"
@@ -211,6 +272,18 @@ export default function Users({
   const [reactivating, setReactivating] = useState(null);
   const [deleting, setDeleting] = useState(null);
 
+  // One query per subtab, same reasoning as BookingsPanel: switching
+  // between "Doctors" and "Patients" to compare something shouldn't lose
+  // what you typed in the other tab.
+  const [queries, setQueries] = useState({
+    all: "",
+    patients: "",
+    doctors: "",
+    admins: "",
+  });
+  const query = queries[subtab];
+  const setQuery = (value) => setQueries((prev) => ({ ...prev, [subtab]: value }));
+
   const patients = users.filter((u) => u.role === "patient");
   const doctors = users.filter((u) => u.role === "doctor");
   const admins = users.filter((u) => u.role === "admin");
@@ -223,6 +296,25 @@ export default function Users({
         : subtab === "doctors"
           ? doctors
           : admins;
+
+  const filteredRows = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return rows;
+    return rows.filter((u) => {
+      const haystack = [u.name, u.email, u.phone, ROLE_LABELS[u.role], u.specialty]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(q);
+    });
+  }, [rows, query]);
+
+  const SEARCH_PLACEHOLDER = {
+    all: "Search by name, email, or phone…",
+    patients: "Search patients by name, email, or phone…",
+    doctors: "Search doctors by name, email, or specialty…",
+    admins: "Search admins by name or email…",
+  };
 
   // The single source of truth for the permission rule described at the
   // top of this file: never the signed-in admin's own row, never another
@@ -275,8 +367,16 @@ export default function Users({
           </button>
         </div>
 
+        <SearchInput
+          value={query}
+          onChange={setQuery}
+          placeholder={SEARCH_PLACEHOLDER[subtab]}
+        />
+
         {rows.length === 0 ? (
           <div className="admin-empty">No accounts here yet.</div>
+        ) : filteredRows.length === 0 ? (
+          <div className="admin-empty">No accounts match "{query}".</div>
         ) : (
           <div className="admin-panel-body">
             <table className="admin-table">
@@ -290,7 +390,7 @@ export default function Users({
                 </tr>
               </thead>
               <tbody>
-                {rows.map((u) => (
+                {filteredRows.map((u) => (
                   <tr key={u.id}>
                     <td className="admin-cell-name">
                       {u.name}

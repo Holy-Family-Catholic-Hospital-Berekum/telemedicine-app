@@ -6,9 +6,9 @@ import BookingsPanel from "./bookingsPanel.jsx";
 import HistoryPanel from "./historyPanel.jsx";
 import Users from "./users.jsx";
 import RevenuePanel from "./revenuePanel.jsx";
-import ActivityPanel from "./activityPanel.jsx";
 import AuditPanel from "./auditPanel.jsx";
 import MetricsPanel from "./metricsPanel.jsx";
+import ControlPanel from "./controlPanel.jsx"; // NEW
 import { IconBell, IconRefresh } from "./icons.jsx";
 
 import {
@@ -68,6 +68,11 @@ const TAB_TITLES = {
   metrics: {
     title: "Metrics & reports",
     sub: "Anonymised consultation volume — no patient identifiers are stored",
+  },
+  // NEW
+  control: {
+    title: "Control panel",
+    sub: "Site photos and consultation prices, live on the public site",
   },
 };
 
@@ -350,6 +355,14 @@ export default function Admin({ onLogout = () => {} }) {
               outcomeBreakdown={outcomeBreakdown}
             />
           )}
+
+          {/* NEW — Control Panel writes go through real Cloud Functions
+              (see functions/siteSettings.js), unlike the mock handlers
+              above, so it needs no local state here. pushAudit just mirrors
+              the change into this mock Audit Log tab for the demo; drop
+              this prop once AuditPanel reads from Firestore, since the
+              server already writes its own auditLog entry. */}
+          {tab === "control" && <ControlPanel onAudit={pushAudit} />}
         </div>
       </main>
     </div>

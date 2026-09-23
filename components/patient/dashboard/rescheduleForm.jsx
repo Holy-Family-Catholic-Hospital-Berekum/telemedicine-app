@@ -44,10 +44,11 @@ export default function RescheduleForm({ booking, onRequested }) {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="flex items-center gap-1.5 text-xs font-medium text-[#5C6B72] hover:text-[#0095D9]"
+        className="flex items-center gap-1.5 rounded-sm px-3 py-2 text-xs font-medium text-white transition hover:brightness-95 active:brightness-90"
+        style={{ backgroundColor: "#0095D9" }}
       >
         <RefreshCw size={13} strokeWidth={1.75} />
-        Need a different time?
+        Request reschedule
       </button>
     );
   }

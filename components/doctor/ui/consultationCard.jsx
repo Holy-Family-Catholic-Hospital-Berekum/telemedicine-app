@@ -3,13 +3,13 @@ import {
   Video,
   MapPin,
   Lock,
-  Loader2,
   PhoneCall,
   CheckSquare,
   History,
 } from "lucide-react";
 import SensitiveDetails from "../sensitiveDetails";
 import { getCallWindow } from "../docUtils";
+import VerifyConsultationIdModal from "./verifyConsultationIdModal";
 
 const MODE_STYLE = {
   online: { spine: "#0095D9", chipText: "#0095D9", label: "Online" },
@@ -27,16 +27,33 @@ export default function ConsultationCard({
   consultation,
   onStartCall,
   onMarkDone,
-  startingCall,
 }) {
   const [expandedHistory, setExpandedHistory] = useState(false);
+  const [verifyModalOpen, setVerifyModalOpen] = useState(false);
   const mode = MODE_STYLE[consultation.mode];
   const isOnline = consultation.mode === "online";
   const callInProgress = isOnline && Boolean(consultation.callStartedAt);
   const { unlocked, minutesUntilUnlock } = getCallWindow(
     consultation.scheduledTime,
   );
-  const idVisible = unlocked || callInProgress;
+
+  // Doctors never see the consultation ID on their dashboard — they must
+  // obtain it from admin/reception each time and enter it in
+  // VerifyConsultationIdModal before a call is allowed to start. This is
+  // an organisational control (forces the doctor into the hospital's
+  // telemedicine room to get the ID), not a substitute for the real
+  // security boundary: startVideoCall() on the server must independently
+  // verify the entered ID against consultations.consultationId before
+  // issuing a room, never trust that this client-side check ran.
+  async function handleVerifyId(enteredId) {
+    const normalized = enteredId.trim().toUpperCase();
+    if (normalized !== consultation.consultationId.toUpperCase()) {
+      return false;
+    }
+    await onStartCall(consultation.consultationId);
+    setVerifyModalOpen(false);
+    return true;
+  }
 
   return (
     <div className="flex flex-col overflow-hidden rounded-md border border-[#DCE6EC] bg-white md:flex-row">
@@ -85,20 +102,6 @@ export default function ConsultationCard({
               {consultation.patient.location}
             </p>
           </div>
-
-          <div className="text-right text-xs text-[#5C6B72]">
-            <p>Consultation ID</p>
-            {idVisible ? (
-              <p className="font-mono text-[#12242C]">
-                {consultation.consultationId}
-              </p>
-            ) : (
-              <p className="flex items-center justify-end gap-1 text-[#5C6B72]">
-                <Lock size={11} strokeWidth={2} />
-                Unlocks in {minutesUntilUnlock}m
-              </p>
-            )}
-          </div>
         </div>
 
         {consultation.rescheduleHistory.length > 0 && (
@@ -130,21 +133,12 @@ export default function ConsultationCard({
             unlocked ? (
               <button
                 type="button"
-                disabled={startingCall}
-                onClick={() => onStartCall(consultation.consultationId)}
-                className="flex items-center gap-2 rounded-sm px-3.5 py-2 text-sm font-medium text-white transition disabled:cursor-not-allowed disabled:opacity-60"
+                onClick={() => setVerifyModalOpen(true)}
+                className="flex items-center gap-2 rounded-sm px-3.5 py-2 text-sm font-medium text-white transition"
                 style={{ backgroundColor: "#0095D9" }}
               >
-                {startingCall ? (
-                  <Loader2 size={15} strokeWidth={2} className="animate-spin" />
-                ) : (
-                  <Video size={15} strokeWidth={2} />
-                )}
-                {callInProgress
-                  ? "Rejoin call"
-                  : startingCall
-                    ? "Connecting…"
-                    : "Start video call"}
+                <Video size={15} strokeWidth={2} />
+                {callInProgress ? "Rejoin call" : "Start video call"}
               </button>
             ) : (
               <span className="flex items-center gap-1.5 rounded-sm border border-[#DCE6EC] px-3 py-2 text-sm text-[#5C6B72]">
@@ -190,6 +184,13 @@ export default function ConsultationCard({
           )}
         </div>
       </div>
+
+      {verifyModalOpen && (
+        <VerifyConsultationIdModal
+          onClose={() => setVerifyModalOpen(false)}
+          onVerify={handleVerifyId}
+        />
+      )}
     </div>
   );
 }

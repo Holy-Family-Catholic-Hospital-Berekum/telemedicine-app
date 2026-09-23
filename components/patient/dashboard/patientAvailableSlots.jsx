@@ -1,42 +1,46 @@
 import { useState } from "react";
-import { CalendarPlus } from "lucide-react";
-import { PRICING } from "./patientMockData";
+import { CalendarPlus, Loader2 } from "lucide-react";
 import { createBooking } from "./patientFirestoreService";
 import { formatDateTime } from "./patientUtils";
-import PaymentForm from "./paymentForm";
 
-// Claiming a slot only records intent — per the architecture (4.8) the
-// slot itself doesn't move to "held" until payment is actually
-// submitted, which is why claiming here drops straight into the same
-// PaymentForm used everywhere else rather than a separate confirmation
-// step.
+// UPDATED for the new payment flow (Paystack, server-confirmed on the
+// booking page — see bookConsultation.jsx): claiming a slot is now a
+// single step. createBooking() itself takes the patient through payment
+// (same as bookConsultation.jsx) and only resolves once payment is
+// confirmed, so there's no separate PaymentForm step afterward and no
+// unpaid/pending-verification state to hold here.
+//
+// location is now collected up front, same field bookConsultation.jsx
+// gathers before payment.
 export default function AvailableSlots({ slots, onClaimed }) {
   const [claimingId, setClaimingId] = useState(null);
-  const [claimedBooking, setClaimedBooking] = useState(null);
-  const [form, setForm] = useState({ dateOfBirth: "", sex: "" });
+  const [submittingId, setSubmittingId] = useState(null);
+  const [form, setForm] = useState({ dateOfBirth: "", sex: "", location: "" });
   const [error, setError] = useState(null);
 
   async function handleClaim(slot) {
-    if (!form.dateOfBirth || !form.sex) {
-      setError("Enter your date of birth and sex to claim a slot.");
+    if (!form.dateOfBirth || !form.sex || !form.location.trim()) {
+      setError("Enter your date of birth, sex, and location to claim a slot.");
       return;
     }
     setError(null);
+    setSubmittingId(slot.slotId);
     try {
       const booking = await createBooking({
         type: slot.type,
         mode: slot.mode,
         dateOfBirth: form.dateOfBirth,
         sex: form.sex,
+        location: form.location.trim(),
         slot,
       });
-      const withAmount = { ...booking, amount: PRICING[slot.type] };
-      setClaimedBooking(withAmount);
-      onClaimed?.(withAmount);
+      onClaimed?.(booking);
+      setClaimingId(null);
+      setForm({ dateOfBirth: "", sex: "", location: "" });
     } catch (err) {
       setError(err.message || "Could not claim this slot.");
     } finally {
-      setClaimingId(null);
+      setSubmittingId(null);
     }
   }
 
@@ -65,7 +69,10 @@ export default function AvailableSlots({ slots, onClaimed }) {
               {claimingId !== slot.slotId && (
                 <button
                   type="button"
-                  onClick={() => setClaimingId(slot.slotId)}
+                  onClick={() => {
+                    setClaimingId(slot.slotId);
+                    setError(null);
+                  }}
                   className="flex items-center gap-1.5 rounded-sm border border-[#0095D9] px-3 py-1.5 text-xs font-medium text-[#0095D9] hover:bg-[#0095D90D] transition"
                 >
                   <CalendarPlus size={13} strokeWidth={1.75} />
@@ -99,20 +106,44 @@ export default function AvailableSlots({ slots, onClaimed }) {
                     <option value="male">Male</option>
                   </select>
                 </div>
+                <input
+                  type="text"
+                  required
+                  value={form.location}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, location: e.target.value }))
+                  }
+                  placeholder="Location (town/area)"
+                  className="w-full rounded-sm border border-[#DCE6EC] px-2.5 py-1.5 text-xs text-[#12242C] focus:border-[#0095D9] focus:outline-none"
+                />
                 {error && <p className="text-xs text-[#B23A3A]">{error}</p>}
                 <div className="flex gap-2">
                   <button
                     type="button"
                     onClick={() => handleClaim(slot)}
-                    className="rounded-sm px-3 py-1.5 text-xs font-medium text-white"
+                    disabled={submittingId === slot.slotId}
+                    className="flex items-center gap-1.5 rounded-sm px-3 py-1.5 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-60"
                     style={{ backgroundColor: "#0095D9" }}
                   >
-                    Confirm and claim
+                    {submittingId === slot.slotId && (
+                      <Loader2
+                        size={13}
+                        strokeWidth={2}
+                        className="animate-spin"
+                      />
+                    )}
+                    {submittingId === slot.slotId
+                      ? "Processing payment…"
+                      : "Confirm and pay"}
                   </button>
                   <button
                     type="button"
-                    onClick={() => setClaimingId(null)}
-                    className="text-xs text-[#5C6B72] hover:text-[#12242C]"
+                    onClick={() => {
+                      setClaimingId(null);
+                      setError(null);
+                    }}
+                    disabled={submittingId === slot.slotId}
+                    className="text-xs text-[#5C6B72] hover:text-[#12242C] disabled:opacity-60"
                   >
                     Cancel
                   </button>
@@ -122,18 +153,6 @@ export default function AvailableSlots({ slots, onClaimed }) {
           </div>
         ))}
       </div>
-
-      {claimedBooking && (
-        <div className="mt-3 rounded-md border border-[#F8853533] bg-[#F885350D] p-3.5">
-          <p className="text-xs text-[#5C6B72]">
-            Slot claimed — pay now to lock it in before it's released back.
-          </p>
-          <PaymentForm
-            booking={claimedBooking}
-            onSubmitted={() => setClaimedBooking(null)}
-          />
-        </div>
-      )}
     </div>
   );
 }

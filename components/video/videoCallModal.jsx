@@ -54,7 +54,7 @@ export default function VideoCallModal({ consultationId, role, onClose }) {
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-black">
-      <div className="flex items-center justify-between bg-[#12242C] px-4 py-2.5">
+      <div className="flex items-center justify-between bg-[#F28539] px-4 py-2.5">
         <div className="flex items-center gap-2 min-w-0">
           <img
             src={hospitalLogo}
@@ -124,7 +124,7 @@ export default function VideoCallModal({ consultationId, role, onClose }) {
         )}
       </div>
 
-      <div className="flex items-center justify-center gap-3 bg-[#12242C] px-4 py-4">
+      <div className="flex items-center justify-center gap-3 bg-[#F28539] px-4 py-4">
         <button
           type="button"
           onClick={toggleMic}

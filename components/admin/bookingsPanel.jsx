@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import SchedulingModal from "./schedulingModal.jsx";
 import CreateScheduleModal from "./createScheduleModal.jsx";
 import ConfirmDialog from "./confirmDialog.jsx";
@@ -9,6 +9,145 @@ import {
   IconPlus,
   IconX,
 } from "./icons.jsx";
+
+// Inline to avoid assuming icons.jsx exports these — move into icons.jsx
+// alongside the others if you'd rather keep icon imports centralized.
+function IconSearch({ size = 14 }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 20 20"
+      fill="none"
+      aria-hidden="true"
+    >
+      <circle
+        cx="8.5"
+        cy="8.5"
+        r="5.5"
+        stroke="currentColor"
+        strokeWidth="1.6"
+      />
+      <path
+        d="M17 17l-3.8-3.8"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function IconCopy({ size = 13 }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 20 20"
+      fill="none"
+      aria-hidden="true"
+    >
+      <rect
+        x="7"
+        y="7"
+        width="9"
+        height="9"
+        rx="1.5"
+        stroke="currentColor"
+        strokeWidth="1.5"
+      />
+      <path
+        d="M4.5 13V5.5A1.5 1.5 0 0 1 6 4h7.5"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+// Small "code chip with copy button" used for consultation IDs, booking IDs
+// and slot IDs alike. `copiedId`/`onCopy` are lifted to the parent so only
+// one "Copied" label shows at a time across the whole table.
+function CopyableId({ id, copiedId, onCopy }) {
+  const justCopied = copiedId === id;
+
+  async function handleCopy(e) {
+    e.stopPropagation();
+    try {
+      await navigator.clipboard.writeText(id);
+      onCopy(id);
+    } catch {
+      // Clipboard API can fail (permissions, insecure context) — the ID is
+      // still visible in the chip, so the admin can select/copy manually.
+    }
+  }
+
+  return (
+    <span
+      className="code-chip"
+      style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
+    >
+      {id}
+      <button
+        type="button"
+        onClick={handleCopy}
+        title="Copy ID"
+        aria-label={`Copy ${id}`}
+        className="btn-icon-inline"
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          color: "inherit",
+        }}
+      >
+        <IconCopy />
+      </button>
+      {justCopied && (
+        <span className="admin-cell-sub" style={{ color: "#0095D9" }}>
+          Copied
+        </span>
+      )}
+    </span>
+  );
+}
+
+function SearchInput({ value, onChange, placeholder }) {
+  return (
+    <div
+      className="admin-search"
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        border: "1px solid var(--admin-border, #DCE6EC)",
+        borderRadius: 8,
+        padding: "6px 10px",
+        maxWidth: 320,
+        marginBottom: 14,
+      }}
+    >
+      <IconSearch />
+      <input
+        type="text"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        style={{ border: "none", outline: "none", flex: 1, fontSize: 13.5 }}
+      />
+      {value && (
+        <button
+          type="button"
+          onClick={() => onChange("")}
+          aria-label="Clear search"
+          style={{ display: "flex", color: "inherit" }}
+        >
+          <IconX size={13} />
+        </button>
+      )}
+    </div>
+  );
+}
 
 export default function BookingsPanel({
   bookings,
@@ -24,6 +163,25 @@ export default function BookingsPanel({
   const [closing, setClosing] = useState(null);
   const [creatingSlot, setCreatingSlot] = useState(false);
   const [cancellingSlot, setCancellingSlot] = useState(null);
+
+  // One query per subtab, so switching tabs doesn't lose what you typed
+  // in another — an admin bouncing between "Scheduled" and "Reschedule
+  // requests" to compare the same patient shouldn't have to retype it.
+  const [queries, setQueries] = useState({
+    toSchedule: "",
+    scheduled: "",
+    reschedules: "",
+    slots: "",
+  });
+  const query = queries[subtab];
+  const setQuery = (value) =>
+    setQueries((prev) => ({ ...prev, [subtab]: value }));
+
+  const [copiedId, setCopiedId] = useState(null);
+  function handleCopy(id) {
+    setCopiedId(id);
+    setTimeout(() => setCopiedId((cur) => (cur === id ? null : cur)), 1500);
+  }
 
   // Every booking that reaches this dashboard has already been paid —
   // the server only writes a booking record after Flutterwave confirms
@@ -47,6 +205,57 @@ export default function BookingsPanel({
         : subtab === "reschedules"
           ? reschedules
           : null;
+
+  const filteredRows = useMemo(() => {
+    if (!rows) return rows;
+    const q = query.trim().toLowerCase();
+    if (!q) return rows;
+    return rows.filter((b) => {
+      const haystack = [
+        b.patientName,
+        b.phone,
+        b.type,
+        b.mode,
+        b.bookingId,
+        b.consultationId,
+        doctorName(b.doctorId),
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(q);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows, query, doctors]);
+
+  const filteredSlots = useMemo(() => {
+    const q = queries.slots.trim().toLowerCase();
+    if (!q) return slots;
+    return slots.filter((s) => {
+      const haystack = [
+        s.id,
+        doctorName(s.doctorId),
+        s.type,
+        s.mode,
+        s.status,
+        s.date,
+        s.startTime,
+        s.endTime,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(q);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slots, queries.slots, doctors]);
+
+  const SEARCH_PLACEHOLDER = {
+    toSchedule: "Search by patient, phone, or booking ID…",
+    scheduled: "Search by patient, doctor, or consultation ID…",
+    reschedules: "Search by patient or phone…",
+    slots: "Search by doctor, date, or slot ID…",
+  };
 
   return (
     <>
@@ -94,16 +303,25 @@ export default function BookingsPanel({
           </button>
         </div>
 
+        <SearchInput
+          value={query}
+          onChange={setQuery}
+          placeholder={SEARCH_PLACEHOLDER[subtab]}
+        />
+
         {subtab === "slots" ? (
           slots.length === 0 ? (
             <div className="admin-empty">
               No slots created yet. Use Create schedule to open one.
             </div>
+          ) : filteredSlots.length === 0 ? (
+            <div className="admin-empty">No slots match "{queries.slots}".</div>
           ) : (
             <div className="admin-panel-body">
               <table className="admin-table">
                 <thead>
                   <tr>
+                    <th>Slot ID</th>
                     <th>Doctor</th>
                     <th>Type / mode</th>
                     <th>Date</th>
@@ -113,8 +331,15 @@ export default function BookingsPanel({
                   </tr>
                 </thead>
                 <tbody>
-                  {slots.map((s) => (
+                  {filteredSlots.map((s) => (
                     <tr key={s.id}>
+                      <td>
+                        <CopyableId
+                          id={s.id}
+                          copiedId={copiedId}
+                          onCopy={handleCopy}
+                        />
+                      </td>
                       <td className="admin-cell-name">
                         {doctorName(s.doctorId)}
                       </td>
@@ -155,6 +380,8 @@ export default function BookingsPanel({
               ? "Every paid booking has a doctor and a time slot."
               : "Nothing here right now."}
           </div>
+        ) : filteredRows.length === 0 ? (
+          <div className="admin-empty">No results match "{query}".</div>
         ) : (
           <div className="admin-panel-body">
             <table className="admin-table">
@@ -162,12 +389,13 @@ export default function BookingsPanel({
                 <tr>
                   <th>Patient</th>
                   <th>Type / mode</th>
+                  {subtab === "toSchedule" && <th>Booking ID</th>}
                   {subtab !== "toSchedule" && <th>Schedule</th>}
                   <th></th>
                 </tr>
               </thead>
               <tbody>
-                {rows.map((b) => (
+                {filteredRows.map((b) => (
                   <tr key={b.bookingId}>
                     <td>
                       <div className="admin-cell-name">{b.patientName}</div>
@@ -177,13 +405,24 @@ export default function BookingsPanel({
                       <div>{b.type}</div>
                       <div className="admin-cell-sub">{b.mode}</div>
                     </td>
+                    {subtab === "toSchedule" && (
+                      <td>
+                        <CopyableId
+                          id={b.bookingId}
+                          copiedId={copiedId}
+                          onCopy={handleCopy}
+                        />
+                      </td>
+                    )}
                     {subtab !== "toSchedule" && (
                       <td>
                         {b.consultationId ? (
                           <>
-                            <span className="code-chip">
-                              {b.consultationId}
-                            </span>
+                            <CopyableId
+                              id={b.consultationId}
+                              copiedId={copiedId}
+                              onCopy={handleCopy}
+                            />
                             <div
                               className="admin-cell-sub"
                               style={{ marginTop: 4 }}

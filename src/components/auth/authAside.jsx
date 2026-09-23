@@ -9,9 +9,13 @@ import logo from "../../assets/logo.png";
 // Add your background photo at src/assets/auth-bg.jpg (same folder as
 // the logo). If you're using a different extension or filename, just
 // update this import to match.
-import bgPhoto from "../../assets/auth-bg.jpg";
+
+import authDefault from "../../assets/auth-bg.jpg";
+import { useSiteSettings } from "../../siteSettings";
 
 export default function AuthAside({ heading, body, points }) {
+  const { settings } = useSiteSettings();
+  const bgPhoto = settings.authImage ?? authDefault;
   return (
     <aside className="auth-aside">
       <div

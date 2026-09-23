@@ -146,3 +146,7 @@ export async function joinVideoCall({ booking, enteredConsultationId }) {
     roomName: `mock-room-${booking.consultationId}`,
   });
 }
+
+export async function fetchConsultationHistory(uid) {
+  // Firestore implementation
+}

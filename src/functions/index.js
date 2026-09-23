@@ -1,22 +1,22 @@
 /**
  * functions/index.js
- * Payment backend for the consultation booking flow.
+ * Payment backend for the consultation booking flow — Paystack edition.
  *
  * ── THE SECURITY MODEL IN ONE PARAGRAPH ──────────────────────────────
  * The browser is treated as hostile. It can ask to create a draft and it
  * can ask what a booking's status is — that's all. It cannot set the
  * fee, cannot mark anything paid, and is never told anything it could
- * use to move money. The fee comes from CONSULTATION_FEES below, on the
- * server. Confirmation comes from Flutterwave's own API, reached with a
- * secret key that exists only here. Firestore rules (see
+ * use to move money. The fee comes from CONSULTATION_FEES/loadPrices()
+ * below, on the server. Confirmation comes from Paystack's own API,
+ * reached with a secret key that exists only here. Firestore rules (see
  * firestore.rules) stop the client writing booking status directly, and
  * these functions use the Admin SDK, which bypasses those rules — so the
  * only path to "paid" runs through code you control.
  *
  * ── THE FOUR FUNCTIONS ───────────────────────────────────────────────
  * createBookingDraft  (callable)  patient starts a booking; unpaid
- * initializePayment   (callable)  mints a one-use tx_ref for an attempt
- * flutterwaveWebhook  (HTTP)      Flutterwave tells us money arrived
+ * initializePayment   (callable)  mints a one-use reference for an attempt
+ * paystackWebhook      (HTTP)      Paystack tells us money arrived
  * getBookingStatus    (callable)  patient's page asks "am I paid yet?"
  *
  * Two independent things can confirm a payment: the webhook (push) and
@@ -24,17 +24,27 @@
  * Having both means a missed webhook doesn't strand a paying patient,
  * and a patient who closes the tab still gets their booking.
  *
+ * ── MIGRATION NOTE (Flutterwave → Paystack) ──────────────────────────
+ * Two things bite people doing this exact migration, so both get called
+ * out again at the point they matter below:
+ *   1. Paystack amounts are in the SMALLEST currency unit (pesewas for
+ *      GHS), not whole cedis. Firestore/this file store `amount` in
+ *      whole GHS throughout — the ×100 conversion happens at exactly
+ *      one point, in paymentIsAcceptable() below, and nowhere else on
+ *      the server. The client does its own ×100 when opening the
+ *      Paystack popup — see bookConsultation.jsx.
+ *   2. Paystack's webhook signature is an HMAC-SHA512 of the raw
+ *      request body, keyed with your SECRET key directly — there's no
+ *      separate invented "hash" to configure like Flutterwave's
+ *      verif-hash. One secret does both jobs now.
+ *
  * ── SECRETS ──────────────────────────────────────────────────────────
- * Set these once, they are never committed to git:
- *   firebase functions:secrets:set FLW_SECRET_KEY
- *   firebase functions:secrets:set FLW_SECRET_HASH
- * FLW_SECRET_HASH is a long random string you invent and also paste into
- * the Flutterwave dashboard's webhook settings. It's how we know a
- * webhook request is really from Flutterwave and not from someone who
- * guessed the URL.
+ * Set this once, it is never committed to git:
+ *   firebase functions:secrets:set PAYSTACK_SECRET_KEY
+ * That's the only payment secret needed — see the migration note above.
  *
  * Requires Node 20+ and the Blaze plan (Cloud Functions can't make
- * outbound calls to Flutterwave on the free Spark plan).
+ * outbound calls to Paystack on the free Spark plan).
  */
 
 const {
@@ -46,22 +56,28 @@ const { defineSecret } = require("firebase-functions/params");
 const { setGlobalOptions } = require("firebase-functions/v2");
 const logger = require("firebase-functions/logger");
 const admin = require("firebase-admin");
+const crypto = require("crypto");
 
 admin.initializeApp();
+require("./siteSettings"); // registers updateConsultationPrices, updateSiteImages
+const { loadPrices } = require("./siteSettings");
+
 const db = admin.firestore();
 
 // Keep this in step with FUNCTIONS_REGION in bookConsultation.jsx.
 setGlobalOptions({ region: "europe-west1", maxInstances: 10 });
 
-const FLW_SECRET_KEY = defineSecret("FLW_SECRET_KEY");
-const FLW_SECRET_HASH = defineSecret("FLW_SECRET_HASH");
+const PAYSTACK_SECRET_KEY = defineSecret("PAYSTACK_TEST_SECRET_KEY");
 
-const FLW_API = "https://api.flutterwave.com/v3";
+const PAYSTACK_API = "https://api.paystack.co";
 
 // The only authoritative fee table. Never accept an amount from a client.
+// Amounts here are in whole GHS — the same unit used everywhere in this
+// file and in Firestore. Only paymentIsAcceptable() below ever converts
+// to pesewas, to compare against what Paystack reports.
 const CONSULTATION_FEES = {
-  OPD: 50,
-  SURGICAL: 100,
+  OPD: 250,
+  SURGICAL: 300,
 };
 const CURRENCY = "GHS";
 
@@ -97,7 +113,7 @@ function cleanString(value, { max = 120, field }) {
 /**
  * Ghana MSISDN, loosely normalised to 233XXXXXXXXX. Loose on purpose:
  * rejecting a real patient's number is worse than passing a slightly odd
- * one to Flutterwave, which does its own validation at the modal.
+ * one to Paystack, which does its own validation at the popup.
  */
 function normalisePhone(raw) {
   const digits = String(raw || "").replace(/\D/g, "");
@@ -109,48 +125,75 @@ function normalisePhone(raw) {
   return digits;
 }
 
-/** Server-to-server call to Flutterwave. The secret key never leaves here. */
-async function flwGet(path, secretKey) {
-  const res = await fetch(`${FLW_API}${path}`, {
+/** Server-to-server call to Paystack. The secret key never leaves here. */
+async function paystackGet(path, secretKey) {
+  const res = await fetch(`${PAYSTACK_API}${path}`, {
     headers: { Authorization: `Bearer ${secretKey}` },
   });
+  const body = await res.json().catch(() => null);
   if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`Flutterwave ${res.status}: ${body.slice(0, 300)}`);
+    throw new Error(
+      `Paystack ${res.status}: ${body ? JSON.stringify(body).slice(0, 300) : "no body"}`,
+    );
   }
-  return res.json();
+  return body;
 }
 
 /**
- * The gate. Given what Flutterwave reports about a transaction and what
- * we expected, decide whether this counts as paid.
- *
- * Checking the amount and currency here is not paranoia: the amount in
- * the inline modal comes from the browser, so a user can edit it before
- * paying. Without this check, someone could pay GHS 1 for a GHS 100
- * consultation. We compare against our own record instead.
+ * Verifies one transaction by reference. Paystack uses this single
+ * endpoint for both "I have a reference, tell me what happened" cases —
+ * unlike Flutterwave, which needed a numeric transaction id for the
+ * webhook path and a separate query-param endpoint for polling. That
+ * meant two lookup shapes there; here it's one function, used by both
+ * the webhook handler and getBookingStatus below.
  */
-function paymentIsAcceptable(flwData, booking) {
-  if (!flwData) return false;
-  if (flwData.status !== "successful") return false;
-  if (flwData.currency !== booking.currency) return false;
-  // charged_amount can exceed amount with fees; amount is what we asked for.
-  if (Number(flwData.amount) < Number(booking.amount)) return false;
+async function verifyPaystackTransaction(reference, secretKey) {
+  const body = await paystackGet(
+    `/transaction/verify/${encodeURIComponent(reference)}`,
+    secretKey,
+  );
+  return body?.data || null;
+}
+
+/**
+ * The gate. Given what Paystack reports about a transaction and what we
+ * expected, decide whether this counts as paid.
+ *
+ * Checking the amount and currency here is not paranoia: someone could
+ * in principle tamper with a client-side amount before a charge starts.
+ * Without this check, someone could pay GHS 1 for a GHS 250
+ * consultation. We compare against our own record instead.
+ *
+ * MIGRATION NOTE: this is the one place the ×100 pesewas conversion
+ * happens on the server. `booking.amount` is whole GHS everywhere else
+ * in this file; `paystackData.amount` is pesewas, straight from
+ * Paystack. Do the conversion here, not by changing what's stored.
+ */
+function paymentIsAcceptable(paystackData, booking) {
+  if (!paystackData) return false;
+  if (paystackData.status !== "success") return false;
+  if (paystackData.currency !== booking.currency) return false;
+  const expectedPesewas = Math.round(Number(booking.amount) * 100);
+  // Paystack's amount can exceed what we asked for if the customer covers
+  // transaction fees; it should never be less.
+  if (Number(paystackData.amount) < expectedPesewas) return false;
   // The reference must be one we minted for THIS booking.
-  if (!booking.txRefs || !booking.txRefs.includes(flwData.tx_ref)) return false;
+  if (!booking.txRefs || !booking.txRefs.includes(paystackData.reference)) {
+    return false;
+  }
   return true;
 }
 
 /**
  * Flip a booking to paid, exactly once.
  *
- * Idempotency matters here. Flutterwave retries webhooks, and the patient's
+ * Idempotency matters here. Paystack retries webhooks, and the patient's
  * page may be polling at the same moment, so this can run twice for one
  * payment. The transaction re-reads status inside the lock and bails if
  * it's already paid, so a double delivery can't create a second booking or
  * a second notification.
  */
-async function markBookingPaid(bookingRef, flwData) {
+async function markBookingPaid(bookingRef, paystackData) {
   return db.runTransaction(async (tx) => {
     const snap = await tx.get(bookingRef);
     if (!snap.exists) return { changed: false, status: "failed" };
@@ -158,17 +201,19 @@ async function markBookingPaid(bookingRef, flwData) {
     const booking = snap.data();
     if (booking.status === "paid") return { changed: false, status: "paid" };
 
-    if (!paymentIsAcceptable(flwData, booking)) {
+    if (!paymentIsAcceptable(paystackData, booking)) {
       return { changed: false, status: booking.status };
     }
 
     tx.update(bookingRef, {
       status: "paid",
       paidAt: admin.firestore.FieldValue.serverTimestamp(),
-      flwTransactionId: String(flwData.id),
-      flwTxRef: flwData.tx_ref,
-      amountPaid: Number(flwData.amount),
-      paymentChannel: flwData.payment_type || null,
+      paystackTransactionId: String(paystackData.id),
+      paystackReference: paystackData.reference,
+      // Stored back in whole GHS, matching booking.amount's unit — see
+      // the migration note on paymentIsAcceptable().
+      amountPaid: Number(paystackData.amount) / 100,
+      paymentChannel: paystackData.channel || null,
     });
     return { changed: true, status: "paid" };
   });
@@ -212,7 +257,8 @@ exports.createBookingDraft = onCall(async (request) => {
     throw new HttpsError("invalid-argument", "Enter a valid date of birth.");
   }
 
-  const amount = CONSULTATION_FEES[d.type];
+  const prices = await loadPrices();
+  const amount = prices[d.type];
   const ref = db.collection("bookings").doc();
 
   await ref.set({
@@ -224,7 +270,7 @@ exports.createBookingDraft = onCall(async (request) => {
     sex: d.sex,
     location: cleanString(d.location, { field: "Location" }),
     phone: normalisePhone(d.phone),
-    amount,
+    amount, // whole GHS
     currency: CURRENCY,
     status: "awaiting_payment",
     txRefs: [],
@@ -239,14 +285,15 @@ exports.createBookingDraft = onCall(async (request) => {
 /* ------------------------------------------------------------------ */
 
 /**
- * Mints a fresh tx_ref for one payment attempt and records it against the
- * booking. A new reference per attempt is what makes retries safe: a
+ * Mints a fresh reference for one payment attempt and records it against
+ * the booking. A new reference per attempt is what makes retries safe: a
  * failed attempt's reference can never be reused to claim a later
  * success, and each reference maps to exactly one booking.
  *
- * With the inline modal there's no Flutterwave API call to make here —
- * the modal is opened client-side with the public key. The security comes
- * from verification afterwards, not from this step.
+ * There's no Paystack API call to make here — with the Inline popup, the
+ * transaction is opened client-side with the public key and this
+ * reference. The security comes from verification afterwards (see
+ * paystackWebhook and getBookingStatus), not from this step.
  */
 exports.initializePayment = onCall(async (request) => {
   const auth = requireAuth(request);
@@ -270,25 +317,27 @@ exports.initializePayment = onCall(async (request) => {
     );
   }
 
-  const txRef = `HFH-${bookingId}-${Date.now()}`;
+  // Paystack references are typically alphanumeric with no fixed prefix
+  // convention — HFH- keeps ours easy to spot in the Paystack dashboard.
+  const reference = `HFH-${bookingId}-${Date.now()}`;
 
   await ref.update({
-    txRefs: admin.firestore.FieldValue.arrayUnion(txRef),
-    lastTxRef: txRef,
+    txRefs: admin.firestore.FieldValue.arrayUnion(reference),
+    lastTxRef: reference,
     lastAttemptAt: admin.firestore.FieldValue.serverTimestamp(),
   });
 
-  // Reverse lookup so the webhook can find the booking from a tx_ref
+  // Reverse lookup so the webhook can find the booking from a reference
   // without scanning the collection.
-  await db.collection("paymentRefs").doc(txRef).set({
+  await db.collection("paymentRefs").doc(reference).set({
     bookingId,
     uid: auth.uid,
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
   });
 
   return {
-    txRef,
-    amount: booking.amount,
+    reference,
+    amount: booking.amount, // whole GHS — client multiplies by 100, see bookConsultation.jsx
     currency: booking.currency,
     customer: {
       name: auth.token.name || "",
@@ -299,59 +348,72 @@ exports.initializePayment = onCall(async (request) => {
 });
 
 /* ------------------------------------------------------------------ */
-/* 3. flutterwaveWebhook                                               */
+/* 3. paystackWebhook                                                  */
 /* ------------------------------------------------------------------ */
 
 /**
- * Flutterwave calls this when a charge completes. Three rules:
+ * Paystack calls this when a charge completes. Three rules:
  *
- * 1. Verify the sender. The verif-hash header must equal our secret hash.
- *    Without this, anyone who finds the URL could POST a fake success.
+ * 1. Verify the sender. x-paystack-signature must equal an HMAC-SHA512
+ *    of the raw request body, keyed with our secret key. Without this,
+ *    anyone who finds the URL could POST a fake success. This uses
+ *    req.rawBody (Cloud Functions gives you this for exactly this
+ *    reason) rather than re-stringifying req.body, since re-stringified
+ *    JSON isn't guaranteed to byte-for-byte match what Paystack signed.
  * 2. Don't trust the payload's numbers. The body says a payment
  *    succeeded; we call the verify endpoint and believe that instead.
  * 3. Always answer 200 quickly, even for events we ignore. A non-200
- *    makes Flutterwave retry, and retrying a webhook we deliberately
+ *    makes Paystack retry, and retrying a webhook we deliberately
  *    skipped is just noise.
  */
-exports.flutterwaveWebhook = onRequest(
-  { secrets: [FLW_SECRET_KEY, FLW_SECRET_HASH], cors: false },
+exports.paystackWebhook = onRequest(
+  { secrets: [PAYSTACK_SECRET_KEY], cors: false },
   async (req, res) => {
     if (req.method !== "POST") {
       res.status(405).send("Method not allowed");
       return;
     }
 
-    const signature = req.headers["verif-hash"];
-    if (!signature || signature !== FLW_SECRET_HASH.value()) {
-      logger.warn("Rejected webhook with bad or missing verif-hash");
+    const signature = req.headers["x-paystack-signature"];
+    const expectedSignature = crypto
+      .createHmac("sha512", PAYSTACK_SECRET_KEY.value())
+      .update(req.rawBody)
+      .digest("hex");
+
+    if (!signature || signature !== expectedSignature) {
+      logger.warn("Rejected webhook with bad or missing x-paystack-signature");
       res.status(401).send("Invalid signature");
       return;
     }
 
     const event = req.body || {};
-    const data = event.data || {};
 
-    // We only care about completed charges. Acknowledge everything else.
-    if (data.status !== "successful" || !data.id) {
+    // We only care about completed charges. Acknowledge everything else
+    // (Paystack sends several event types to the same URL).
+    if (event.event !== "charge.success" || !event.data?.reference) {
       res.status(200).send("Ignored");
       return;
     }
 
     try {
-      // Rule 2: re-fetch from Flutterwave rather than trusting the body.
-      const verified = await flwGet(
-        `/transactions/${data.id}/verify`,
-        FLW_SECRET_KEY.value(),
+      // Rule 2: re-fetch from Paystack rather than trusting the body.
+      const tx = await verifyPaystackTransaction(
+        event.data.reference,
+        PAYSTACK_SECRET_KEY.value(),
       );
-      const tx = verified?.data;
-      if (!tx?.tx_ref) {
+      if (!tx?.reference) {
         res.status(200).send("No reference");
         return;
       }
 
-      const refSnap = await db.collection("paymentRefs").doc(tx.tx_ref).get();
+      const refSnap = await db
+        .collection("paymentRefs")
+        .doc(tx.reference)
+        .get();
       if (!refSnap.exists) {
-        logger.warn("Webhook for unknown tx_ref", { txRef: tx.tx_ref });
+        logger.warn("Webhook for unknown reference", {
+          reference: tx.reference,
+        });
         res.status(200).send("Unknown reference");
         return;
       }
@@ -368,7 +430,7 @@ exports.flutterwaveWebhook = onRequest(
       res.status(200).send("OK");
     } catch (err) {
       logger.error("Webhook processing failed", err);
-      // 500 so Flutterwave retries — the payment is real, we just couldn't
+      // 500 so Paystack retries — the payment is real, we just couldn't
       // record it this time.
       res.status(500).send("Error");
     }
@@ -380,16 +442,16 @@ exports.flutterwaveWebhook = onRequest(
 /* ------------------------------------------------------------------ */
 
 /**
- * The page polls this after the modal closes.
+ * The page polls this after the popup closes.
  *
  * If the webhook already landed, this is a cheap read. If it hasn't, we
- * ask Flutterwave directly by reference. That pull path is what keeps a
+ * ask Paystack directly by reference. That pull path is what keeps a
  * paying patient from being stuck behind a delayed or dropped webhook —
  * and it means the flow still works if the webhook is misconfigured,
  * which on a first deploy it often is.
  */
 exports.getBookingStatus = onCall(
-  { secrets: [FLW_SECRET_KEY] },
+  { secrets: [PAYSTACK_SECRET_KEY] },
   async (request) => {
     const auth = requireAuth(request);
     const bookingId = cleanString(request.data?.bookingId, {
@@ -409,22 +471,19 @@ exports.getBookingStatus = onCall(
     if (!booking.lastTxRef) return { status: "pending" };
 
     try {
-      const verified = await flwGet(
-        `/transactions/verify_by_reference?tx_ref=${encodeURIComponent(
-          booking.lastTxRef,
-        )}`,
-        FLW_SECRET_KEY.value(),
+      const tx = await verifyPaystackTransaction(
+        booking.lastTxRef,
+        PAYSTACK_SECRET_KEY.value(),
       );
-      const tx = verified?.data;
 
-      if (tx && tx.status === "successful") {
+      if (tx && tx.status === "success") {
         const result = await markBookingPaid(ref, tx);
         if (result.status === "paid") return { status: "confirmed" };
-        // Successful at Flutterwave but rejected by our checks — almost
+        // Successful at Paystack but rejected by our checks — almost
         // always a tampered amount. Flag it rather than confirming.
         logger.warn("Successful payment failed our checks", {
           bookingId,
-          txRef: booking.lastTxRef,
+          reference: booking.lastTxRef,
         });
         return {
           status: "failed",
@@ -433,7 +492,9 @@ exports.getBookingStatus = onCall(
         };
       }
 
-      if (tx && tx.status === "failed") {
+      // Paystack uses "failed" for a declined charge and "abandoned" for
+      // a popup closed without completing — both mean no booking yet.
+      if (tx && (tx.status === "failed" || tx.status === "abandoned")) {
         return {
           status: "failed",
           message: "That payment didn't complete, so no booking was made.",
@@ -443,7 +504,7 @@ exports.getBookingStatus = onCall(
       return { status: "pending" };
     } catch (err) {
       // No transaction found yet is the normal case seconds after paying.
-      logger.debug("verify_by_reference not ready", { bookingId });
+      logger.debug("verify not ready", { bookingId });
       return publicStatus(booking);
     }
   },

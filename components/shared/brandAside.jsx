@@ -7,10 +7,16 @@
 //    scrolls with the page — the parent page just needs to reserve the
 //    same width as margin/padding (see the `lg:ml-[…]` note in
 //    Dashboard.jsx / BookConsultation.jsx).
-// 2. The background is an auto-playing slider: drop in as many photos as
-//    you want via the `images` prop and they crossfade smoothly forever,
+// 2. The background is an auto-playing slider: crossfades smoothly forever,
 //    no JS state, no controls needed. With a single image it just sits
 //    static (no pointless pulsing).
+//
+// CHANGED — the slideshow photos now come from the admin's Control Panel
+// (siteSettings/public.sliderImages) via useSiteSettings(), instead of only
+// ever being the five bundled photos. Until an admin uploads their own, or
+// while Firestore is unreachable, it shows the same bundled set as before —
+// nothing regresses if you don't touch the Control Panel. An explicit
+// `images` prop (if a caller ever passes one) still wins over both.
 //
 // Only three colors are used anywhere in this file: brand orange
 // (#F88535), brand blue (#0095D9), and white. Everything else (the photo
@@ -18,27 +24,10 @@
 // opacity — nothing else has been introduced.
 //
 // ASSUMPTION: lives at src/components/shared/BrandAside.jsx, alongside
-// header.jsx and footer.jsx. Update the two asset import paths below if
-// your project keeps assets somewhere else.
+// header.jsx and footer.jsx, with src/siteSettings.js one level up.
 import { Link } from "react-router-dom";
 import logo from "../../src/assets/logo.png";
-
-// Reuse the same photo used on sign-in/sign-up by default. To get an
-// actual multi-photo slider, import more photos and list them here, e.g.
-import sidebarImage1 from "../../images/sidebarImages/sidebarImage1.jpg";
-import sidebarImage2 from "../../images/sidebarImages/sidebarImage2.jpg";
-import sidebarImage3 from "../../images/sidebarImages/sidebarImage3.jpg";
-import sidebarImage4 from "../../images/sidebarImages/sidebarImage4.jpg";
-
-import authBgPhoto from "../../src/assets/auth-bg.jpg";
-
-const DEFAULT_SLIDES = [
-  authBgPhoto,
-  sidebarImage1,
-  sidebarImage2,
-  sidebarImage3,
-  sidebarImage4,
-];
+import { useSiteSettings, DEFAULT_IMAGES } from "../../src/siteSettings";
 
 // How long (seconds) each photo stays fully visible before crossfading
 // into the next one. Total loop length = SLIDE_SECONDS * number of photos.
@@ -50,13 +39,20 @@ export default function BrandAside({
   heading,
   body,
   points = [],
-  images = DEFAULT_SLIDES,
+  images, // optional override; when omitted, uses the admin's slideshow
   // Kept for compatibility with existing callers — no longer changes the
   // color (there's only one brand gradient now), but callers can still
   // pass it without needing an update.
   tone,
 }) {
-  const slideCount = images.length;
+  const { settings } = useSiteSettings();
+  const slides =
+    images ??
+    (settings.sliderImages.length > 0
+      ? settings.sliderImages
+      : DEFAULT_IMAGES.slider);
+
+  const slideCount = slides.length;
   const isSlideshow = slideCount > 1;
   const cycleSeconds = SLIDE_SECONDS * slideCount;
 
@@ -85,7 +81,7 @@ export default function BrandAside({
       )}
 
       {/* ---- background photo(s) ---- */}
-      {images.map((src, i) => (
+      {slides.map((src, i) => (
         <div
           key={src + i}
           aria-hidden="true"

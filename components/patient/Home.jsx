@@ -4,15 +4,13 @@ import Header from "../shared/header";
 import Footer from "../shared/footer";
 import { HOSPITAL_PHONE_TEL } from "../shared/contact";
 import landingImage from "../../src/assets/landingImage.jpg";
-// NEW — add this file: a warm, real photo of a doctor consulting a
-// patient (video call or in person), portrait orientation works best
-// since it's cropped to a 4:5 frame in the hero. Drop it at:
-//   src/assets/hero-consult.jpg
-import heroImage from "../../src/assets/hero-consult.jpg";
-// NEW — doctor details + placeholder image paths live here.
-// Create this file at: src/data/doctors.js
-import doctors from "../../src/data/doctors";
 
+// Doctor details + placeholder image paths live here. Also used by the
+// "Choose your doctor" picker on the booking page (bookConsultation.jsx) —
+// see src/data/doctors.js for the shape (tier, specialties, availableFor).
+import doctors from "../../src/data/doctors";
+import heroDefault from "../../src/assets/hero-consult.jpg";
+import { useSiteSettings } from "../../src/siteSettings";
 /**
  * Home.jsx
  * Public landing page for Holy Family Catholic Hospital's telemedicine platform.
@@ -26,6 +24,12 @@ import doctors from "../../src/data/doctors";
  * (unfilled) for each consultation type, structures the booking steps, and
  * is shown "closed" in the privacy section to represent record erasure
  * after a visit.
+ *
+ * DOCTOR SELECTION: each doctor card in "Meet your doctors" carries a
+ * "Select this doctor" link to `/book?doctor=<id>`. bookConsultation.jsx
+ * reads that query param on arrival and pre-selects the doctor there (its
+ * own doctor picker stays closed in that case, since there's nothing left
+ * to choose) — see the doctor-selection notes at the top of that file.
  *
  * CTA system:
  * - Hero: a calm white pill. It sits on the dark forest hero, so plain white
@@ -445,8 +449,10 @@ function BookingSlip({
 }
 
 // Doctor portrait that survives a missing file: if the image 404s (or no
-// path is set yet) it falls back to an initials tile in the page palette,
-// so the slider still looks finished while photos are being collected.
+// path is set yet) it falls back to an initials tile, so the slider still
+// looks finished while photos are being collected. The "Specialist" badge
+// (top-right) reflects doctor.tier from src/data/doctors.js — that same
+// tier is what drives the fee difference on the booking page.
 function DoctorPortrait({ doctor }) {
   const [failed, setFailed] = useState(false);
   const showImage = Boolean(doctor.image) && !failed;
@@ -481,6 +487,11 @@ function DoctorPortrait({ doctor }) {
       <span className="absolute bottom-3 left-3 rounded-full bg-[var(--parchment)]/90 px-3 py-1 text-[11px] font-medium text-[var(--ink2)]">
         {doctor.availability}
       </span>
+      {doctor.tier === "specialist" && (
+        <span className="absolute top-3 right-3 rounded-full bg-[var(--gold)] px-3 py-1 text-[11px] font-medium text-[var(--ink2)]">
+          Specialist
+        </span>
+      )}
     </div>
   );
 }
@@ -594,6 +605,18 @@ function DoctorsSlider() {
                     <p className="mt-2 text-[13.5px] leading-relaxed text-[#142138b3]">
                       {doctor.focus}
                     </p>
+                    {/* Sends the patient straight into the booking flow with
+                        this doctor pre-selected — bookConsultation.jsx reads
+                        the `doctor` query param on arrival. */}
+                    <Link
+                      to={`/book?doctor=${doctor.id}`}
+                      className="mt-4 inline-flex items-center gap-1.5 rounded-full border border-[var(--forest)]/20 px-3.5 py-2 text-[12.5px] font-medium text-[var(--forest-2)]
+                                 transition hover:border-[var(--forest)] hover:bg-[var(--forest)] hover:text-white
+                                 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--forest)]"
+                    >
+                      <BookingGlyph className="shrink-0" />
+                      Book this doctor
+                    </Link>
                   </div>
                 </article>
               </div>
@@ -780,6 +803,8 @@ export default function Home() {
   // header's new "Dashboard" link can be reviewed; swap for a real
   // hook/context and set the default back to false once accounts exist.
   const [isLoggedIn] = useState(true);
+  const { settings } = useSiteSettings();
+  const heroImage = settings.heroImage ?? heroDefault;
 
   return (
     <div className="font-body text-[#142138] bg-white overflow-x-hidden">
