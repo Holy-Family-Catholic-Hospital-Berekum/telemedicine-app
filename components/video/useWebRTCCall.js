@@ -3,6 +3,8 @@ import { useEffect, useRef, useState } from "react";
 import { httpsCallable } from "firebase/functions";
 import { functions } from "../../src/firebase";
 import { createOffer, joinCall, teardownCallSignaling } from "./signaling";
+import { createCompositeRecorder } from "./callRecording";
+import { isCallRecordingEnabled } from "./featureFlags";
 
 // Google's free STUN server. Used both as part of the normal ICE server
 // list and as the fallback if fetching TURN credentials fails — STUN
@@ -37,20 +39,28 @@ async function fetchIceServers() {
  * flow where the doctor clicks "Start call" first) or "patient"
  * (answerer, joins whatever offer is already waiting).
  *
+ * Recording (when the systemSettings/features.callRecordingEnabled flag
+ * is on) runs only on the doctor's side — see callRecording.js for why.
+ *
  * Returns local/remote MediaStream refs to attach to <video> elements,
- * connection status, and controls (toggleMic, toggleCamera, hangUp).
+ * connection status, recording status, and controls (toggleMic,
+ * toggleCamera, hangUp).
  */
 export function useWebRTCCall({ consultationId, role, onEnded }) {
   const [status, setStatus] = useState("connecting"); // connecting | connected | ended | error
   const [errorMessage, setErrorMessage] = useState("");
   const [micOn, setMicOn] = useState(true);
   const [cameraOn, setCameraOn] = useState(true);
+  const [isRecording, setIsRecording] = useState(false);
 
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
   const peerConnectionRef = useRef(null);
   const localStreamRef = useRef(null);
+  const remoteStreamRef = useRef(null);
   const unsubscribeSignalingRef = useRef(null);
+  const recorderRef = useRef(null);
+  const recordingStartedRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -87,6 +97,7 @@ export function useWebRTCCall({ consultationId, role, onEnded }) {
           .forEach((track) => peerConnection.addTrack(track, localStream));
 
         const remoteStream = new MediaStream();
+        remoteStreamRef.current = remoteStream;
         if (remoteVideoRef.current) {
           remoteVideoRef.current.srcObject = remoteStream;
         }
@@ -100,6 +111,7 @@ export function useWebRTCCall({ consultationId, role, onEnded }) {
           if (cancelled) return;
           if (peerConnection.connectionState === "connected") {
             setStatus("connected");
+            maybeStartRecording();
           } else if (
             ["failed", "disconnected", "closed"].includes(
               peerConnection.connectionState,
@@ -133,6 +145,32 @@ export function useWebRTCCall({ consultationId, role, onEnded }) {
       }
     }
 
+    async function maybeStartRecording() {
+      // One recording per consultation: only the doctor's client
+      // records (see callRecording.js), and only once per call even if
+      // connectionstatechange fires more than once.
+      if (role !== "doctor" || recordingStartedRef.current || cancelled) {
+        return;
+      }
+      const enabled = await isCallRecordingEnabled();
+      if (!enabled || cancelled || recordingStartedRef.current) return;
+
+      recordingStartedRef.current = true;
+      const recorder = createCompositeRecorder({
+        consultationId,
+        localVideoEl: localVideoRef.current,
+        remoteVideoEl: remoteVideoRef.current,
+        localStream: localStreamRef.current,
+        remoteStream: remoteStreamRef.current,
+        onError: (err) => {
+          console.error("Call recording error:", err);
+        },
+      });
+      recorderRef.current = recorder;
+      await recorder.start();
+      if (!cancelled) setIsRecording(true);
+    }
+
     start();
 
     return () => {
@@ -144,6 +182,14 @@ export function useWebRTCCall({ consultationId, role, onEnded }) {
 
   function cleanup() {
     unsubscribeSignalingRef.current?.();
+    // Fire-and-forget: stopping a recording finishes its upload
+    // asynchronously, which shouldn't block tearing down the call UI.
+    if (recorderRef.current) {
+      recorderRef.current.stop().catch((err) => {
+        console.error("Failed to finalize call recording:", err);
+      });
+      recorderRef.current = null;
+    }
     localStreamRef.current?.getTracks().forEach((track) => track.stop());
     peerConnectionRef.current?.close();
   }
@@ -178,6 +224,7 @@ export function useWebRTCCall({ consultationId, role, onEnded }) {
     errorMessage,
     micOn,
     cameraOn,
+    isRecording,
     toggleMic,
     toggleCamera,
     hangUp,

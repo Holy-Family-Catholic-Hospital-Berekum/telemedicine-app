@@ -45,26 +45,51 @@ const signOutIconPath = (
 );
 
 const menuIconPath = (
-  <>
-    <path
-      d="M4 6.5h12M4 10h12M4 13.5h12"
-      stroke="currentColor"
-      strokeWidth="1.6"
-      strokeLinecap="round"
-    />
-  </>
+  <path
+    d="M4 6.5h12M4 10h12M4 13.5h12"
+    stroke="currentColor"
+    strokeWidth="1.6"
+    strokeLinecap="round"
+  />
 );
 
 const closeIconPath = (
-  <>
-    <path
-      d="M5 5l10 10M15 5 5 15"
-      stroke="currentColor"
-      strokeWidth="1.7"
-      strokeLinecap="round"
-    />
-  </>
+  <path
+    d="M5 5l10 10M15 5 5 15"
+    stroke="currentColor"
+    strokeWidth="1.7"
+    strokeLinecap="round"
+  />
 );
+
+// Hoisted out of Header so it isn't redefined (and therefore remounted by
+// React, losing any internal state/focus) on every Header render — e.g.
+// every time mobileMenuOpen toggles.
+function SignOutButton({ onSignOut, className = "" }) {
+  return (
+    <button
+      type="button"
+      onClick={onSignOut}
+      className={`inline-flex items-center justify-center gap-1.5 rounded-full border border-[#14213822]
+                  px-3.5 py-2 text-[13px] sm:text-[14px] font-medium text-[#142138b8]
+                  hover:border-[#c0392b55] hover:text-[#c0392b]
+                  transition-colors focus-visible:outline focus-visible:outline-2
+                  focus-visible:outline-offset-2 focus-visible:outline-[var(--ink)]
+                  ${className}`}
+    >
+      <svg
+        width="14"
+        height="14"
+        viewBox="0 0 20 20"
+        fill="none"
+        aria-hidden="true"
+      >
+        {signOutIconPath}
+      </svg>
+      Sign out
+    </button>
+  );
+}
 
 export default function Header({
   variant = "full",
@@ -83,19 +108,16 @@ export default function Header({
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   /*
-   * Read the real Firebase authentication state.
-   *
-   * This replaces the old mock `isLoggedIn` prop. The header therefore
-   * updates automatically when the user signs in or signs out anywhere
-   * in the application.
+   * Read the real Firebase authentication state. The header updates
+   * automatically when the user signs in or signs out anywhere in the
+   * application.
    */
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
       setAuthReady(true);
     });
-
-    return () => unsubscribe();
+    return unsubscribe;
   }, []);
 
   useEffect(() => {
@@ -133,32 +155,6 @@ export default function Header({
       }
     `}</style>
   );
-
-  function SignOutButton({ className = "" }) {
-    return (
-      <button
-        type="button"
-        onClick={handleSignOut}
-        className={`inline-flex items-center justify-center gap-1.5 rounded-full border border-[#14213822]
-                    px-3.5 py-2 text-[13px] sm:text-[14px] font-medium text-[#142138b8]
-                    hover:border-[#c0392b55] hover:text-[#c0392b]
-                    transition-colors focus-visible:outline focus-visible:outline-2
-                    focus-visible:outline-offset-2 focus-visible:outline-[var(--ink)]
-                    ${className}`}
-      >
-        <svg
-          width="14"
-          height="14"
-          viewBox="0 0 20 20"
-          fill="none"
-          aria-hidden="true"
-        >
-          {signOutIconPath}
-        </svg>
-        Sign out
-      </button>
-    );
-  }
 
   /*
    * ------------------------------------------------------------------------
@@ -216,7 +212,7 @@ export default function Header({
                     Dashboard
                   </Link>
 
-                  <SignOutButton />
+                  <SignOutButton onSignOut={handleSignOut} />
                 </>
               ) : (
                 <>
@@ -382,7 +378,6 @@ export default function Header({
             >
               {phoneIconPath}
             </svg>
-
             <span className="truncate">{HOSPITAL_PHONE_DISPLAY}</span>
           </a>
 
@@ -395,9 +390,7 @@ export default function Header({
                 >
                   Dashboard
                 </Link>
-
                 <span className="text-white/25">|</span>
-
                 <button
                   type="button"
                   onClick={handleSignOut}
@@ -414,9 +407,7 @@ export default function Header({
                 >
                   Sign in
                 </Link>
-
                 <span className="text-white/25">|</span>
-
                 <Link
                   to="/signup"
                   className="hover:text-white whitespace-nowrap"
@@ -445,7 +436,6 @@ export default function Header({
                 <span className="block font-display font-medium truncate text-[15px] sm:text-[17px]">
                   Holy Family Catholic Hospital
                 </span>
-
                 <span className="hidden sm:block text-[13px] text-[#14213899]">
                   Berekum, Ghana
                 </span>
@@ -493,7 +483,6 @@ export default function Header({
                 >
                   {phoneIconPath}
                 </svg>
-
                 {HOSPITAL_PHONE_DISPLAY}
               </a>
 
@@ -518,7 +507,7 @@ export default function Header({
                 </>
               )}
 
-              {isLoggedIn && <SignOutButton />}
+              {isLoggedIn && <SignOutButton onSignOut={handleSignOut} />}
 
               <Link
                 to="/book"
@@ -608,7 +597,6 @@ export default function Header({
                     >
                       Sign in
                     </Link>
-
                     <Link
                       to="/signup"
                       className="rounded-xl px-4 py-3 text-[14px] font-medium text-[var(--ink)]

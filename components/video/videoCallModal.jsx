@@ -5,6 +5,7 @@ import {
   VideoOff,
   PhoneOff,
   ShieldCheck,
+  Circle,
 } from "lucide-react";
 import { useWebRTCCall } from "./useWebRTCCall";
 
@@ -36,6 +37,7 @@ export default function VideoCallModal({ consultationId, role, onClose }) {
     errorMessage,
     micOn,
     cameraOn,
+    isRecording,
     toggleMic,
     toggleCamera,
     hangUp,
@@ -64,13 +66,24 @@ export default function VideoCallModal({ consultationId, role, onClose }) {
           <span className="truncate text-xs font-medium text-white/90 sm:text-sm">
             Holy Family Catholic Hospital
           </span>
+          {isRecording && (
+            <span
+              className="ml-1 flex shrink-0 items-center gap-1 rounded-full bg-black/25 px-2 py-0.5 text-[11px] font-medium text-white"
+              title="This consultation is being recorded and kept as part of the medical record."
+            >
+              <Circle size={8} strokeWidth={0} fill="#E4483C" />
+              REC
+            </span>
+          )}
         </div>
 
         <div className="flex shrink-0 items-center gap-3">
           {/* True regardless of connection status below — WebRTC's
               DTLS-SRTP encryption is mandatory by spec and holds even
               when a call relays through the TURN server, since the
-              relay never holds the decryption keys. */}
+              relay never holds the decryption keys. Note this is about
+              transport encryption; it's independent of whether the call
+              is also being recorded (see the REC badge above). */}
           <div
             className="hidden items-center gap-1.5 text-xs text-white/70 sm:flex"
             title="Video and audio are encrypted directly between you and the other participant."
@@ -82,7 +95,8 @@ export default function VideoCallModal({ consultationId, role, onClose }) {
           <div className="flex items-center gap-2 text-xs text-white/70">
             <span className="inline-block h-2 w-2 rounded-full bg-[#E4483C]" />
             {status === "connecting" && "Connecting…"}
-            {status === "connected" && "Live consultation · not recorded"}
+            {status === "connected" &&
+              (isRecording ? "Live consultation · recording" : "Live consultation · not recorded")}
             {status === "ended" && "Call ended"}
             {status === "error" && "Connection problem"}
           </div>

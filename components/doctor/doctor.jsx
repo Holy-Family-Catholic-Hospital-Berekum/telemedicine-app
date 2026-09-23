@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
+// ADDED — real auth instead of mock identity.
+import { useNavigate, Link } from "react-router-dom";
 import {
   CalendarClock,
   ShieldCheck,
@@ -13,16 +15,28 @@ import ConsultationCard from "./ui/consultationCard";
 import MarkDoneModal from "./ui/markDoneModal";
 import ProfileTab from "./docProfileTab";
 import LogoutButton from "./logoutButton";
-import { currentDoctor } from "./docMockData";
+// REMOVED: import { currentDoctor } from "./docMockData";
+// ASSUMPTION: this file lives at src/components/doctor/DoctorDashboard.jsx,
+// matching the "../../src/assets/logo.png" import already below — so
+// "../../context/authContext.jsx" resolves to src/context/authContext.jsx,
+// the same file signIn.jsx already imports. Adjust if your actual depth
+// differs.
+import { useAuth } from "../../src/context/authContext.jsx";
 import {
   fetchAssignedConsultations,
   startVideoCall,
   markConsultationDone,
 } from "./docFirestoreService";
-// NEW: shared Jitsi video call modal (same component the patient side uses)
 import VideoCallModal from "../video/videoCallModal";
-// TODO: point this at your actual logo file in src/assets (filename may differ).
 import hospitalLogo from "../../src/assets/logo.png";
+
+// DEV-ONLY: lets you open the video call UI without a real
+// admin-assigned consultation ID, for testing the call flow in
+// isolation. Uses an obviously-fake ID so it can't be confused with a
+// real one in logs/Jitsi room names. Gated behind import.meta.env.DEV
+// below, so the button — and the ability to open a fake call — simply
+// doesn't exist in a production build.
+const DEV_TEST_CALL_ID = "TEST-CALL-DEV-ONLY";
 
 const TABS = [
   { id: "schedule", label: "Schedule", icon: CalendarDays },
@@ -40,21 +54,45 @@ function isSameDay(isoA, isoB) {
 }
 
 export default function DoctorDashboard() {
+  // ---- All hooks live here, unconditionally, before any early return
+  // below — the auth guard only affects what gets rendered, never which
+  // hooks run, since React requires the same hooks in the same order on
+  // every render. ----
+  const { user, profile, initializing, signOutUser } = useAuth();
+  const navigate = useNavigate();
+
   const [activeTab, setActiveTab] = useState("schedule");
   const [consultations, setConsultations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [startingCallId, setStartingCallId] = useState(null);
   const [markDoneTarget, setMarkDoneTarget] = useState(null);
   const [toast, setToast] = useState(null);
-  // NEW: which consultation's call is currently open full-screen, if any
   const [activeCallConsultationId, setActiveCallConsultationId] =
     useState(null);
 
   const today = new Date();
 
+  // The real signed-in doctor, resolved from Firestore via authContext
+  // (adminUsers doc, role: "doctor"). null until both `user` and
+  // `profile` are populated — everything below that depends on this
+  // checks for that, and the guard clauses further down stop the real
+  // dashboard from rendering until it's ready.
+  const doctor =
+    user && profile
+      ? {
+          uid: user.uid,
+          name: profile.name,
+          department: profile.department || "Department not set",
+          role: profile.role,
+          mfaEnabled: !!profile.mfaEnabled,
+        }
+      : null;
+
   useEffect(() => {
+    if (!doctor?.uid) return;
     let active = true;
-    fetchAssignedConsultations(currentDoctor.uid).then((data) => {
+    setLoading(true);
+    fetchAssignedConsultations(doctor.uid).then((data) => {
       if (active) {
         setConsultations(data);
         setLoading(false);
@@ -63,7 +101,7 @@ export default function DoctorDashboard() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [doctor?.uid]);
 
   const { todayList, upcomingList } = useMemo(() => {
     const sorted = [...consultations].sort(
@@ -96,20 +134,15 @@ export default function DoctorDashboard() {
     );
     setStartingCallId(null);
     showToast("Connected to the video room");
-    // NEW: actually open the video call now that the room is marked started
     setActiveCallConsultationId(consultationId);
   }
 
   async function handleMarkDoneSubmit({ consultation, outcome }) {
-    // amountPaid still travels to the service call because the (mocked)
-    // server-side forfeit math needs it — the doctor UI never reads it back.
     await markConsultationDone({
       consultationId: consultation.consultationId,
       outcome,
       amountPaid: consultation.amountPaid,
     });
-    // Erasure (4.6): the session disappears from this dashboard entirely,
-    // same as it would once the real records are deleted in Firestore.
     setConsultations((prev) =>
       prev.filter((c) => c.consultationId !== consultation.consultationId),
     );
@@ -122,12 +155,56 @@ export default function DoctorDashboard() {
     );
   }
 
-  // TODO(auth): call Firebase Auth's signOut(auth) here and let the app's
-  // route guard react to the auth-state change to send the doctor back to
-  // the login screen. LogoutButton already handles its own confirm step
-  // and loading state — this just needs to perform the actual sign-out.
+  // CHANGED — was a fake 400ms stub. Now calls real Firebase sign-out via
+  // authContext, then leaves the doctor area. onAuthStateChanged will also
+  // clear `user`/`profile` on its own, which is what makes the guard
+  // clauses below correctly show the "please sign in" screen if this
+  // component somehow stays mounted through the transition.
   async function handleLogout() {
-    await new Promise((resolve) => setTimeout(resolve, 400));
+    await signOutUser();
+    navigate("/signin", { replace: true });
+  }
+
+  // ---- Auth guards — after all hooks, before the real render. ----
+  if (initializing) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#F5F8FA] text-sm text-[#5C6B72]">
+        Loading your dashboard…
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-[#F5F8FA] px-6 text-center">
+        <p className="text-sm text-[#5C6B72]">
+          Please sign in as a doctor to view this page.
+        </p>
+        <Link
+          to="/signin"
+          className="rounded-sm px-4 py-2 text-sm font-medium text-white"
+          style={{ backgroundColor: "#0095D9" }}
+        >
+          Sign in
+        </Link>
+      </div>
+    );
+  }
+
+  if (profile?.role !== "doctor") {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-[#F5F8FA] px-6 text-center">
+        <p className="text-sm text-[#5C6B72]">
+          This page is only available to doctor accounts.
+        </p>
+        <Link
+          to="/"
+          className="rounded-sm border border-[#DCE6EC] px-4 py-2 text-sm font-medium text-[#12242C] hover:border-[#0095D9]"
+        >
+          Back to home
+        </Link>
+      </div>
+    );
   }
 
   return (
@@ -146,7 +223,21 @@ export default function DoctorDashboard() {
               </p>
               <p className="text-xs text-[#5C6B72]">Doctor portal</p>
             </div>
-            <LogoutButton onConfirm={handleLogout} />
+            <div className="flex items-center gap-2">
+              {/* DEV-ONLY test entry point — see DEV_TEST_CALL_ID note
+                  above. Doesn't exist in a production build. */}
+              {import.meta.env.DEV && (
+                <button
+                  type="button"
+                  onClick={() => setActiveCallConsultationId(DEV_TEST_CALL_ID)}
+                  className="rounded-md border border-dashed border-[#0095D9] px-3 py-1.5 text-xs font-medium text-[#0095D9] hover:bg-[#0095D9]/5"
+                  title="Dev-only: open the video call UI without a real consultation"
+                >
+                  Start test call
+                </button>
+              )}
+              <LogoutButton onConfirm={handleLogout} />
+            </div>
           </div>
         </div>
 
@@ -164,20 +255,38 @@ export default function DoctorDashboard() {
             </div>
             <div>
               <h1 className="text-sm font-semibold text-[#12242C] sm:text-base">
-                {currentDoctor.name}
+                {doctor.name}
               </h1>
               <p className="text-xs text-[#5C6B72] sm:text-sm">
-                {currentDoctor.department}
+                {doctor.department}
               </p>
             </div>
           </div>
           <div className="flex items-center gap-2 text-xs text-[#5C6B72]">
-            <ShieldCheck
-              size={14}
-              strokeWidth={2}
-              style={{ color: "#0095D9" }}
-            />
-            MFA active
+            {/* CHANGED — reflects the real mfaEnabled flag from Firestore
+                instead of a hardcoded "MFA active". Note this flag still
+                doesn't mean a real MFA challenge ran at sign-in — see
+                authContext.jsx note 5 — this just stops the badge from
+                actively lying when the flag is false. */}
+            {doctor.mfaEnabled ? (
+              <>
+                <ShieldCheck
+                  size={14}
+                  strokeWidth={2}
+                  style={{ color: "#0095D9" }}
+                />
+                MFA active
+              </>
+            ) : (
+              <>
+                <ShieldCheck
+                  size={14}
+                  strokeWidth={2}
+                  style={{ color: "#5C6B72" }}
+                />
+                MFA not enabled
+              </>
+            )}
             <span className="mx-1">·</span>
             {today.toLocaleDateString(undefined, {
               weekday: "long",
@@ -276,7 +385,7 @@ export default function DoctorDashboard() {
         )}
 
         {activeTab === "profile" && (
-          <ProfileTab doctor={currentDoctor} onToast={showToast} />
+          <ProfileTab doctor={doctor} onToast={showToast} />
         )}
       </main>
 
@@ -288,7 +397,6 @@ export default function DoctorDashboard() {
         />
       )}
 
-      {/* NEW: full-screen video call, shown whenever a call is active */}
       {activeCallConsultationId && (
         <VideoCallModal
           consultationId={activeCallConsultationId}

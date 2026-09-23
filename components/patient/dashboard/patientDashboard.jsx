@@ -1,11 +1,14 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Clock3, Radio, LogOut, Home as HomeIcon } from "lucide-react";
+import { getAuth, onAuthStateChanged, signOut } from "firebase/auth";
 
-import { currentPatient, mockConsultationHistory } from "./patientMockData";
+import { app } from "../../../src/firebase";
+
 import {
   fetchMyBookings,
   fetchAvailableSlots,
+  fetchConsultationHistory,
 } from "./patientFirestoreService";
 
 import StatTile from "./patientStatTile";
@@ -18,84 +21,60 @@ import BrandAside from "../../shared/brandAside";
 import logo from "../../../src/assets/logo.png";
 import Footer from "../../shared/footer";
 
-// Consultation history is enabled.
-// If fetchConsultationHistory does not exist yet, the dashboard
-// safely displays an empty history instead of breaking.
-const HISTORY_ENABLED = true;
-
 export default function Dashboard() {
   const navigate = useNavigate();
+
+  const [user, setUser] = useState(null);
+  const [authChecked, setAuthChecked] = useState(false);
 
   const [bookings, setBookings] = useState(null);
   const [slots, setSlots] = useState([]);
   const [history, setHistory] = useState(null);
-  const [loading, setLoading] = useState(true);
   const [activeCallBookingId, setActiveCallBookingId] = useState(null);
 
   useEffect(() => {
+    const auth = getAuth(app);
+    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+      setUser(firebaseUser);
+      setAuthChecked(true);
+      if (!firebaseUser) navigate("/signin");
+    });
+    return unsubscribe;
+  }, [navigate]);
+
+  useEffect(() => {
+    if (!user) return;
     let cancelled = false;
 
-    async function loadDashboard() {
-      try {
-        const [bookingData, slotData] = await Promise.all([
-          fetchMyBookings(currentPatient.uid),
-          fetchAvailableSlots(),
-        ]);
-
-        if (!cancelled) {
-          setBookings(bookingData ?? []);
-          setSlots(slotData ?? []);
-          setLoading(false);
-        }
-      } catch (error) {
+    Promise.all([
+      fetchMyBookings(user.uid),
+      fetchAvailableSlots(),
+      fetchConsultationHistory(user.uid),
+    ])
+      .then(([bookingData, slotData, historyData]) => {
+        if (cancelled) return;
+        setBookings(bookingData ?? []);
+        setSlots(slotData ?? []);
+        setHistory(historyData ?? []);
+      })
+      .catch((error) => {
         console.error("Failed to load dashboard:", error);
-
-        if (!cancelled) {
-          setBookings([]);
-          setSlots([]);
-          setLoading(false);
-        }
-      }
-    }
-
-    loadDashboard();
-
-    if (HISTORY_ENABLED) {
-      import("./patientFirestoreService")
-        .then((mod) => {
-          if (typeof mod.fetchConsultationHistory === "function") {
-            return mod.fetchConsultationHistory(currentPatient.uid);
-          }
-
-          return [];
-        })
-        .then((historyData) => {
-          if (!cancelled) {
-            setHistory(historyData ?? []);
-          }
-        })
-        .catch((error) => {
-          console.error("Failed to load consultation history:", error);
-
-          if (!cancelled) {
-            setHistory([]);
-          }
-        });
-    } else {
-      setHistory([]);
-    }
+        if (cancelled) return;
+        setBookings([]);
+        setSlots([]);
+        setHistory([]);
+      });
 
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [user]);
 
   function handleRejoinCall(booking) {
     if (!booking?.consultationId) {
       console.error("Cannot rejoin call: consultation ID is missing.");
       return;
     }
-
     setActiveCallBookingId(booking.bookingId);
   }
 
@@ -107,36 +86,29 @@ export default function Dashboard() {
     );
   }
 
-  function addBooking(newBooking) {
-    setBookings((prev) => [newBooking, ...(prev ?? [])]);
-  }
-
   function handleJoined(bookingId, result) {
-    updateBooking(bookingId, {
-      callStartedAt: result.callStartedAt,
-    });
-
+    updateBooking(bookingId, { callStartedAt: result.callStartedAt });
     setActiveCallBookingId(bookingId);
   }
 
   async function handleSignOut() {
     try {
-      window.localStorage?.removeItem("hfh_session");
-      window.sessionStorage?.removeItem("hfh_session");
-    } catch {
-      // Continue with redirect even if browser storage is unavailable.
+      await signOut(getAuth(app));
+    } catch (error) {
+      console.error("Sign out failed:", error);
     }
-
     navigate("/signin");
   }
 
-  if (loading) {
+  if (!authChecked || (user && bookings === null)) {
     return (
       <div className="min-h-screen flex items-center justify-center text-sm text-black/60">
         Loading your bookings…
       </div>
     );
   }
+
+  if (!user) return null;
 
   const safeBookings = bookings ?? [];
 
@@ -156,7 +128,7 @@ export default function Dashboard() {
     (booking) => booking.mode === "online" && Boolean(booking.callStartedAt),
   );
 
-  const firstName = currentPatient.name.split(" ")[0];
+  const firstName = (user.displayName || "there").split(" ")[0];
 
   return (
     <div className="min-h-screen bg-white font-sans text-black">
@@ -183,16 +155,13 @@ export default function Dashboard() {
                 alt="Holy Family Catholic Hospital"
                 className="h-10 w-10 rounded-full shrink-0 ring-2 ring-white/40"
               />
-
               <span className="min-w-0 leading-tight">
                 <span className="block text-[11px] uppercase tracking-wide text-white/70 sm:hidden">
                   Holy Family Catholic Hospital
                 </span>
-
                 <span className="hidden sm:block text-[12px] text-white/70">
                   Holy Family Catholic Hospital
                 </span>
-
                 <span className="block text-[15px] font-medium truncate">
                   Hi, {firstName}
                 </span>
@@ -207,7 +176,6 @@ export default function Dashboard() {
                 <HomeIcon size={14} strokeWidth={1.75} />
                 <span>Home</span>
               </a>
-
               <button
                 type="button"
                 onClick={handleSignOut}
@@ -221,14 +189,12 @@ export default function Dashboard() {
         </header>
 
         <main className="mx-auto max-w-4xl px-5 sm:px-8 py-6 sm:py-8 space-y-8 flex-1 w-full">
-          {/* Dashboard statistics */}
           <div className="grid grid-cols-2 rounded-md border border-black/10 overflow-hidden">
             <StatTile
               label="Awaiting assignment"
               value={awaitingAssignment}
               icon={Clock3}
             />
-
             <StatTile
               label="Live now"
               value={liveNow ? "Yes" : "—"}
@@ -237,11 +203,9 @@ export default function Dashboard() {
             />
           </div>
 
-          {/* Active consultations */}
           {liveBookings.length > 0 && (
             <section className="space-y-2.5">
               <h2 className="text-base font-medium">Live consultation</h2>
-
               {liveBookings.map((booking) => (
                 <div
                   key={booking.bookingId}
@@ -249,12 +213,10 @@ export default function Dashboard() {
                 >
                   <div className="flex items-center gap-2 min-w-0">
                     <span className="h-2 w-2 shrink-0 rounded-full bg-[#F88535]" />
-
                     <span className="text-sm text-black truncate">
                       {booking.type ?? "Consultation"} · in progress
                     </span>
                   </div>
-
                   <button
                     type="button"
                     onClick={() => setActiveCallBookingId(booking.bookingId)}
@@ -268,7 +230,6 @@ export default function Dashboard() {
             </section>
           )}
 
-          {/* Bookings */}
           <section>
             <div className="flex items-center justify-between gap-3">
               <h2 className="text-base font-medium">Your bookings</h2>
@@ -288,7 +249,6 @@ export default function Dashboard() {
                   You don't have any bookings yet.
                 </p>
               )}
-
               {safeBookings.map((booking) => (
                 <BookingCard
                   key={booking.bookingId}
@@ -301,36 +261,27 @@ export default function Dashboard() {
             </div>
           </section>
 
-          {/* Available slots */}
           <section>
-            <AvailableSlots slots={slots} onClaimed={addBooking} />
+            <AvailableSlots slots={slots} />
           </section>
 
-          {/* Consultation history */}
-          {HISTORY_ENABLED && (
-            <section>
-              <h2 className="text-base font-medium">Consultation history</h2>
-
-              <p className="mt-1 text-xs text-black/60">
-                Past, closed consultations. Session details are removed once a
-                consultation ends, so this list only shows what your hospital's
-                current history feature chooses to keep.
-              </p>
-
-              <div className="mt-3">
-                {mockConsultationHistory === null ? (
-                  <p className="text-sm text-black/60">Loading history…</p>
-                ) : (
-                  <ConsultationHistory
-                    consultations={mockConsultationHistory}
-                  />
-                )}
-              </div>
-            </section>
-          )}
+          <section>
+            <h2 className="text-base font-medium">Consultation history</h2>
+            <p className="mt-1 text-xs text-black/60">
+              Past, closed consultations. Session details are removed once a
+              consultation ends, so this list only shows what your hospital's
+              current history feature chooses to keep.
+            </p>
+            <div className="mt-3">
+              {history === null ? (
+                <p className="text-sm text-black/60">Loading history…</p>
+              ) : (
+                <ConsultationHistory consultations={history} />
+              )}
+            </div>
+          </section>
         </main>
 
-        {/* Video consultation */}
         {activeCallBooking && (
           <VideoCallModal
             consultationId={activeCallBooking.consultationId}

@@ -3,14 +3,19 @@ import { IconShield } from "./icons.jsx";
 
 // metrics collection (4.6) — date, type, mode, outcome, doctorOrDept only.
 // No patient name, phone, email or consultation ID is ever stored here.
-export default function MetricsPanel({ weeklyMetrics, outcomeBreakdown }) {
+export default function MetricsPanel({
+  weeklyMetrics = [],
+  outcomeBreakdown = [],
+}) {
   const totalOpd = weeklyMetrics.reduce((s, d) => s + d.opd, 0);
   const totalSurgical = weeklyMetrics.reduce((s, d) => s + d.surgical, 0);
   const total = totalOpd + totalSurgical;
-  const busiest = weeklyMetrics.reduce(
-    (a, b) => (b.opd + b.surgical > a.opd + a.surgical ? b : a),
-    weeklyMetrics[0],
-  );
+  const busiest =
+    weeklyMetrics.length > 0
+      ? weeklyMetrics.reduce((a, b) =>
+          b.opd + b.surgical > a.opd + a.surgical ? b : a,
+        )
+      : null;
 
   return (
     <>
@@ -89,7 +94,7 @@ export default function MetricsPanel({ weeklyMetrics, outcomeBreakdown }) {
             <span className="summary-label">Surgical</span>
           </div>
           <div>
-            <span className="summary-value">{busiest.day}</span>
+            <span className="summary-value">{busiest ? busiest.day : "—"}</span>
             <span className="summary-label">Busiest day</span>
           </div>
         </div>

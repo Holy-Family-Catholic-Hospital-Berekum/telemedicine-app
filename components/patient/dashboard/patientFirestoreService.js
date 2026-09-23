@@ -1,110 +1,240 @@
 // ---------------------------------------------------------------------------
 // Data-access layer for the patient dashboard.
 //
-// Every function below is a placeholder implementation over local mock data.
-// Each one documents exactly what it should become per the architecture doc
-// (Telemedicine_System_Architecture_Final_Rev3). Swap the body, keep the
-// signature, and the components in this folder don't need to change.
+// fetchMyBookings / fetchAvailableSlots / fetchConsultationHistory read
+// live Firestore data — no Blaze/Cloud Functions needed for plain reads,
+// only for the two callables below.
+//
+// requestReschedule / joinVideoCall MUST end up as httpsCallable Cloud
+// Functions (see the per-function comments) because the server has to
+// re-verify identity itself — an ID or phone number typed in the client
+// is never proof of anything on its own (architecture 4.4, 4.5, 9). Since
+// Blaze isn't active yet, CLOUD_FUNCTIONS_ENABLED below gates real calls
+// vs. a dev-only fallback that mimics the same shape so the rest of the
+// app keeps working. Flip it to true the day functions are deployed —
+// nothing else in this file, or in Dashboard.jsx/BookingCard, needs to
+// change, since the fallback mirrors the real callables' request/response
+// shape.
+//
+// FIELD-NAME ASSUMPTIONS (camelCase, per project convention). None of
+// these are confirmed against a written schema doc — they're inferred
+// from admin.jsx's existing queries (bookings.paymentStatus,
+// bookings.consultationId, bookings.createdAt, bookings.doctorId,
+// availableSlots.status/date/startTime/endTime,
+// consultationHistory.endedAt) plus best-guess camelCase for the rest.
+// If a field comes back undefined at runtime, this is the first place to
+// check — grep this file for "ASSUMPTION:" to find every guess.
 // ---------------------------------------------------------------------------
 
-import { mockBookings, mockAvailableSlots } from "./patientMockData";
+import {
+  collection,
+  query,
+  where,
+  orderBy,
+  getDocs,
+  doc,
+  getDoc,
+} from "firebase/firestore";
+import { getFunctions, httpsCallable } from "firebase/functions";
 
-const MOCK_LATENCY_MS = 350;
+import { db, app } from "../../../src/firebase";
 
-function delay(value) {
-  return new Promise((resolve) =>
-    setTimeout(() => resolve(value), MOCK_LATENCY_MS),
+// Flip to true once Cloud Functions are deployed (same gate as
+// USE_MOCK_BACKEND in bookConsultation.jsx — keep both in sync when you
+// flip one).
+const CLOUD_FUNCTIONS_ENABLED = false;
+
+// Must match wherever bookConsultation.jsx's FUNCTIONS_REGION points.
+const FUNCTIONS_REGION = "europe-west1";
+
+const functions = CLOUD_FUNCTIONS_ENABLED
+  ? getFunctions(app, FUNCTIONS_REGION)
+  : null;
+const callRequestReschedule =
+  functions && httpsCallable(functions, "requestReschedule");
+const callJoinVideoCall =
+  functions && httpsCallable(functions, "startVideoCall");
+
+// ---------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------
+
+// Firestore Timestamp -> JS Date, passthrough for anything else (mirrors
+// the defensive check admin.jsx already does: b.createdAt?.toDate ? ...).
+function toDate(value) {
+  if (!value) return null;
+  return typeof value.toDate === "function" ? value.toDate() : value;
+}
+
+// ASSUMPTION: CreateScheduleModal (admin) writes mode as "Online" /
+// "In person" (see that file), but the patient-facing booking flow
+// (bookConsultation.jsx) and Dashboard.jsx/patientBookingCard compare
+// against lowercase "online" / "offline". Normalize once, here, at the
+// read boundary, rather than scattering === "Online" checks through the
+// patient UI. If a third spelling shows up in Firestore, it falls
+// through to "offline" — adjust this map if that's wrong.
+function normalizeMode(rawMode) {
+  const key = String(rawMode || "")
+    .trim()
+    .toLowerCase();
+  if (key === "online") return "online";
+  if (key === "in person" || key === "offline") return "offline";
+  return "offline";
+}
+
+// ASSUMPTION: bookings docs don't store a `state` field directly — admin
+// derives scheduling status itself from paymentStatus + consultationId
+// (see Admin's `toSchedule` memo). Dashboard.jsx expects
+// booking.state === "pending_assignment" for the "Awaiting assignment"
+// tile, so we derive the same shape here instead of duplicating this
+// logic a third time in the component.
+function deriveBookingState(data) {
+  if (data.paymentStatus === "failed") return "payment_failed";
+  if (!data.consultationId) return "pending_assignment";
+  if (data.callStartedAt) return "in_progress";
+  return "scheduled";
+}
+
+// ASSUMPTION: doctors collection docs have `name` (used by admin.jsx's
+// doctorsQuery) keyed by doc id == doctorId on bookings/slots. Slots and
+// bookings are assumed to store doctorId only, not a denormalized
+// doctorName, so we join client-side. If doctorName IS already
+// denormalized onto these docs, this lookup is redundant but harmless
+// (it just won't be used — see the `??` fallback below).
+async function fetchDoctorNameMap(doctorIds) {
+  const uniqueIds = [...new Set(doctorIds.filter(Boolean))];
+  const map = {};
+  await Promise.all(
+    uniqueIds.map(async (id) => {
+      try {
+        const snap = await getDoc(doc(db, "doctors", id));
+        if (snap.exists()) map[id] = snap.data().name ?? null;
+      } catch {
+        // Missing/unreadable doctor doc shouldn't break the whole list —
+        // the component already falls back to "To be assigned"-style
+        // copy when doctorName is null.
+      }
+    }),
   );
+  return map;
 }
 
-function generateReferenceCode() {
-  return `REF-${Math.random().toString(36).slice(2, 7).toUpperCase()}`;
-}
+// ---------------------------------------------------------------------
+// Reads
+// ---------------------------------------------------------------------
 
-// TODO(firestore): replace with a live query, e.g.
-//   query(collection(db, 'bookings'), where('uid', '==', patientUid))
-// joined with each booking's `consultations` doc (once scheduled) for
-// doctorId/scheduledTime/callStartedAt, and the matching `referenceLedger`
-// doc for state. Security Rules already restrict a patient to their own
-// bookings only (6.1) — this mock just mirrors that shape.
-// Remember: once a session is marked done, its booking/consultation docs
-// are permanently erased (4.6) — there is no "past visits" list to fetch.
+// ASSUMPTION: the field linking a booking to its owner is `uid` (not
+// `patientUid` / `patientId`) — chosen for consistency with how
+// admin.jsx and Firebase Auth conventionally name this field. Security
+// Rules should restrict reads to where uid == request.auth.uid (6.1).
 export async function fetchMyBookings(patientUid) {
-  return delay(mockBookings.filter(() => true)); // mock: uid filtering not needed on static data
+  const bookingsQuery = query(
+    collection(db, "bookings"),
+    where("uid", "==", patientUid),
+    orderBy("createdAt", "desc"),
+  );
+
+  const snap = await getDocs(bookingsQuery);
+  const rawBookings = snap.docs.map((d) => ({ bookingId: d.id, ...d.data() }));
+
+  const doctorNames = await fetchDoctorNameMap(
+    rawBookings.map((b) => b.doctorId),
+  );
+
+  return rawBookings.map((b) => ({
+    ...b,
+    createdAt: toDate(b.createdAt),
+    scheduledTime: toDate(b.scheduledTime),
+    callStartedAt: b.callStartedAt ? toDate(b.callStartedAt) : null,
+    mode: normalizeMode(b.mode),
+    doctorName: b.doctorName ?? doctorNames[b.doctorId] ?? null,
+    state: deriveBookingState(b),
+  }));
 }
 
-// TODO(firestore): replace with a live query on availableSlots where
-// status == 'open' (4.8). Reads are open to any authenticated patient;
-// writes (open→held→booked) are Cloud-Function-only (6.1).
+// Reads open slots created via CreateScheduleModal (admin). Rules should
+// allow any authenticated patient to read, but only Cloud Functions to
+// write the open -> held -> booked transition (6.1) — this file never
+// writes to availableSlots.
 export async function fetchAvailableSlots() {
-  return delay(mockAvailableSlots);
+  const slotsQuery = query(
+    collection(db, "availableSlots"),
+    where("status", "==", "open"),
+    orderBy("date", "asc"),
+  );
+
+  const snap = await getDocs(slotsQuery);
+  const rawSlots = snap.docs.map((d) => ({ slotId: d.id, ...d.data() }));
+
+  const doctorNames = await fetchDoctorNameMap(rawSlots.map((s) => s.doctorId));
+
+  return rawSlots.map((s) => ({
+    ...s,
+    mode: normalizeMode(s.mode),
+    doctorName: s.doctorName ?? doctorNames[s.doctorId] ?? "Unassigned",
+  }));
 }
 
-// TODO(firestore): this should call an httpsCallable Cloud Function, e.g.
-// `createBooking({ type, mode, dateOfBirth, sex, slotId })`, which must:
-//   1. Run the abuse check (too many pending bookings from this account —
-//      4.2).
-//   2. Create a new `available` entry in referenceLedger and return its
-//      code — the code itself is the document ID, so uniqueness is free
-//      (4.3).
-//   3. Write `dateOfBirth`/`sex` into a separate sensitivePatientDetails
-//      doc, never onto the booking doc itself (5, 6.1, 6.5).
-//   4. If `slotId` is present, only *record* which slot this booking
-//      intends to claim — the slot itself does not move to held until
-//      payment is actually submitted (4.8). Do not hold it here.
-// The client never writes directly to referenceLedger or availableSlots.
-export async function createBooking({ type, mode, dateOfBirth, sex, slot }) {
-  const booking = {
-    bookingId: `bk_${Math.random().toString(36).slice(2, 8)}`,
-    referenceCode: generateReferenceCode(),
-    type,
-    mode,
-    amount: undefined, // filled in by caller from PRICING — server would set this from its own config
-    state: "awaiting_payment",
-    expiresAt: new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString(),
-    slotId: slot?.slotId ?? null,
-    // dateOfBirth/sex intentionally not echoed back into this object —
-    // in the real flow they never leave the sensitivePatientDetails write.
-  };
-  return delay(booking);
+// ASSUMPTION: consultationHistory docs (written by markConsultationDone,
+// per the architecture doc) carry uid, doctorId (or doctorName), mode,
+// startedAt, endedAt — matching admin.jsx's `orderBy("endedAt", "desc")`.
+// Only date/time/doctorName/mode are surfaced to the patient by design —
+// no location, no other sensitive detail (see original comment on this
+// function: the live sensitivePatientDetails doc is already gone by the
+// time history exists).
+export async function fetchConsultationHistory(uid) {
+  const historyQuery = query(
+    collection(db, "consultationHistory"),
+    where("uid", "==", uid),
+    orderBy("endedAt", "desc"),
+  );
+
+  const snap = await getDocs(historyQuery);
+  const rawHistory = snap.docs.map((d) => ({ historyId: d.id, ...d.data() }));
+
+  const doctorNames = await fetchDoctorNameMap(
+    rawHistory.map((h) => h.doctorId),
+  );
+
+  return rawHistory.map((h) => ({
+    ...h,
+    mode: normalizeMode(h.mode),
+    doctorName: h.doctorName ?? doctorNames[h.doctorId] ?? null,
+    startedAt: toDate(h.startedAt),
+    endedAt: toDate(h.endedAt),
+  }));
 }
 
-// TODO(firestore): this should call an httpsCallable Cloud Function, e.g.
-// `submitPayment({ bookingId, momoName, momoReference, amount })`, which
-// runs the atomic check-and-claim transaction (4.3):
-//   1. Reject if this reference code is already confirmed (log the
-//      attempt to auditLog with a server timestamp either way).
-//   2. Reject if `momoReference` was already used on a different confirmed
-//      booking.
-//   3. Move the referenceLedger entry to `pending`.
-//   4. If this booking came from a slot, move that slot from open to held
-//      in the SAME transaction (4.8) — that's what closes the double-claim
-//      race window, not two separate writes.
-// The client never sets paymentStatus or a ledger/slot state directly (6.1,
-// 6.3) — this call only ever *requests* the transition.
-export async function submitPayment({ bookingId, momoName, momoReference }) {
-  return delay({
-    bookingId,
-    momoName,
-    momoReference,
-    state: "pending_verification",
-  });
-}
+// ---------------------------------------------------------------------
+// Writes (both go through Cloud Functions once deployed — see the
+// CLOUD_FUNCTIONS_ENABLED note at the top of this file)
+// ---------------------------------------------------------------------
 
-// TODO(firestore): this should call an httpsCallable Cloud Function, e.g.
-// `requestReschedule({ bookingId, consultationId, phone, preferredTime,
-// reason })`, which must re-check both the typed consultationId AND the
-// phone number against the account on file before accepting the request —
-// an ID alone is never enough to change someone else's booking (4.4, 9).
-// This mock just checks the ID against the booking passed in; the real
-// phone check happens server-side against the authenticated account, not
-// against a value the client could spoof.
+// TODO(functions): real requestReschedule({ bookingId, consultationId,
+// phone, preferredTime, reason }) must re-check BOTH the typed
+// consultationId AND the phone number against the authenticated
+// account's booking before accepting (4.4, 9) — an ID alone is never
+// enough. The dev fallback below only checks the ID, client-side, which
+// is NOT secure and exists purely so the dashboard's reschedule UI keeps
+// working before functions are deployed. Do not treat the fallback path
+// as anything but a placeholder.
 export async function requestReschedule({
   booking,
   consultationId,
   preferredTime,
   reason,
 }) {
+  if (CLOUD_FUNCTIONS_ENABLED) {
+    const { data } = await callRequestReschedule({
+      bookingId: booking.bookingId,
+      consultationId,
+      preferredTime,
+      reason,
+    });
+    return data;
+  }
+
+  // DEV FALLBACK — client-side check only, not a security boundary.
   if (consultationId.trim().toUpperCase() !== booking.consultationId) {
     const err = new Error(
       "That consultation ID doesn\u2019t match this booking.",
@@ -112,26 +242,30 @@ export async function requestReschedule({
     err.code = "ID_MISMATCH";
     throw err;
   }
-  return delay({
+  return {
     bookingId: booking.bookingId,
     requested: true,
     preferredTime,
     reason,
-  });
+  };
 }
 
-// TODO(firestore): this should call an httpsCallable Cloud Function, e.g.
-// `startVideoCall({ consultationId })` — the SAME function the doctor
-// dashboard calls. It must:
-//   1. Verify the typed consultationId matches this booking's assigned ID
-//      (never trust a value only checked client-side, as this mock does).
-//   2. Verify request.auth.uid is the patient on that booking.
-//   3. Re-check server-side that now >= scheduledTime - 5min.
-//   4. Return the same Jitsi room name the doctor's client receives, and
-//      set callStartedAt the first time either side calls this.
-// A typed name is never accepted as identity proof — only the account +
-// the correct ID together unlock the room (4.5, 9).
+// TODO(functions): real startVideoCall({ consultationId }) must (1) match
+// the typed ID server-side, (2) verify request.auth.uid owns this
+// booking, (3) re-check now >= scheduledTime - 5min server-side, and
+// (4) return the same Jitsi room name the doctor's client receives,
+// setting callStartedAt the first time either side calls this (4.5, 9).
+// The dev fallback below is the same non-secure placeholder as above.
 export async function joinVideoCall({ booking, enteredConsultationId }) {
+  if (CLOUD_FUNCTIONS_ENABLED) {
+    const { data } = await callJoinVideoCall({
+      consultationId: booking.consultationId,
+      enteredConsultationId,
+    });
+    return data;
+  }
+
+  // DEV FALLBACK — client-side check only, not a security boundary.
   if (enteredConsultationId.trim().toUpperCase() !== booking.consultationId) {
     const err = new Error(
       "That consultation ID doesn\u2019t match this booking.",
@@ -140,13 +274,9 @@ export async function joinVideoCall({ booking, enteredConsultationId }) {
     throw err;
   }
   const now = new Date().toISOString();
-  return delay({
+  return {
     consultationId: booking.consultationId,
     callStartedAt: now,
     roomName: `mock-room-${booking.consultationId}`,
-  });
-}
-
-export async function fetchConsultationHistory(uid) {
-  // Firestore implementation
+  };
 }

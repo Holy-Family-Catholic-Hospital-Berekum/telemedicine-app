@@ -1,63 +1,49 @@
-import { useState } from "react";
-import { CalendarPlus, Loader2 } from "lucide-react";
-import { createBooking } from "./patientFirestoreService";
+import { Link } from "react-router-dom";
+import { CalendarPlus } from "lucide-react";
 import { formatDateTime } from "./patientUtils";
 
-// UPDATED for the new payment flow (Paystack, server-confirmed on the
-// booking page — see bookConsultation.jsx): claiming a slot is now a
-// single step. createBooking() itself takes the patient through payment
-// (same as bookConsultation.jsx) and only resolves once payment is
-// confirmed, so there's no separate PaymentForm step afterward and no
-// unpaid/pending-verification state to hold here.
-//
-// location is now collected up front, same field bookConsultation.jsx
-// gathers before payment.
-export default function AvailableSlots({ slots, onClaimed }) {
-  const [claimingId, setClaimingId] = useState(null);
-  const [submittingId, setSubmittingId] = useState(null);
-  const [form, setForm] = useState({ dateOfBirth: "", sex: "", location: "" });
-  const [error, setError] = useState(null);
-
-  async function handleClaim(slot) {
-    if (!form.dateOfBirth || !form.sex || !form.location.trim()) {
-      setError("Enter your date of birth, sex, and location to claim a slot.");
-      return;
-    }
-    setError(null);
-    setSubmittingId(slot.slotId);
-    try {
-      const booking = await createBooking({
-        type: slot.type,
-        mode: slot.mode,
-        dateOfBirth: form.dateOfBirth,
-        sex: form.sex,
-        location: form.location.trim(),
-        slot,
-      });
-      onClaimed?.(booking);
-      setClaimingId(null);
-      setForm({ dateOfBirth: "", sex: "", location: "" });
-    } catch (err) {
-      setError(err.message || "Could not claim this slot.");
-    } finally {
-      setSubmittingId(null);
-    }
-  }
-
+/**
+ * AvailableSlots
+ *
+ * Booking — including payment — happens in exactly one place: the /book
+ * flow in bookConsultation.jsx (createBookingDraft -> initializePayment
+ * -> Paystack, server-confirmed). patientFirestoreService.js no longer
+ * exports createBooking for that reason (see the note at the top of that
+ * file): there's no separate "claim now, pay later" step to reimplement
+ * here, and duplicating the payment/verification logic in a second place
+ * would be a good way to end up with two different sources of truth for
+ * "is this booking paid".
+ *
+ * So claiming an open slot from the dashboard just hands the patient off
+ * to /book with that slot's details pre-filled via query params, rather
+ * than collecting a second details form here. bookConsultation.jsx reads
+ * these params on mount (see the effect that also reads `doctor`) and
+ * pre-selects type, mode and doctor, and threads slotId through to
+ * createBookingDraft so the server can convert this specific held slot
+ * into a booking instead of creating a fresh, unrelated one.
+ */
+export default function AvailableSlots({ slots }) {
   if (!slots?.length) return null;
 
   return (
     <div>
       <h3 className="text-sm font-medium text-[#12242C]">
-        Open slots you can claim directly
+        Open slots you can book directly
       </h3>
       <div className="mt-2 space-y-2">
-        {slots.map((slot) => (
-          <div
-            key={slot.slotId}
-            className="rounded-md border border-[#DCE6EC] p-3.5"
-          >
-            <div className="flex items-center justify-between gap-3">
+        {slots.map((slot) => {
+          const params = new URLSearchParams({
+            slotId: slot.slotId,
+            type: slot.type,
+            mode: slot.mode,
+          });
+          if (slot.doctorId) params.set("doctor", slot.doctorId);
+
+          return (
+            <div
+              key={slot.slotId}
+              className="flex items-center justify-between gap-3 rounded-md border border-[#DCE6EC] p-3.5"
+            >
               <div className="text-sm">
                 <p className="font-medium text-[#12242C]">{slot.doctorName}</p>
                 <p className="text-xs text-[#5C6B72]">
@@ -66,92 +52,16 @@ export default function AvailableSlots({ slots, onClaimed }) {
                   {formatDateTime(`${slot.date}T${slot.startTime}`)}
                 </p>
               </div>
-              {claimingId !== slot.slotId && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setClaimingId(slot.slotId);
-                    setError(null);
-                  }}
-                  className="flex items-center gap-1.5 rounded-sm border border-[#0095D9] px-3 py-1.5 text-xs font-medium text-[#0095D9] hover:bg-[#0095D90D] transition"
-                >
-                  <CalendarPlus size={13} strokeWidth={1.75} />
-                  Claim
-                </button>
-              )}
+              <Link
+                to={`/book?${params.toString()}`}
+                className="flex shrink-0 items-center gap-1.5 rounded-sm border border-[#0095D9] px-3 py-1.5 text-xs font-medium text-[#0095D9] hover:bg-[#0095D90D] transition"
+              >
+                <CalendarPlus size={13} strokeWidth={1.75} />
+                Book
+              </Link>
             </div>
-
-            {claimingId === slot.slotId && (
-              <div className="mt-3 space-y-2 border-t border-[#DCE6EC] pt-3">
-                <div className="grid grid-cols-2 gap-2">
-                  <input
-                    type="date"
-                    required
-                    value={form.dateOfBirth}
-                    onChange={(e) =>
-                      setForm((f) => ({ ...f, dateOfBirth: e.target.value }))
-                    }
-                    className="rounded-sm border border-[#DCE6EC] px-2.5 py-1.5 text-xs text-[#12242C] focus:border-[#0095D9] focus:outline-none"
-                  />
-                  <select
-                    required
-                    value={form.sex}
-                    onChange={(e) =>
-                      setForm((f) => ({ ...f, sex: e.target.value }))
-                    }
-                    className="rounded-sm border border-[#DCE6EC] px-2.5 py-1.5 text-xs text-[#12242C] focus:border-[#0095D9] focus:outline-none"
-                  >
-                    <option value="">Sex</option>
-                    <option value="female">Female</option>
-                    <option value="male">Male</option>
-                  </select>
-                </div>
-                <input
-                  type="text"
-                  required
-                  value={form.location}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, location: e.target.value }))
-                  }
-                  placeholder="Location (town/area)"
-                  className="w-full rounded-sm border border-[#DCE6EC] px-2.5 py-1.5 text-xs text-[#12242C] focus:border-[#0095D9] focus:outline-none"
-                />
-                {error && <p className="text-xs text-[#B23A3A]">{error}</p>}
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => handleClaim(slot)}
-                    disabled={submittingId === slot.slotId}
-                    className="flex items-center gap-1.5 rounded-sm px-3 py-1.5 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-60"
-                    style={{ backgroundColor: "#0095D9" }}
-                  >
-                    {submittingId === slot.slotId && (
-                      <Loader2
-                        size={13}
-                        strokeWidth={2}
-                        className="animate-spin"
-                      />
-                    )}
-                    {submittingId === slot.slotId
-                      ? "Processing payment…"
-                      : "Confirm and pay"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setClaimingId(null);
-                      setError(null);
-                    }}
-                    disabled={submittingId === slot.slotId}
-                    className="text-xs text-[#5C6B72] hover:text-[#12242C] disabled:opacity-60"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

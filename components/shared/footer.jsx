@@ -11,6 +11,90 @@ import logo from "../../src/assets/logo.png";
  *   White:  #FFFFFF
  */
 
+// lucide-react dropped brand/social icons a while back (licensing), so
+// these three are small local SVGs instead of a lucide import — same
+// 1.75-ish stroke weight as the rest of the app's icons, sized via the
+// `size` prop like a lucide icon would be.
+function FacebookIcon({ size = 16 }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      aria-hidden="true"
+    >
+      <path
+        d="M15 8.5h2V5.2c-.35-.05-1.54-.15-2.94-.15-2.9 0-4.89 1.77-4.89 5.02V13H6.5v3.5h3.17V23h3.62v-6.5h3.04l.48-3.5h-3.52v-2.6c0-1 .28-1.9 1.71-1.9Z"
+        fill="currentColor"
+      />
+    </svg>
+  );
+}
+function InstagramIcon({ size = 16 }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      aria-hidden="true"
+    >
+      <rect
+        x="3.5"
+        y="3.5"
+        width="17"
+        height="17"
+        rx="4.5"
+        stroke="currentColor"
+        strokeWidth="1.75"
+      />
+      <circle cx="12" cy="12" r="4" stroke="currentColor" strokeWidth="1.75" />
+      <circle cx="17.15" cy="6.85" r="1.1" fill="currentColor" />
+    </svg>
+  );
+}
+function YoutubeIcon({ size = 16 }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      aria-hidden="true"
+    >
+      <rect
+        x="2.5"
+        y="5.5"
+        width="19"
+        height="13"
+        rx="3.5"
+        stroke="currentColor"
+        strokeWidth="1.75"
+      />
+      <path d="M10.5 9.5v5l4.3-2.5-4.3-2.5Z" fill="currentColor" />
+    </svg>
+  );
+}
+
+const SOCIAL_LINKS = [
+  {
+    label: "Facebook",
+    href: "https://www.facebook.com/hfhberekum/",
+    Icon: FacebookIcon,
+  },
+  {
+    label: "Instagram",
+    href: "https://www.instagram.com/hfhberekum_gh/",
+    Icon: InstagramIcon,
+  },
+  {
+    label: "YouTube",
+    href: "https://www.youtube.com/@HFCHBerekum",
+    Icon: YoutubeIcon,
+  },
+];
+
 export default function Footer() {
   return (
     <footer
@@ -60,6 +144,23 @@ export default function Footer() {
               services and manage your consultations with ease.
             </p>
 
+            {/* Social links */}
+            <div className="mt-6 flex items-center gap-3">
+              {SOCIAL_LINKS.map(({ label, href, Icon }) => (
+                <a
+                  key={label}
+                  href={href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label={label}
+                  className="flex h-9 w-9 items-center justify-center rounded-full border border-white/25 text-white/85
+                             transition-colors hover:border-white/50 hover:bg-white/10 hover:text-white"
+                >
+                  <Icon size={16} />
+                </a>
+              ))}
+            </div>
+
             {/* Brand accent */}
             <div className="mt-6 flex items-center gap-2">
               <span className="h-1.5 w-10 rounded-full bg-[#F88535]" />
@@ -107,10 +208,14 @@ export default function Footer() {
             <div className="mt-5 space-y-4 text-[14px]">
               <div>
                 <p className="text-[12px] font-medium uppercase tracking-wide text-white/55">
-                  Location
+                  Address
                 </p>
-                <p className="mt-1 text-white/90">
-                  Berekum, Bono Region, Ghana
+                <p className="mt-1 text-white/90 leading-6">
+                  Holy Family Hospital
+                  <br />
+                  P.O. Box 21, Berekum
+                  <br />
+                  Brong Ahafo, Ghana – West Africa
                 </p>
               </div>
 
@@ -118,14 +223,56 @@ export default function Footer() {
                 <p className="text-[12px] font-medium uppercase tracking-wide text-white/55">
                   Phone
                 </p>
-                <p className="mt-1 text-white/90">[hospital line]</p>
+                <p className="mt-1 text-white/90 leading-6">
+                  <a
+                    href="tel:+233352222034"
+                    className="hover:text-white transition-colors"
+                  >
+                    035 222 2034
+                  </a>
+                  {" | "}
+                  <a
+                    href="tel:+233352022433"
+                    className="hover:text-white transition-colors"
+                  >
+                    035-20-22433
+                  </a>
+                  {" | "}
+                  <a
+                    href="tel:+233501156668"
+                    className="hover:text-white transition-colors"
+                  >
+                    +233 50 115 6668
+                  </a>
+                </p>
               </div>
 
               <div>
                 <p className="text-[12px] font-medium uppercase tracking-wide text-white/55">
                   Email
                 </p>
-                <p className="mt-1 text-white/90">[hospital email]</p>
+                <p className="mt-1 text-white/90 leading-6">
+                  <a
+                    href="mailto:info@hfhberekum.org"
+                    className="hover:text-white transition-colors"
+                  >
+                    info@hfhberekum.org
+                  </a>
+                  <br />
+                  <a
+                    href="mailto:hfhberekum@yahoo.co.uk"
+                    className="hover:text-white transition-colors"
+                  >
+                    hfhberekum@yahoo.co.uk
+                  </a>
+                </p>
+              </div>
+
+              <div>
+                <p className="text-[12px] font-medium uppercase tracking-wide text-white/55">
+                  GPS
+                </p>
+                <p className="mt-1 text-white/90">BB-0020-8042</p>
               </div>
             </div>
           </div>

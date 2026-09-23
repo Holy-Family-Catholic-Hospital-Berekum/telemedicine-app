@@ -28,6 +28,12 @@
 //    that checks a failedAttempts counter). Wire that up server-side
 //    before launch; don't rely on this alone.
 //
+//    IMPORTANT: this throttle must only ever count actual
+//    signInWithEmailAndPassword failures (wrong password, unknown
+//    email, etc.) — never a downstream step like the Firestore
+//    profile read after auth already succeeded. See the try/catch
+//    split inside signIn() below for where that boundary is drawn.
+//
 // 4. Idle timeout. Admin/doctor sessions sign out after a short idle
 //    window; patients get a longer one. This satisfies "session tokens
 //    expire and require re-authentication after a period of inactivity"
@@ -39,6 +45,13 @@
 //    surfaces as an `auth/multi-factor-auth-required` error on
 //    signInWithEmailAndPassword, which you catch and resolve with
 //    getMultiFactorResolver() + TotpMultiFactorGenerator.
+//
+//    IMPORTANT for anything reading `profile.mfaEnabled` (e.g. the
+//    doctor dashboard header badge): this flag only reflects what's
+//    stored on the adminUsers doc — it is NOT proof that a real MFA
+//    challenge ran at sign-in, because none does yet. Don't present it
+//    to users as an active security guarantee until the MFA HOOK below
+//    is wired up for real.
 //
 // 6. emailVerified is tracked as its own state, not read directly off
 //    firebaseUser.emailVerified. That field is a snapshot cached by the
@@ -52,6 +65,13 @@
 //    reload and then explicitly sets a plain boolean state, which does
 //    trigger a re-render. Call it after the user comes back from
 //    clicking the email link, instead of reloading the page.
+//
+// 7. signIn() resolves role itself (in addition to the
+//    onAuthStateChanged listener) so callers can redirect immediately
+//    instead of waiting a tick for the listener to populate `profile`.
+//    A uid ref (loadedProfileUidRef) lets the listener detect that
+//    signIn() already did this and skip a redundant second Firestore
+//    read for the same uid.
 
 import {
   createContext,
@@ -111,12 +131,25 @@ function mapAuthError(err) {
   }
 }
 
+// Default profile used whenever a role can't be determined (missing
+// profile doc, or a Firestore read failing after auth already
+// succeeded). Keeping this in one place ensures signIn() and the
+// onAuthStateChanged listener degrade the same way.
+function fallbackProfile(fbUser) {
+  return { role: "patient", name: fbUser.displayName || "Patient" };
+}
+
 export function AuthProvider({ children }) {
   const [firebaseUser, setFirebaseUser] = useState(null);
-  const [profile, setProfile] = useState(null); // { role, name, mfaEnabled?, emailVerified }
+  const [profile, setProfile] = useState(null); // { role, name, department?, mfaEnabled?, emailVerified }
   const [emailVerifiedFlag, setEmailVerifiedFlag] = useState(false);
   const [initializing, setInitializing] = useState(true);
   const idleTimer = useRef(null);
+  // Tracks the uid whose profile is currently loaded into `profile`, so
+  // signIn() can populate profile/idle-timer itself and the
+  // onAuthStateChanged listener below can skip re-fetching the same
+  // doc a moment later. Reset to null on sign-out.
+  const loadedProfileUidRef = useRef(null);
 
   const clearIdleTimer = useCallback(() => {
     if (idleTimer.current) clearTimeout(idleTimer.current);
@@ -144,23 +177,27 @@ export function AuthProvider({ children }) {
     if (adminSnap.exists()) {
       const data = adminSnap.data();
       return {
+        uid: fbUser.uid,
         role: data.role || "admin",
         mfaEnabled: !!data.mfaEnabled,
-        name: fbUser.displayName || "Staff",
+        name: data.name || fbUser.displayName || "Staff", // FIX — was: fbUser.displayName || "Staff"
+        // ADDED — doctor accounts live in adminUsers too (role: "doctor"),
+        // and the doctor dashboard header needs this. null rather than ""
+        // so the UI can tell "not set yet" apart from an empty string.
+        department: data.department || null,
       };
     }
     const patientSnap = await getDoc(doc(db, "users", fbUser.uid));
     if (patientSnap.exists()) {
       const data = patientSnap.data();
       return {
+        uid: fbUser.uid,
         role: "patient",
         name: data.name || fbUser.displayName || "Patient",
         phone: data.phone,
       };
     }
-    // Authenticated but no profile doc yet (edge case, e.g. sign-up
-    // write hasn't landed). Treat as patient with no extra data.
-    return { role: "patient", name: fbUser.displayName || "Patient" };
+    return { uid: fbUser.uid, ...fallbackProfile(fbUser) };
   }, []);
 
   useEffect(() => {
@@ -169,16 +206,26 @@ export function AuthProvider({ children }) {
       setEmailVerifiedFlag(fbUser?.emailVerified ?? false);
       if (!fbUser) {
         setProfile(null);
+        loadedProfileUidRef.current = null;
         clearIdleTimer();
+        setInitializing(false);
+        return;
+      }
+      // signIn() already loaded and set this exact user's profile
+      // (see below) — skip the redundant Firestore read. This branch
+      // still runs on page load / token refresh / other tabs, where
+      // the ref won't match and a real fetch happens.
+      if (loadedProfileUidRef.current === fbUser.uid) {
         setInitializing(false);
         return;
       }
       try {
         const p = await loadProfile(fbUser);
+        loadedProfileUidRef.current = fbUser.uid;
         setProfile(p);
         scheduleIdleLogout(p.role);
       } catch {
-        setProfile({ role: "patient", name: fbUser.displayName || "Patient" });
+        setProfile(fallbackProfile(fbUser));
       } finally {
         setInitializing(false);
       }
@@ -211,6 +258,8 @@ export function AuthProvider({ children }) {
         name: name.trim(),
         phone: phone.trim(),
         email: email.trim(),
+        role: "patient", // ADDED — Users.jsx filters strictly on this
+        status: "active", // ADDED — Users.jsx's status pill checks === "active"
         emailVerified: false,
         createdAt: serverTimestamp(),
       });
@@ -229,6 +278,10 @@ export function AuthProvider({ children }) {
         throw new Error(`Too many attempts. Try again in ${waitSec}s.`);
       }
 
+      // --- Step 1: actual authentication. Only failures from THIS
+      // step should count against the login throttle or produce a
+      // "sign-in failed" message. ---
+      let cred;
       try {
         // Staff should never silently persist a session on a shared
         // machine; only honor "remember me" for patients on their own device.
@@ -236,18 +289,8 @@ export function AuthProvider({ children }) {
           auth,
           rememberMe ? browserLocalPersistence : browserSessionPersistence,
         );
-        const cred = await signInWithEmailAndPassword(
-          auth,
-          email.trim(),
-          password,
-        );
+        cred = await signInWithEmailAndPassword(auth, email.trim(), password);
         attemptStore.delete(key);
-
-        // MFA HOOK: if this account has mfaEnabled and Firebase throws
-        // 'auth/multi-factor-auth-required' above, it's caught below and
-        // this line is never reached — handle the resolver there instead
-        // once MFA is turned back on.
-        return cred.user;
       } catch (err) {
         const current = attemptStore.get(key) || { count: 0 };
         const count = current.count + 1;
@@ -260,13 +303,46 @@ export function AuthProvider({ children }) {
         });
         throw new Error(mapAuthError(err));
       }
+
+      // MFA HOOK: if this account has mfaEnabled and Firebase throws
+      // 'auth/multi-factor-auth-required', it's caught in the block
+      // above (before this point is reached) — handle the resolver
+      // there instead once MFA is turned back on.
+
+      // --- Step 2: profile/role lookup. Auth has already succeeded
+      // at this point, so a failure here (e.g. a network blip on the
+      // Firestore read) must NOT be treated as a failed login attempt
+      // — it must not touch attemptStore, and must not throw back a
+      // "sign-in failed" error while the user is, in fact, signed in.
+      // Degrade to a safe default instead, same as the
+      // onAuthStateChanged listener does. ---
+      let p;
+      try {
+        p = await loadProfile(cred.user);
+      } catch {
+        p = fallbackProfile(cred.user);
+      }
+      loadedProfileUidRef.current = cred.user.uid;
+      setProfile(p);
+      scheduleIdleLogout(p.role);
+
+      return { user: cred.user, role: p.role };
     },
-    [],
+    [loadProfile, scheduleIdleLogout],
   );
 
   const signOutUser = useCallback(async () => {
     clearIdleTimer();
-    await signOut(auth);
+    try {
+      await signOut(auth);
+    } catch (err) {
+      // Signing out is a "make it so" action from the user's perspective —
+      // a rare network blip here shouldn't leave them stuck on a button
+      // that appears to do nothing. Firebase's local auth state is cleared
+      // regardless; a lingering session on the server side isn't something
+      // the user can act on from this button anyway.
+      console.error("signOutUser failed:", err);
+    }
   }, [clearIdleTimer]);
 
   const resetPassword = useCallback(async (email) => {

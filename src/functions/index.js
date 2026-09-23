@@ -24,6 +24,22 @@
  * Having both means a missed webhook doesn't strand a paying patient,
  * and a patient who closes the tab still gets their booking.
  *
+ * ── REVENUE RECORD (confirmedPayments) ────────────────────────────────
+ * `bookings` docs are deleted once a consultation is marked done (4.6
+ * erasure) — which would otherwise take every trace of a payment with
+ * it. So the moment a payment is confirmed (inside markBookingPaid,
+ * below), we also write a small, permanent record to
+ * `confirmedPayments`, used only by the admin Revenue tab. That record
+ * is revenue reporting, not a clinical or identifying record: no
+ * dateOfBirth, sex, location, phone, or patient uid — only amount,
+ * type, mode, channel, reference and paidAt. Revenue here means "money
+ * Paystack confirmed," not "money for a consultation that actually
+ * happened" — a paid booking that's later cancelled or never attended
+ * still counts. If the hospital instead wants revenue to reflect only
+ * completed consultations, this write should move to whichever
+ * function performs the 4.6 erasure, carrying these same fields
+ * forward from the booking before it's deleted.
+ *
  * ── MIGRATION NOTE (Flutterwave → Paystack) ──────────────────────────
  * Two things bite people doing this exact migration, so both get called
  * out again at the point they matter below:
@@ -190,8 +206,9 @@ function paymentIsAcceptable(paystackData, booking) {
  * Idempotency matters here. Paystack retries webhooks, and the patient's
  * page may be polling at the same moment, so this can run twice for one
  * payment. The transaction re-reads status inside the lock and bails if
- * it's already paid, so a double delivery can't create a second booking or
- * a second notification.
+ * it's already paid, so a double delivery can't create a second booking,
+ * a second notification, or (see below) a second confirmedPayments
+ * record.
  */
 async function markBookingPaid(bookingRef, paystackData) {
   return db.runTransaction(async (tx) => {
@@ -205,6 +222,8 @@ async function markBookingPaid(bookingRef, paystackData) {
       return { changed: false, status: booking.status };
     }
 
+    const amountPaid = Number(paystackData.amount) / 100; // pesewas -> whole GHS
+
     tx.update(bookingRef, {
       status: "paid",
       paidAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -212,9 +231,28 @@ async function markBookingPaid(bookingRef, paystackData) {
       paystackReference: paystackData.reference,
       // Stored back in whole GHS, matching booking.amount's unit — see
       // the migration note on paymentIsAcceptable().
-      amountPaid: Number(paystackData.amount) / 100,
+      amountPaid,
       paymentChannel: paystackData.channel || null,
     });
+
+    // Revenue reporting needs a record that outlives this booking —
+    // `bookings` docs are deleted once the consultation is marked done
+    // (4.6 erasure), which would otherwise take every trace of this
+    // payment with it. This record intentionally carries NO clinical
+    // or identifying fields (no dateOfBirth, sex, location, phone,
+    // patient uid) — just what the admin Revenue tab needs to report.
+    // The transaction's early-return above (booking.status === "paid")
+    // is what keeps a retried webhook/poll from creating a duplicate
+    // record here.
+    tx.set(db.collection("confirmedPayments").doc(), {
+      amount: amountPaid,
+      type: booking.type, // "OPD" | "SURGICAL"
+      mode: booking.mode, // "online" | "offline"
+      channel: paystackData.channel || null,
+      reference: paystackData.reference,
+      paidAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
     return { changed: true, status: "paid" };
   });
 }

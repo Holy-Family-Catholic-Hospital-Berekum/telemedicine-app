@@ -2,10 +2,15 @@
 //
 // One shared sign-in form for patients, admins and doctors — role is
 // resolved server-side (via authContext, from Firestore) after a
-// successful password auth, and we redirect based on it. There is no
-// role picker on this screen on purpose: letting a user *claim* a role
-// in the UI would be meaningless (and a red flag) since the real check
-// happens against adminUsers/users in Firestore.
+// successful password auth. signIn() is expected to resolve with the
+// user's role (e.g. { role: "admin" | "doctor" | "patient" }) so we
+// can redirect immediately, rather than waiting on the auth-state
+// listener to catch up. Adjust ROLE_HOME / the destructure below if
+// your signIn() returns a different shape.
+//
+// There is no role picker on this screen on purpose: letting a user
+// *claim* a role in the UI would be meaningless (and a red flag) since
+// the real check happens against adminUsers/users in Firestore.
 //
 // MFA is intentionally disabled for now — see the "MFA HOOK" comment
 // below for exactly where a TOTP challenge step would go once you turn
@@ -34,8 +39,15 @@ const ASIDE_POINTS = [
   "Encrypted video consultations",
 ];
 
+// Where each role lands after a successful sign-in.
+const ROLE_HOME = {
+  admin: "/admin",
+  doctor: "/doctor",
+  patient: "/dashboard",
+};
+
 export default function SignIn() {
-  const { signIn } = useAuth();
+  const { signIn, resetPassword } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -47,6 +59,20 @@ export default function SignIn() {
   const [error, setError] = useState("");
   const [resetSent, setResetSent] = useState(false);
 
+  const resolveRedirect = (role) => {
+    // If the user was bounced here from a protected route, honor that
+    // ONLY when it matches their role's home area; otherwise send them
+    // to their role's default landing page. Falls back to "/" for an
+    // unrecognized/missing role rather than guessing.
+    const roleHome = ROLE_HOME[role];
+    if (!roleHome) return "/";
+
+    const from = location.state?.from?.pathname;
+    if (from && from.startsWith(roleHome)) return from;
+
+    return roleHome;
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
@@ -57,21 +83,14 @@ export default function SignIn() {
 
     setSubmitting(true);
     try {
-      await signIn(email, password, { rememberMe });
+      const { role } = await signIn(email, password, { rememberMe });
 
       // MFA HOOK: once MFA is re-enabled for staff, signIn() above will
       // throw for accounts with mfaEnabled and you'll catch
       // 'auth/multi-factor-auth-required' here, show a TOTP code input,
       // and call resolver.resolveSignIn(...) before navigating on.
 
-      // authContext resolves role from Firestore on the auth-state
-      // listener; give it a tick, then let ProtectedRoute/redirect
-      // logic upstream route by role. Simplest: send everyone to a
-      // neutral "/" that your router redirects by role, or read role
-      // straight from context in a useEffect. Here we just go back to
-      // wherever the user was headed, or a default landing route.
-      const dest = location.state?.from?.pathname || "/";
-      navigate(dest, { replace: true });
+      navigate(resolveRedirect(role), { replace: true });
     } catch (err) {
       setError(err.message || "Sign-in failed.");
     } finally {
@@ -79,7 +98,6 @@ export default function SignIn() {
     }
   };
 
-  const { resetPassword } = useAuth();
   const handleForgotPassword = async () => {
     setError("");
     if (!email.trim()) {
@@ -88,9 +106,12 @@ export default function SignIn() {
     }
     try {
       await resetPassword(email);
-      setResetSent(true);
     } catch {
-      setResetSent(true); // still show generic success — see resetPassword() note
+      // Intentionally swallowed — see resetPassword() note: we always
+      // show a generic success message so this can't be used to probe
+      // which emails have accounts.
+    } finally {
+      setResetSent(true);
     }
   };
 

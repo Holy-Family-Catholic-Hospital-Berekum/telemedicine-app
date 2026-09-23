@@ -1,4 +1,12 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useCallback } from "react";
+import { collection, query, orderBy, where, limit } from "firebase/firestore";
+import { getFunctions, httpsCallable } from "firebase/functions";
+
+import { db, app } from "../../src/firebase";
+import { useAuth } from "../../src/context/authContext.jsx";
+import { useFirestoreCollection } from "./hooks/useFirestoreCollection.js";
+import { useWeeklyMetrics } from "./hooks/useWeeklyMetrics.js";
+import { useOutcomeBreakdown } from "./hooks/useOutcomeBreakdown.js";
 
 import Sidebar from "./sidebar.jsx";
 import OverviewPanel from "./overviewPanel.jsx";
@@ -8,33 +16,12 @@ import Users from "./users.jsx";
 import RevenuePanel from "./revenuePanel.jsx";
 import AuditPanel from "./auditPanel.jsx";
 import MetricsPanel from "./metricsPanel.jsx";
-import ControlPanel from "./controlPanel.jsx"; // NEW
+import ControlPanel from "./controlPanel.jsx";
 import { IconBell, IconRefresh } from "./icons.jsx";
-
-import {
-  doctors as seedDoctors,
-  bookings as seedBookings,
-  users as seedUsers, // ASSUMPTION: add this export to mockAdminData.js — see note below
-  activityEvents as seedActivity,
-  auditLogEntries as seedAudit,
-  confirmedPayments as seedPayments,
-  consultationHistory as seedHistory,
-  availableSlots as seedSlots,
-  weeklyMetrics,
-  outcomeBreakdown,
-  overviewStats as seedStats,
-} from "./mockAdminData.js";
 
 import "./admin.css";
 
-// The signed-in admin. Replace with useAuth() once AuthContext is wired up —
-// role and mfaEnabled come from the adminUsers collection (architecture 4.1).
-const CURRENT_ADMIN = {
-  uid: "admin-ama",
-  name: "Ama Serwaa",
-  initials: "AS",
-  role: "Administrator",
-};
+const functions = getFunctions(app);
 
 const TAB_TITLES = {
   overview: {
@@ -69,208 +56,170 @@ const TAB_TITLES = {
     title: "Metrics & reports",
     sub: "Anonymised consultation volume — no patient identifiers are stored",
   },
-  // NEW
   control: {
     title: "Control panel",
     sub: "Site photos and consultation prices, live on the public site",
   },
 };
 
-let auditSeq = 100;
-let activitySeq = 100;
-let historySeq = 100;
-let slotSeq = 1004;
+const RECENT_LOG_LIMIT = 200;
 
-export default function Admin({ onLogout = () => {} }) {
+export default function Admin() {
   const [tab, setTab] = useState("overview");
+  const { user, profile, signOutUser } = useAuth();
 
-  // Local state stands in for Firestore onSnapshot subscriptions. Each setter
-  // below is the point where you'd instead call a Cloud Function and let the
-  // snapshot listener update the UI.
-  const [doctors] = useState(seedDoctors);
-  const [bookings, setBookings] = useState(seedBookings);
-  const [users, setUsers] = useState(seedUsers);
-  const [activity, setActivity] = useState(seedActivity);
-  const [audit, setAudit] = useState(seedAudit);
-  const [payments] = useState(seedPayments);
-  const [history, setHistory] = useState(seedHistory);
-  const [slots, setSlots] = useState(seedSlots);
+  const currentAdmin = useMemo(
+    () => ({
+      uid: user?.uid ?? null,
+      name: profile?.name || "Admin",
+      initials: initialsOf(profile?.name),
+      role:
+        profile?.role === "admin" ? "Administrator" : (profile?.role ?? "—"),
+    }),
+    [user, profile],
+  );
 
-  const pushAudit = (action, targetId) =>
-    setAudit((prev) => [
-      {
-        id: `aud-${auditSeq++}`,
-        actorId: CURRENT_ADMIN.uid,
-        action,
-        targetId,
-        timestamp: new Date().toISOString(),
-      },
-      ...prev,
-    ]);
-
-  const pushActivity = (type, referenceCode, account = CURRENT_ADMIN.uid) =>
-    setActivity((prev) => [
-      {
-        id: `act-${activitySeq++}`,
-        type,
-        referenceCode,
-        account,
-        timestamp: new Date().toISOString(),
-      },
-      ...prev,
-    ]);
-
-  // 4.4 Admin Service — assign doctor + slot; the Cloud Function generates the
-  // consultation ID. schedulingModal.jsx mocks that ID for now.
-  const handleSchedule = ({
-    bookingId,
-    doctorId,
-    scheduledTime,
-    consultationId,
-  }) => {
-    setBookings((prev) =>
-      prev.map((b) =>
-        b.bookingId === bookingId
-          ? {
-              ...b,
-              doctorId,
-              scheduledTime,
-              consultationId,
-              rescheduleRequested: false,
-            }
-          : b,
+  const doctorsQuery = useMemo(() => query(collection(db, "doctors")), []);
+  const bookingsQuery = useMemo(
+    () => query(collection(db, "bookings"), orderBy("createdAt", "desc")),
+    [],
+  );
+  const usersQuery = useMemo(
+    () => query(collection(db, "users"), orderBy("createdAt", "desc")),
+    [],
+  );
+  const staffQuery = useMemo(
+    () => query(collection(db, "adminUsers"), orderBy("createdAt", "desc")),
+    [],
+  );
+  const paymentsQuery = useMemo(
+    () => query(collection(db, "confirmedPayments"), orderBy("paidAt", "desc")),
+    [],
+  );
+  const historyQuery = useMemo(
+    () =>
+      query(collection(db, "consultationHistory"), orderBy("endedAt", "desc")),
+    [],
+  );
+  const slotsQuery = useMemo(
+    () =>
+      query(
+        collection(db, "availableSlots"),
+        where("status", "==", "open"),
+        orderBy("date", "asc"),
       ),
-    );
-    pushAudit("Scheduled consultation", bookingId);
-  };
+    [],
+  );
+  const activityQuery = useMemo(
+    () =>
+      query(
+        collection(db, "activityEvents"),
+        orderBy("timestamp", "desc"),
+        limit(RECENT_LOG_LIMIT),
+      ),
+    [],
+  );
+  const auditQuery = useMemo(
+    () =>
+      query(
+        collection(db, "auditLog"),
+        orderBy("timestamp", "desc"),
+        limit(RECENT_LOG_LIMIT),
+      ),
+    [],
+  );
 
-  // 4.6 Metrics and Data Erasure. In the real system this is one Cloud
-  // Function running in a single transaction: write the anonymised history
-  // row, expire the consultation ID, then delete the booking. Admin may only
-  // close in-person sessions; online sessions are closed by the doctor.
-  const handleMarkDone = (booking) => {
-    const endedAt = new Date().toISOString();
-    const startedAt =
-      booking.mode === "In person"
-        ? booking.scheduledTime
-        : (booking.callStartedAt ?? booking.scheduledTime);
+  const { data: doctors } = useFirestoreCollection(doctorsQuery);
+  const {
+    data: bookings,
+    loading: bookingsLoading,
+    error: bookingsError,
+  } = useFirestoreCollection(bookingsQuery);
+  const { data: patientUsers } = useFirestoreCollection(usersQuery);
+  const { data: staffUsers } = useFirestoreCollection(staffQuery);
+  const { data: payments } = useFirestoreCollection(paymentsQuery);
+  const { data: history } = useFirestoreCollection(historyQuery);
+  const { data: slots } = useFirestoreCollection(slotsQuery);
+  const { data: activity } = useFirestoreCollection(activityQuery);
+  const { data: audit } = useFirestoreCollection(auditQuery);
 
-    setHistory((prev) => [
-      {
-        id: `hist-${historySeq++}`,
-        consultationId: booking.consultationId,
-        type: booking.type,
-        mode: booking.mode,
-        doctorOrDept:
-          doctors.find((d) => d.id === booking.doctorId)?.name ?? "—",
-        startedAt,
-        endedAt,
-        outcome: "Completed",
-      },
-      ...prev,
-    ]);
-    setBookings((prev) =>
-      prev.filter((b) => b.bookingId !== booking.bookingId),
-    );
-    pushAudit("Marked consultation done", booking.consultationId);
-  };
+  const users = useMemo(
+    () => [
+      ...staffUsers.map((u) => ({ role: "admin", status: "active", ...u })),
+      ...patientUsers.map((u) => ({ role: "patient", status: "active", ...u })),
+    ],
+    [staffUsers, patientUsers],
+  );
 
-  // Admin opens a time window when a doctor is free. Patients see this as
-  // a specific bookable slot. IMPORTANT: the overlap check in
-  // CreateScheduleModal is client-side only — the Cloud Function that
-  // writes availableSlots must re-check for a doctor double-booking inside
-  // a transaction before committing, the same pattern used for reference
-  // codes (architecture 4.3), since two admins could otherwise create
-  // overlapping slots for the same doctor at the same time.
-  const handleCreateSlot = ({
-    doctorId,
-    type,
-    mode,
-    date,
-    startTime,
-    endTime,
-  }) => {
-    const id = `SLOT-${slotSeq++}`;
-    setSlots((prev) => [
-      {
-        id,
-        doctorId,
-        type,
-        mode,
-        date,
-        startTime,
-        endTime,
-        status: "open",
-        createdBy: CURRENT_ADMIN.uid,
-        createdAt: new Date().toISOString(),
-      },
-      ...prev,
-    ]);
-    pushAudit("Created available slot", id);
-  };
+  // Shared by Overview and Metrics tabs so both read the same weekly
+  // bucketing instead of computing it twice.
+  const weeklyMetrics = useWeeklyMetrics(history);
+  const outcomeBreakdown = useOutcomeBreakdown(history);
 
-  const handleCancelSlot = (slot) => {
-    setSlots((prev) => prev.filter((s) => s.id !== slot.id));
-    pushAudit("Cancelled available slot", slot.id);
-  };
+  const [actionError, setActionError] = useState(null);
 
-  // ── Users tab handlers ─────────────────────────────────────────────
-  // Client-side convenience only. The real create/deactivate/delete
-  // operations MUST be Cloud Functions that re-check, server-side, that
-  // the caller is an admin and that the target is neither an admin nor
-  // the caller themselves — see users.jsx's own comment on this.
-  const handleCreateDoctor = async (form) => {
-    // ASSUMPTION: replace with a call to a callable Cloud Function, e.g.
-    //   const fns = getFunctions(app, FUNCTIONS_REGION);
-    //   await httpsCallable(fns, "createDoctorAccount")(form);
-    const id = `doc-${Math.floor(1000 + Math.random() * 9000)}`;
-    const newDoctor = {
-      id,
-      name: form.name,
-      email: form.email,
-      phone: form.phone,
-      specialty: form.specialty,
-      role: "doctor",
-      status: "active",
-      createdAt: new Date().toISOString(),
-    };
-    setUsers((prev) => [newDoctor, ...prev]);
-    pushAudit("Created doctor account", id);
-  };
+  const callAdmin = useCallback(async (name, payload) => {
+    setActionError(null);
+    try {
+      const fn = httpsCallable(functions, name);
+      const res = await fn(payload);
+      return res.data;
+    } catch (err) {
+      setActionError(
+        err?.message || "That action didn't go through. Please try again.",
+      );
+      throw err;
+    }
+  }, []);
 
-  const handleDeactivateUser = (user) => {
-    setUsers((prev) =>
-      prev.map((u) => (u.id === user.id ? { ...u, status: "deactivated" } : u)),
-    );
-    pushAudit("Deactivated account", user.id);
-  };
+  const handleSchedule = ({ bookingId, doctorId, scheduledTime }) =>
+    callAdmin("scheduleConsultation", { bookingId, doctorId, scheduledTime });
 
-  const handleReactivateUser = (user) => {
-    setUsers((prev) =>
-      prev.map((u) => (u.id === user.id ? { ...u, status: "active" } : u)),
-    );
-    pushAudit("Reactivated account", user.id);
-  };
+  const handleMarkDone = (booking) =>
+    callAdmin("markConsultationDone", { bookingId: booking.bookingId });
 
-  const handleDeleteUser = (user) => {
-    setUsers((prev) => prev.filter((u) => u.id !== user.id));
-    pushAudit("Deleted account", user.id);
-  };
+  const handleCreateSlot = (form) => callAdmin("createAvailableSlot", form);
 
+  const handleCancelSlot = (slot) =>
+    callAdmin("cancelAvailableSlot", { slotId: slot.id });
+
+  const handleCreateDoctor = (form) => callAdmin("createDoctorAccount", form);
+  const handleDeactivateUser = (user) =>
+    callAdmin("deactivateAccount", { userId: user.id });
+  const handleReactivateUser = (user) =>
+    callAdmin("reactivateAccount", { userId: user.id });
+  const handleDeleteUser = (user) =>
+    callAdmin("deleteAccount", { userId: user.id });
+
+  // Bookings still needing a doctor/slot assigned — this is a scheduling
+  // queue, not a payment-verification queue (Paystack already confirmed
+  // payment before a booking is written at all).
   const toSchedule = useMemo(
     () =>
       bookings.filter((b) => b.paymentStatus !== "failed" && !b.consultationId),
     [bookings],
   );
 
-  const stats = useMemo(
-    () => ({
-      ...seedStats,
-      pendingPayments: toSchedule.length,
+  const stats = useMemo(() => {
+    const todayKey = new Date().toDateString();
+    const todaysBookings = bookings.filter((b) => {
+      const created = b.createdAt?.toDate ? b.createdAt.toDate() : b.createdAt;
+      return created && new Date(created).toDateString() === todayKey;
+    }).length;
+
+    // A booking still in `bookings` with a consultationId assigned is an
+    // active/in-progress session — once it's done, handleMarkDone moves
+    // it to `consultationHistory` and removes it from `bookings`.
+    const activeConsultations = bookings.filter(
+      (b) => !!b.consultationId,
+    ).length;
+
+    return {
+      todaysBookings,
+      activeConsultations,
       doctorsOnDuty: doctors.filter((d) => d.available).length,
-    }),
-    [toSchedule.length, doctors],
-  );
+    };
+  }, [bookings, doctors]);
 
   const heading = TAB_TITLES[tab] ?? TAB_TITLES.overview;
 
@@ -279,9 +228,9 @@ export default function Admin({ onLogout = () => {} }) {
       <Sidebar
         active={tab}
         onChange={setTab}
-        admin={CURRENT_ADMIN}
+        admin={currentAdmin}
         pendingCount={toSchedule.length}
-        onLogout={onLogout}
+        onLogout={signOutUser}
       />
 
       <main className="admin-main">
@@ -309,6 +258,15 @@ export default function Admin({ onLogout = () => {} }) {
           </div>
         </header>
 
+        {actionError && (
+          <div className="admin-alert admin-alert-error">{actionError}</div>
+        )}
+        {bookingsError && (
+          <div className="admin-alert admin-alert-error">
+            Couldn't load bookings. Check your connection and try again.
+          </div>
+        )}
+
         <div className="admin-content">
           {tab === "overview" && (
             <OverviewPanel
@@ -323,6 +281,7 @@ export default function Admin({ onLogout = () => {} }) {
               bookings={bookings}
               doctors={doctors}
               slots={slots}
+              loading={bookingsLoading}
               onSchedule={handleSchedule}
               onMarkDone={handleMarkDone}
               onCreateSlot={handleCreateSlot}
@@ -335,7 +294,7 @@ export default function Admin({ onLogout = () => {} }) {
           {tab === "users" && (
             <Users
               users={users}
-              currentAdminId={CURRENT_ADMIN.uid}
+              currentAdminId={currentAdmin.uid}
               onCreateDoctor={handleCreateDoctor}
               onDeactivate={handleDeactivateUser}
               onReactivate={handleReactivateUser}
@@ -344,8 +303,6 @@ export default function Admin({ onLogout = () => {} }) {
           )}
 
           {tab === "revenue" && <RevenuePanel payments={payments} />}
-
-          {tab === "activity" && <ActivityPanel events={activity} />}
 
           {tab === "audit" && <AuditPanel entries={audit} />}
 
@@ -356,15 +313,19 @@ export default function Admin({ onLogout = () => {} }) {
             />
           )}
 
-          {/* NEW — Control Panel writes go through real Cloud Functions
-              (see functions/siteSettings.js), unlike the mock handlers
-              above, so it needs no local state here. pushAudit just mirrors
-              the change into this mock Audit Log tab for the demo; drop
-              this prop once AuditPanel reads from Firestore, since the
-              server already writes its own auditLog entry. */}
-          {tab === "control" && <ControlPanel onAudit={pushAudit} />}
+          {tab === "control" && <ControlPanel />}
         </div>
       </main>
     </div>
   );
+}
+
+function initialsOf(name) {
+  if (!name) return "?";
+  return name
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((n) => n[0].toUpperCase())
+    .join("");
 }

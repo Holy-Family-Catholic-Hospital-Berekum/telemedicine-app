@@ -1,149 +1,180 @@
 // ---------------------------------------------------------------------------
 // Data-access layer for the doctor dashboard.
 //
-// Every function below is a placeholder implementation over local mock data.
-// Each one documents exactly what it should become per the architecture doc
-// (Telemedicine_System_Architecture_Final_Rev3). Swap the body, keep the
-// signature, and the components in this folder don't need to change.
-// ---------------------------------------------------------------------------
-
-import {
-  mockConsultations,
-  mockDoctorProfile,
-  FORFEIT_PERCENTAGE,
-} from "./docMockData";
-
-const MOCK_LATENCY_MS = 350;
-
-function delay(value) {
-  return new Promise((resolve) =>
-    setTimeout(() => resolve(value), MOCK_LATENCY_MS),
-  );
-}
-
-// TODO(firestore): replace with a live query, e.g.
-//   query(collection(db, 'consultations'),
-//         where('doctorId', '==', doctorUid),
-//         where('status', '==', 'active'))
-// joined with the matching `bookings` doc (type/mode) and, where this doctor
-// is the assigned doctorId, the matching `sensitivePatientDetails` doc
-// (Firestore Security Rules already restrict that read to
-// request.auth.uid === consultation.doctorId — see 6.1).
-// IMPORTANT: never fetch or return `amountPaid`/payment fields into this
-// doctor-facing view — that data belongs to the admin/revenue view only.
-// Consider onSnapshot() instead of a one-shot get() so newly-issued
-// consultation IDs and reschedules appear live.
-export async function fetchAssignedConsultations(doctorUid) {
-  const assigned = mockConsultations.filter(
-    (c) => c.doctorId === doctorUid && c.status === "active",
-  );
-  return delay(assigned);
-}
-
-// TODO(firestore): this should call an httpsCallable Cloud Function, e.g.
-// `startVideoCall({ consultationId })`, which must:
-//   1. Verify request.auth.uid === consultations.doctorId for this doc.
-//   2. Re-check server-side that now >= scheduledTime - 5min before
-//      returning a room — the 5-minute lock in the UI is a convenience,
-//      not the enforcement point.
-//   3. Set consultations.callStartedAt = serverTimestamp() the *first* time
-//      this is called (never overwrite it on rejoin).
-//   4. Return the Jitsi room name, derived server-side — never construct
-//      this from the raw consultationId on the client.
-export async function startVideoCall(consultationId) {
-  const now = new Date().toISOString();
-  return delay({
-    consultationId,
-    callStartedAt: now,
-    roomName: `mock-room-${consultationId}`,
-  });
-}
-
-// TODO(firestore): this should call an httpsCallable Cloud Function, e.g.
-// `markConsultationDone({ consultationId, outcome })`, which runs a single
-// transaction that (4.4, 4.6, 4.9):
-//   1. Re-checks request.auth.uid === consultations.doctorId for an online
-//      consultation (in-person also allows an admin, with confirmation).
-//   2. Writes the anonymised metrics record (no patient identifiers).
-//   3. Writes outcome + (for No-show) forfeitAmount/refundOwed onto the
-//      permanent referenceLedger entry for this booking — this must land
-//      before step 4, since the amount can't be reconstructed afterward.
-//      This money math happens entirely server-side; the doctor client
-//      passes only { consultationId, outcome }, never an amount.
-//   4. Permanently deletes the `bookings`, `consultations`, and
-//      `sensitivePatientDetails` documents for this session, and expires
-//      the consultation ID.
-// There is no undo once this succeeds — the confirming UI must make that
-// unmistakable before calling this.
-export async function markConsultationDone({
-  consultationId,
-  outcome,
-  amountPaid,
-}) {
-  let forfeitAmount = 0;
-  let refundOwed = 0;
-  if (outcome === "No-show") {
-    forfeitAmount = Math.round(amountPaid * FORFEIT_PERCENTAGE * 100) / 100;
-    refundOwed = Math.round((amountPaid - forfeitAmount) * 100) / 100;
-  }
-  // Returned for the admin/revenue view and internal bookkeeping only —
-  // doctor-facing components must not read forfeitAmount/refundOwed off
-  // this result.
-  return delay({ consultationId, outcome, forfeitAmount, refundOwed });
-}
-
-// ---------------------------------------------------------------------------
-// Doctor public profile (new — powers the "My profile" tab and, from there,
-// the "Meet your doctors" section on the patient-facing landing page).
+// Real Firestore/Cloud Functions/Storage implementations, replacing the
+// mock-data placeholders. Signatures are unchanged from the mock version,
+// so nothing in this folder's components needs to change beyond what's
+// noted inline.
 //
-// This is deliberately its own collection, not a field on `adminUsers`:
-// `adminUsers` (6.1) is an access-control list checked by Security Rules
-// and Cloud Functions, and shouldn't also be the thing a public landing
-// page queries. `doctorProfiles` holds only public-safe display content —
-// nothing from `sensitivePatientDetails`, and nothing session/auth-related.
+// DEPENDENCIES NOT YET IN PLACE:
+//   - startVideoCall / markConsultationDone call Cloud Functions
+//     (functions/startVideoCall.js, functions/markConsultationDone.js —
+//     written alongside this file) that must be deployed, which needs the
+//     Blaze plan.
+//   - uploadDoctorProfilePicture writes to Cloud Storage, which also
+//     needs Blaze.
+//   - fetchAssignedConsultations relies on Firestore Security Rules
+//     checking request.auth.uid against consultations.doctorId (6.1),
+//     which means it needs a real signed-in Firebase Auth user — the
+//     current currentDoctor.uid in docMockData.js is a placeholder, not
+//     an auth identity, and reads will fail once rules are deployed
+//     until real doctor auth is wired in.
 // ---------------------------------------------------------------------------
 
-// TODO(firestore): read `doctorProfiles/{doctorUid}`. Security Rules should
-// allow `read: if true` on this collection — it's what the public landing
-// page's "Meet your doctors" section queries — while restricting `write` to
-// `request.auth.uid === doctorUid`, the same owner-only pattern as 6.1.
+import { db, functions } from "../../src/firebase";
+import {
+  collection,
+  query,
+  where,
+  getDocs,
+  doc,
+  getDoc,
+  setDoc,
+  serverTimestamp,
+} from "firebase/firestore";
+import { httpsCallable } from "firebase/functions";
+import {
+  getStorage,
+  ref as storageRef,
+  uploadBytes,
+  getDownloadURL,
+} from "firebase/storage";
+
+// Live query, joined client-side with the matching `bookings` doc
+// (type/mode/patient/rescheduleHistory) and, where this doctor is the
+// assigned doctorId, the matching `sensitivePatientDetails` doc —
+// Firestore Security Rules should restrict that last read to
+// request.auth.uid === consultation.doctorId (see 6.1).
+//
+// One-shot getDocs() for now, not onSnapshot() — matches the previous
+// mock's calling contract in DoctorDashboard.jsx (a single .then()).
+// Worth revisiting for onSnapshot() later so newly-issued consultation
+// IDs and reschedules show up without a manual refresh.
+//
+// IMPORTANT: amountPaid/payment fields are deliberately left out of the
+// returned shape — that data belongs to the admin/revenue view only,
+// never the doctor-facing one.
+export async function fetchAssignedConsultations(doctorUid) {
+  const consultationsQuery = query(
+    collection(db, "consultations"),
+    where("doctorId", "==", doctorUid),
+    where("status", "==", "active"),
+  );
+  const consultationsSnap = await getDocs(consultationsQuery);
+
+  return Promise.all(
+    consultationsSnap.docs.map(async (consultationDoc) => {
+      const consultationId = consultationDoc.id;
+      const consultation = consultationDoc.data();
+
+      const [bookingSnap, sensitiveSnap] = await Promise.all([
+        getDoc(doc(db, "bookings", consultation.bookingId)),
+        getDoc(doc(db, "sensitivePatientDetails", consultationId)),
+      ]);
+      const booking = bookingSnap.exists() ? bookingSnap.data() : {};
+      const sensitiveDetails = sensitiveSnap.exists()
+        ? sensitiveSnap.data()
+        : {};
+
+      return {
+        consultationId,
+        bookingId: consultation.bookingId,
+        doctorId: consultation.doctorId,
+        type: booking.type,
+        mode: booking.mode,
+        scheduledTime: consultation.scheduledTime,
+        status: consultation.status,
+        callStartedAt: consultation.callStartedAt ?? null,
+        patient: booking.patient,
+        sensitiveDetails,
+        rescheduleHistory: booking.rescheduleHistory ?? [],
+      };
+    }),
+  );
+}
+
+// Calls the startVideoCall Cloud Function, which (see
+// functions/startVideoCall.js):
+//   1. Verifies request.auth.uid === consultations.doctorId for this doc.
+//   2. Re-checks server-side that now >= scheduledTime - 5min — the
+//      5-minute lock in the UI is a convenience, not the enforcement point.
+//   3. Sets consultations.callStartedAt the *first* time this is called
+//      (never overwrites it on rejoin).
+//   4. Returns a server-derived room name — never construct this from the
+//      raw consultationId on the client.
+//
+// Requires functions/startVideoCall.js to be deployed (Blaze plan).
+export async function startVideoCall(consultationId) {
+  const callStartVideoCall = httpsCallable(functions, "startVideoCall");
+  const result = await callStartVideoCall({ consultationId });
+  return result.data;
+}
+
+// Calls the markConsultationDone Cloud Function, which (see
+// functions/markConsultationDone.js) runs a single transaction that (4.4,
+// 4.6, 4.9):
+//   1. Re-checks request.auth.uid === consultations.doctorId for an online
+//      consultation (in-person also allows an admin — not yet implemented
+//      server-side, see that function's own comment).
+//   2. Writes the anonymised metrics record (no patient identifiers).
+//   3. Writes outcome + (for No-show) forfeitAmount/refundOwed onto a
+//      permanent referenceLedger entry, computed server-side from the
+//      booking's amountPaid — the client never sends an amount.
+//   4. Permanently deletes the `bookings`, `consultations`, and
+//      `sensitivePatientDetails` documents for this session.
+//
+// Requires functions/markConsultationDone.js to be deployed (Blaze plan).
+export async function markConsultationDone({ consultationId, outcome }) {
+  const callMarkDone = httpsCallable(functions, "markConsultationDone");
+  const result = await callMarkDone({ consultationId, outcome });
+  return result.data;
+}
+
+// ---------------------------------------------------------------------------
+// Doctor public profile — powers the "My profile" tab and, from there, the
+// "Meet your doctors" section on the patient-facing landing page.
+// ---------------------------------------------------------------------------
+
+// Security Rules should allow `read: if true` on doctorProfiles (it's what
+// the public landing page's "Meet your doctors" section queries), while
+// restricting `write` to request.auth.uid === doctorUid.
 export async function fetchDoctorProfile(doctorUid) {
-  const profile =
-    mockDoctorProfile.doctorId === doctorUid ? mockDoctorProfile : null;
-  return delay(profile);
+  const snap = await getDoc(doc(db, "doctorProfiles", doctorUid));
+  return snap.exists() ? snap.data() : null;
 }
 
-// TODO(firestore): setDoc(doc(db, 'doctorProfiles', doctorUid), updates,
-// { merge: true }), guarded by the Security Rule above. Re-validate on the
-// server too, not just in ProfileTab.jsx's UI: cap `bio` length and the
-// size of the `specialties`/`languages` arrays, and reject unexpected
-// fields (a doctor's own write should never be able to set `doctorId` to
-// someone else's uid).
+// setDoc(..., { merge: true }) rather than update() so a doctor's first
+// edit (no existing doc yet) still succeeds. Re-validate on the server
+// too, not just in ProfileTab.jsx's UI: Security Rules should cap `bio`
+// length and the size of `specialties`/`languages`, and reject a write
+// that sets `doctorId` to anyone other than request.auth.uid.
 export async function updateDoctorProfile(doctorUid, updates) {
-  const next = {
-    ...mockDoctorProfile,
-    ...updates,
-    doctorId: doctorUid,
-    updatedAt: new Date().toISOString(),
-  };
-  return delay(next);
+  const profileRef = doc(db, "doctorProfiles", doctorUid);
+  await setDoc(
+    profileRef,
+    { ...updates, doctorId: doctorUid, updatedAt: serverTimestamp() },
+    { merge: true },
+  );
+  const snap = await getDoc(profileRef);
+  return snap.data();
 }
 
-// TODO(storage): upload `imageBlob` — already resized client-side, see
-// resizeProfilePhoto() in utils.js; don't send a full-resolution original —
-// to Cloud Storage at `doctorProfilePictures/{doctorUid}/profile.jpg`,
-// overwriting any previous file at that path. Storage Rules should mirror
-// the Firestore pattern: only `request.auth.uid === doctorUid` may write to
-// that path, and rules should re-check content type and a size ceiling
-// (e.g. 1MB, since the client already downscaled it) as a second line of
-// defense behind validateProfilePhoto() in utils.js. Once uploaded, take
-// the resulting getDownloadURL() and pass it into updateDoctorProfile()
-// above so `photoURL` is set on the Firestore doc — don't leave the new
-// photo living only in Storage with nothing pointing at it. If the 480px
-// version this uploads ever proves too heavy for the landing page's grid,
-// an onFinalize Storage trigger could generate a smaller thumbnail instead
-// of resizing again on the client.
+// Uploads to Cloud Storage at doctorProfilePictures/{doctorUid}/profile.jpg,
+// overwriting any previous file at that path. `imageBlob` is expected to
+// already be resized client-side (see resizeProfilePhoto() in utils.js) —
+// don't pass a full-resolution original. Storage Rules should mirror the
+// Firestore pattern: only request.auth.uid === doctorUid may write to that
+// path, and should re-check content type and a size ceiling (e.g. 1MB) as
+// a second line of defense behind validateProfilePhoto() in utils.js.
+//
+// Requires the Blaze plan (Cloud Storage needs billing enabled).
 export async function uploadDoctorProfilePicture(doctorUid, imageBlob) {
-  const objectUrl = URL.createObjectURL(imageBlob);
-  return delay({ photoURL: objectUrl });
+  const storage = getStorage();
+  const fileRef = storageRef(
+    storage,
+    `doctorProfilePictures/${doctorUid}/profile.jpg`,
+  );
+  await uploadBytes(fileRef, imageBlob, { contentType: "image/jpeg" });
+  const photoURL = await getDownloadURL(fileRef);
+  return { photoURL };
 }

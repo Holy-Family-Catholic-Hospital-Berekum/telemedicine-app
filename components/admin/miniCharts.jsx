@@ -1,16 +1,25 @@
 // MiniCharts.jsx — small SVG charts with no charting library dependency.
 
 export function BarChart({
-  data,
+  data = [],
   seriesA,
   seriesB,
   colorA = "var(--color-primary)",
   colorB = "var(--color-secondary)",
   height = 180,
 }) {
-  const max = Math.max(...data.map((d) => d[seriesA] + d[seriesB])) || 1;
   const barW = 22;
   const gap = 26;
+
+  if (data.length === 0) {
+    return (
+      <div className="mini-chart-empty" style={{ height: height + 26 }}>
+        No data yet
+      </div>
+    );
+  }
+
+  const max = Math.max(...data.map((d) => d[seriesA] + d[seriesB])) || 1;
   const width = data.length * (barW + gap);
 
   return (
@@ -59,10 +68,19 @@ export function BarChart({
   );
 }
 
-export function Donut({ data, size = 140, thickness = 18 }) {
-  const total = data.reduce((s, d) => s + d.value, 0) || 1;
+export function Donut({ data = [], size = 140, thickness = 18 }) {
   const r = (size - thickness) / 2;
   const c = 2 * Math.PI * r;
+
+  if (data.length === 0) {
+    return (
+      <div className="mini-chart-empty" style={{ width: size, height: size }}>
+        No data yet
+      </div>
+    );
+  }
+
+  const total = data.reduce((s, d) => s + d.value, 0) || 1;
   let offset = 0;
 
   return (

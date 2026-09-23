@@ -521,15 +521,34 @@ export default function BookConsultation() {
   const [doctorPickerOpen, setDoctorPickerOpen] = useState(false);
   const [doctorSearch, setDoctorSearch] = useState("");
 
+  // Slot the patient claimed from the dashboard's "open slots" list, if
+  // they arrived here that way (see patientAvailableSlots.jsx). Threaded
+  // through to createBookingDraft below so the server converts this
+  // specific held slot into a booking (open -> held -> booked, per 4.8)
+  // instead of creating an unrelated fresh one.
+  const [slotId, setSlotId] = useState(null);
+
   useEffect(() => {
     const doctorParam = searchParams.get("doctor");
     if (doctorParam && doctors.some((d) => d.id === doctorParam)) {
       setSelectedDoctorId(doctorParam);
     }
+
+    const typeParam = searchParams.get("type");
+    if (typeParam === "OPD" || typeParam === "SURGICAL") {
+      setType(typeParam);
+    }
+
+    const modeParam = searchParams.get("mode");
+    if (modeParam === "online" || modeParam === "offline") {
+      setMode(modeParam);
+    }
+
+    const slotParam = searchParams.get("slotId");
+    if (slotParam) setSlotId(slotParam);
     // Only read the URL once, on arrival.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
   const selectedDoctor = doctors.find((d) => d.id === selectedDoctorId) || null;
 
   // If the consultation type changes to one the currently-selected doctor
@@ -627,10 +646,7 @@ export default function BookConsultation() {
         location,
         phone,
         doctorId: selectedDoctorId || null,
-        // Timestamp taken at submit time, not just a boolean — this is
-        // the actual record of when consent was given. See TODO note on
-        // createBookingDraft: the real Cloud Function must persist this
-        // against the booking, not just accept and discard it.
+        slotId: slotId || null,
         consentGivenAt: new Date().toISOString(),
       };
       // The real function computes the fee itself from doctorId; these two
@@ -775,6 +791,7 @@ export default function BookConsultation() {
     setSelectedDoctorId(null);
     setDoctorPickerOpen(false);
     setDoctorSearch("");
+    setSlotId(null);
     setBooking(null);
     setPayment(null);
     setPaymentState("idle");

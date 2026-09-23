@@ -1,7 +1,6 @@
 import StatCard from "./statCard.jsx";
 import { BarChart } from "./miniCharts.jsx";
 import {
-  IconCard,
   IconCalendar,
   IconPulse,
   IconShield,
@@ -30,41 +29,37 @@ const activityText = {
     `Blocked reuse attempt on ${a.referenceCode} by ${a.account}`,
 };
 
+// Payments are confirmed automatically by Paystack — there is no manual
+// "awaiting verification" step for admin, so that stat card (and the
+// old manual-MoMo-confirmation flow it implied) has been removed.
 export default function OverviewPanel({
   stats,
-  weeklyMetrics,
-  recentActivity,
+  weeklyMetrics = [],
+  recentActivity = [],
 }) {
   return (
     <>
       <div className="admin-stat-grid">
         <StatCard
-          icon={IconCard}
-          tint="primary"
-          value={stats.pendingPayments}
-          label="Payments awaiting verification"
-          delay={0}
-        />
-        <StatCard
           icon={IconCalendar}
           tint="secondary"
           value={stats.todaysBookings}
           label="Bookings today"
-          delay={60}
+          delay={0}
         />
         <StatCard
           icon={IconPulse}
           tint="success"
           value={stats.activeConsultations}
           label="Consultations in progress"
-          delay={120}
+          delay={60}
         />
         <StatCard
           icon={IconShield}
           tint="warning"
           value={stats.doctorsOnDuty}
           label="Doctors on duty"
-          delay={180}
+          delay={120}
         />
       </div>
       <div className="metrics-grid">
@@ -97,28 +92,33 @@ export default function OverviewPanel({
             </div>
           </div>
           <div className="activity-list">
-            {recentActivity.slice(0, 4).map((a) => {
-              const Icon = activityIcon[a.type];
-              const tint = activityTint[a.type];
-              return (
-                <div className="activity-row" key={a.id}>
-                  <div
-                    className="activity-icon"
-                    style={{ background: tint.bg, color: tint.fg }}
-                  >
-                    <Icon size={14} />
-                  </div>
-                  <div>
-                    <div className="activity-text">
-                      {activityText[a.type](a)}
+            {recentActivity.length === 0 ? (
+              <div className="admin-empty">No recent activity yet.</div>
+            ) : (
+              recentActivity.slice(0, 4).map((a) => {
+                const Icon = activityIcon[a.type];
+                const tint = activityTint[a.type];
+                if (!Icon || !tint) return null; // unknown event type — skip rather than crash
+                return (
+                  <div className="activity-row" key={a.id}>
+                    <div
+                      className="activity-icon"
+                      style={{ background: tint.bg, color: tint.fg }}
+                    >
+                      <Icon size={14} />
                     </div>
-                    <div className="activity-meta">
-                      {new Date(a.timestamp).toLocaleString()}
+                    <div>
+                      <div className="activity-text">
+                        {activityText[a.type](a)}
+                      </div>
+                      <div className="activity-meta">
+                        {new Date(a.timestamp).toLocaleString()}
+                      </div>
                     </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              })
+            )}
           </div>
         </section>
       </div>
