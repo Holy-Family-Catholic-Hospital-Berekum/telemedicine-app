@@ -542,7 +542,7 @@ exports.getBookingStatus = onCall(
       return { status: "pending" };
     } catch (err) {
       // No transaction found yet is the normal case seconds after paying.
-      logger.debug("verify not ready", { bookingId });
+      logger.debug("verify not ready", { bookingId, error: err.message });
       return publicStatus(booking);
     }
   },
