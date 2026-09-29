@@ -7,13 +7,14 @@
 // Security decisions made here, and why:
 //
 // 1. Role comes from Firestore, never from anything the client claims.
-//    On sign-in we look the uid up in `adminUsers` first (staff), then
-//    `users` (patients). The client only ever *reads* these — writes to
-//    adminUsers must stay restricted to the hospital's own admin
-//    console / Cloud Functions, per Security Architecture 6.1. This
-//    context does not grant access by itself; your Firestore Security
-//    Rules and Cloud Functions are the real enforcement boundary. Treat
-//    `role` here as UI routing only, not a security control.
+//    On sign-in we look the uid up in `adminUsers` (staff) or `users`
+//    (patients), depending on which login page was used (see note 8).
+//    The client only ever *reads* these — writes to adminUsers must stay
+//    restricted to the hospital's own admin console / Cloud Functions,
+//    per Security Architecture 6.1. This context does not grant access
+//    by itself; your Firestore Security Rules and Cloud Functions are
+//    the real enforcement boundary. Treat `role` here as UI routing
+//    only, not a security control.
 //
 // 2. Generic error messages. Firebase error codes like
 //    'auth/user-not-found' vs 'auth/wrong-password' are collapsed into
@@ -28,11 +29,10 @@
 //    that checks a failedAttempts counter). Wire that up server-side
 //    before launch; don't rely on this alone.
 //
-//    IMPORTANT: this throttle must only ever count actual
-//    signInWithEmailAndPassword failures (wrong password, unknown
-//    email, etc.) — never a downstream step like the Firestore
-//    profile read after auth already succeeded. See the try/catch
-//    split inside signIn() below for where that boundary is drawn.
+//    IMPORTANT: this throttle counts signInWithEmailAndPassword
+//    failures and wrong-audience logins (which are deliberately
+//    indistinguishable from a wrong password). It must never count a
+//    downstream infrastructure failure such as a Firestore read error.
 //
 // 4. Idle timeout. Admin/doctor sessions sign out after a short idle
 //    window; patients get a longer one. This satisfies "session tokens
@@ -72,6 +72,25 @@
 //    A uid ref (loadedProfileUidRef) lets the listener detect that
 //    signIn() already did this and skip a redundant second Firestore
 //    read for the same uid.
+//
+// 8. Audience separation. signIn() takes an `audience` option:
+//      "patient" (public /signin)  -> only accepts accounts that have a
+//                                     `users` doc with role "patient".
+//      "staff"   (hidden route)    -> only accepts accounts that have an
+//                                     `adminUsers` doc with role
+//                                     "admin" or "doctor".
+//    An account on the wrong page is signed straight back out and gets
+//    the same generic "Invalid email or password." error as a wrong
+//    password, so neither page reveals which kind of account exists.
+//    While signIn() is running, signingInRef makes the
+//    onAuthStateChanged listener ignore the new user, so a rejected
+//    account never becomes "signed in" in React state (which would let
+//    PublicOnlyRoute bounce it to a dashboard for a moment).
+//
+//    NOTE: this is a UI-level separation. Firebase Auth is a single
+//    user pool, so it does not stop someone calling Firebase's sign-in
+//    endpoint directly. Real brute-force protection needs server-side
+//    controls (Identity Platform lockout, App Check).
 
 import {
   createContext,
@@ -102,10 +121,24 @@ const AuthContext = createContext(null);
 // they can see patient bookings and payment data.
 const IDLE_TIMEOUT_MINUTES = { admin: 15, doctor: 15, patient: 30 };
 
+// Roles allowed to sign in through the staff page.
+const STAFF_ROLES = ["admin", "doctor"];
+
 // Client-side login throttle (UX layer only — see note 3 above).
 const MAX_ATTEMPTS_BEFORE_COOLDOWN = 5;
 const COOLDOWN_MS = 30_000;
 const attemptStore = new Map(); // email -> { count, cooldownUntil }
+
+function recordFailure(key) {
+  const count = (attemptStore.get(key)?.count || 0) + 1;
+  attemptStore.set(key, {
+    count,
+    cooldownUntil:
+      count >= MAX_ATTEMPTS_BEFORE_COOLDOWN
+        ? Date.now() + COOLDOWN_MS
+        : undefined,
+  });
+}
 
 function mapAuthError(err) {
   const code = err?.code || "";
@@ -131,10 +164,10 @@ function mapAuthError(err) {
   }
 }
 
-// Default profile used whenever a role can't be determined (missing
-// profile doc, or a Firestore read failing after auth already
-// succeeded). Keeping this in one place ensures signIn() and the
-// onAuthStateChanged listener degrade the same way.
+// Default profile used by the onAuthStateChanged listener (page load /
+// token refresh) when a role can't be determined. signIn() does NOT use
+// this — it fails closed instead, so a Firestore hiccup can never let a
+// staff account through the patient page.
 function fallbackProfile(fbUser) {
   return { role: "patient", name: fbUser.displayName || "Patient" };
 }
@@ -150,6 +183,10 @@ export function AuthProvider({ children }) {
   // onAuthStateChanged listener below can skip re-fetching the same
   // doc a moment later. Reset to null on sign-out.
   const loadedProfileUidRef = useRef(null);
+  // True while signIn() is running. The listener ignores signed-in
+  // users during this window; signIn() decides whether the account is
+  // allowed on this page and sets user/profile itself.
+  const signingInRef = useRef(false);
 
   const clearIdleTimer = useCallback(() => {
     if (idleTimer.current) clearTimeout(idleTimer.current);
@@ -169,24 +206,32 @@ export function AuthProvider({ children }) {
     [clearIdleTimer],
   );
 
-  // Resolve role by checking adminUsers first, then users. Both reads
-  // are allowed by Security Rules only for the signed-in user's own
-  // uid — see 6.1 in the architecture doc.
-  const loadProfile = useCallback(async (fbUser) => {
-    const adminSnap = await getDoc(doc(db, "adminUsers", fbUser.uid));
-    if (adminSnap.exists()) {
-      const data = adminSnap.data();
-      return {
-        uid: fbUser.uid,
-        role: data.role || "admin",
-        mfaEnabled: !!data.mfaEnabled,
-        name: data.name || fbUser.displayName || "Staff", // FIX — was: fbUser.displayName || "Staff"
-        // ADDED — doctor accounts live in adminUsers too (role: "doctor"),
-        // and the doctor dashboard header needs this. null rather than ""
-        // so the UI can tell "not set yet" apart from an empty string.
-        department: data.department || null,
-      };
+  // Resolve role from Firestore. Reads are allowed by Security Rules
+  // only for the signed-in user's own uid — see 6.1 in the architecture doc.
+  //
+  //   audience "staff"   -> adminUsers only; null if no doc there
+  //   audience "patient" -> users only; null if no doc there
+  //   audience undefined -> adminUsers first, then users, then a
+  //                         fallback profile (page refresh / listener)
+  const loadProfile = useCallback(async (fbUser, audience) => {
+    if (audience !== "patient") {
+      const adminSnap = await getDoc(doc(db, "adminUsers", fbUser.uid));
+      if (adminSnap.exists()) {
+        const data = adminSnap.data();
+        return {
+          uid: fbUser.uid,
+          role: data.role || "admin",
+          mfaEnabled: !!data.mfaEnabled,
+          name: data.name || fbUser.displayName || "Staff",
+          // Doctor accounts live in adminUsers too (role: "doctor"),
+          // and the doctor dashboard header needs this. null rather
+          // than "" so the UI can tell "not set yet" from empty.
+          department: data.department || null,
+        };
+      }
+      if (audience === "staff") return null;
     }
+
     const patientSnap = await getDoc(doc(db, "users", fbUser.uid));
     if (patientSnap.exists()) {
       const data = patientSnap.data();
@@ -197,24 +242,34 @@ export function AuthProvider({ children }) {
         phone: data.phone,
       };
     }
+    if (audience === "patient") return null;
     return { uid: fbUser.uid, ...fallbackProfile(fbUser) };
   }, []);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
-      setFirebaseUser(fbUser);
-      setEmailVerifiedFlag(fbUser?.emailVerified ?? false);
       if (!fbUser) {
+        setFirebaseUser(null);
+        setEmailVerifiedFlag(false);
         setProfile(null);
         loadedProfileUidRef.current = null;
         clearIdleTimer();
         setInitializing(false);
         return;
       }
-      // signIn() already loaded and set this exact user's profile
-      // (see below) — skip the redundant Firestore read. This branch
-      // still runs on page load / token refresh / other tabs, where
-      // the ref won't match and a real fetch happens.
+
+      // signIn() is mid-flight: it will verify the account belongs on
+      // this login page and then set user/profile itself. Don't expose
+      // a not-yet-vetted user to the rest of the app.
+      if (signingInRef.current) return;
+
+      setFirebaseUser(fbUser);
+      setEmailVerifiedFlag(fbUser.emailVerified ?? false);
+
+      // signIn() already loaded and set this exact user's profile —
+      // skip the redundant Firestore read. This branch still runs on
+      // page load / token refresh / other tabs, where the ref won't
+      // match and a real fetch happens.
       if (loadedProfileUidRef.current === fbUser.uid) {
         setInitializing(false);
         return;
@@ -258,8 +313,8 @@ export function AuthProvider({ children }) {
         name: name.trim(),
         phone: phone.trim(),
         email: email.trim(),
-        role: "patient", // ADDED — Users.jsx filters strictly on this
-        status: "active", // ADDED — Users.jsx's status pill checks === "active"
+        role: "patient", // Users.jsx filters strictly on this
+        status: "active", // Users.jsx's status pill checks === "active"
         emailVerified: false,
         createdAt: serverTimestamp(),
       });
@@ -270,7 +325,11 @@ export function AuthProvider({ children }) {
   );
 
   const signIn = useCallback(
-    async (email, password, { rememberMe = false } = {}) => {
+    async (
+      email,
+      password,
+      { rememberMe = false, audience = "patient" } = {},
+    ) => {
       const key = email.trim().toLowerCase();
       const attempt = attemptStore.get(key);
       if (attempt?.cooldownUntil && Date.now() < attempt.cooldownUntil) {
@@ -278,55 +337,76 @@ export function AuthProvider({ children }) {
         throw new Error(`Too many attempts. Try again in ${waitSec}s.`);
       }
 
-      // --- Step 1: actual authentication. Only failures from THIS
-      // step should count against the login throttle or produce a
-      // "sign-in failed" message. ---
-      let cred;
+      signingInRef.current = true;
       try {
-        // Staff should never silently persist a session on a shared
-        // machine; only honor "remember me" for patients on their own device.
-        await setPersistence(
-          auth,
-          rememberMe ? browserLocalPersistence : browserSessionPersistence,
-        );
-        cred = await signInWithEmailAndPassword(auth, email.trim(), password);
-        attemptStore.delete(key);
-      } catch (err) {
-        const current = attemptStore.get(key) || { count: 0 };
-        const count = current.count + 1;
-        attemptStore.set(key, {
-          count,
-          cooldownUntil:
-            count >= MAX_ATTEMPTS_BEFORE_COOLDOWN
-              ? Date.now() + COOLDOWN_MS
-              : undefined,
-        });
-        throw new Error(mapAuthError(err));
+        // --- Step 1: actual authentication. Failures from THIS step
+        // count against the login throttle. ---
+        let cred;
+        try {
+          // Staff should never silently persist a session on a shared
+          // machine; only honor "remember me" for patients on their own device.
+          await setPersistence(
+            auth,
+            audience === "staff" || !rememberMe
+              ? browserSessionPersistence
+              : browserLocalPersistence,
+          );
+          cred = await signInWithEmailAndPassword(auth, email.trim(), password);
+          attemptStore.delete(key);
+        } catch (err) {
+          recordFailure(key);
+          throw new Error(mapAuthError(err), { cause: err });
+        }
+
+        // MFA HOOK: if this account has mfaEnabled and Firebase throws
+        // 'auth/multi-factor-auth-required', it's caught in the block
+        // above (before this point is reached) — handle the resolver
+        // there instead once MFA is turned back on.
+
+        // --- Step 2: profile lookup, restricted to the collection that
+        // belongs to this login page. ---
+        let p = null;
+        let lookupFailed = false;
+        try {
+          p = await loadProfile(cred.user, audience);
+        } catch {
+          lookupFailed = true;
+        }
+
+        const allowed =
+          audience === "staff"
+            ? STAFF_ROLES.includes(p?.role)
+            : p?.role === "patient";
+
+        if (!allowed) {
+          // Wrong page for this account (or no profile / lookup failed):
+          // sign straight back out. Fail closed.
+          await signOut(auth).catch(() => {});
+
+          if (lookupFailed) {
+            // Infrastructure error, not a bad-credentials attempt: don't
+            // count it against the throttle.
+            throw new Error(
+              mapAuthError({ code: "auth/network-request-failed" }),
+            );
+          }
+
+          recordFailure(key);
+          // Identical to the wrong-password message on purpose.
+          throw new Error("Invalid email or password.");
+        }
+
+        // Account is allowed here — now expose it to the rest of the app.
+        setFirebaseUser(cred.user);
+        setEmailVerifiedFlag(cred.user.emailVerified ?? false);
+        loadedProfileUidRef.current = cred.user.uid;
+        setProfile(p);
+        scheduleIdleLogout(p.role);
+
+        return { user: cred.user, role: p.role };
+      } finally {
+        signingInRef.current = false;
       }
-
-      // MFA HOOK: if this account has mfaEnabled and Firebase throws
-      // 'auth/multi-factor-auth-required', it's caught in the block
-      // above (before this point is reached) — handle the resolver
-      // there instead once MFA is turned back on.
-
-      // --- Step 2: profile/role lookup. Auth has already succeeded
-      // at this point, so a failure here (e.g. a network blip on the
-      // Firestore read) must NOT be treated as a failed login attempt
-      // — it must not touch attemptStore, and must not throw back a
-      // "sign-in failed" error while the user is, in fact, signed in.
-      // Degrade to a safe default instead, same as the
-      // onAuthStateChanged listener does. ---
-      let p;
-      try {
-        p = await loadProfile(cred.user);
-      } catch {
-        p = fallbackProfile(cred.user);
-      }
-      loadedProfileUidRef.current = cred.user.uid;
-      setProfile(p);
-      scheduleIdleLogout(p.role);
-
-      return { user: cred.user, role: p.role };
     },
     [loadProfile, scheduleIdleLogout],
   );
@@ -351,8 +431,9 @@ export function AuthProvider({ children }) {
     } catch (err) {
       // Swallow "user not found" so this can't be used to check which
       // emails are registered — always report success to the caller.
+      // in resetPassword:
       if (err?.code !== "auth/user-not-found")
-        throw new Error(mapAuthError(err));
+        throw new Error(mapAuthError(err), { cause: err });
     }
   }, []);
 
@@ -392,7 +473,7 @@ export function AuthProvider({ children }) {
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
-
+// eslint-disable-next-line react-refresh/only-export-components
 export function useAuth() {
   const ctx = useContext(AuthContext);
   if (!ctx) throw new Error("useAuth must be used within an AuthProvider");

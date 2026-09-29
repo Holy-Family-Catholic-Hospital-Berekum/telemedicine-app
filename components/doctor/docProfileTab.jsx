@@ -21,6 +21,30 @@ import {
 
 const BIO_MAX_LENGTH = 400;
 
+const EMPTY_PROFILE = {
+  title: "",
+  yearsExperience: 0,
+  languages: [],
+  specialties: [],
+  bio: "",
+  photoURL: null,
+};
+
+// Fills in anything missing so the form never crashes on a partial or absent doc.
+function normalizeProfile(profile) {
+  const p = profile ?? {};
+  return {
+    ...EMPTY_PROFILE,
+    ...p,
+    title: p.title ?? "",
+    yearsExperience: Number(p.yearsExperience) || 0,
+    languages: Array.isArray(p.languages) ? p.languages : [],
+    specialties: Array.isArray(p.specialties) ? p.specialties : [],
+    bio: p.bio ?? "",
+    photoURL: p.photoURL ?? null,
+  };
+}
+
 function TagEditor({ label, placeholder, values, onChange }) {
   const [draft, setDraft] = useState("");
 
@@ -88,9 +112,10 @@ function TagEditor({ label, placeholder, values, onChange }) {
     </div>
   );
 }
-
 export default function ProfileTab({ doctor, onToast }) {
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
+  const [reloadKey, setReloadKey] = useState(0);
   const [saving, setSaving] = useState(false);
   const [photoError, setPhotoError] = useState(null);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
@@ -101,16 +126,27 @@ export default function ProfileTab({ doctor, onToast }) {
 
   useEffect(() => {
     let active = true;
-    fetchDoctorProfile(doctor.uid).then((profile) => {
-      if (!active) return;
-      setSaved(profile);
-      setForm(profile);
-      setLoading(false);
-    });
+
+    fetchDoctorProfile(doctor.uid)
+      .then((profile) => {
+        if (!active) return;
+        const normalized = normalizeProfile(profile);
+        setSaved(normalized);
+        setForm(normalized);
+      })
+      .catch((err) => {
+        console.error("Failed to load doctor profile:", err);
+        if (!active) return;
+        setLoadError("We couldn't load your profile. Please try again.");
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+
     return () => {
       active = false;
     };
-  }, [doctor.uid]);
+  }, [doctor.uid, reloadKey]);
 
   const isDirty =
     form && saved && JSON.stringify(form) !== JSON.stringify(saved);
@@ -138,12 +174,15 @@ export default function ProfileTab({ doctor, onToast }) {
         doctor.uid,
         resized,
       );
-      const next = await updateDoctorProfile(doctor.uid, { photoURL });
+      const next = normalizeProfile(
+        await updateDoctorProfile(doctor.uid, { photoURL }),
+      );
       setSaved(next);
       setForm(next);
       onToast?.("Profile photo updated");
     } catch (err) {
-      setPhotoError(err.message || "Could not update your photo. Try again.");
+      console.error("Photo update failed:", err);
+      setPhotoError(err?.message || "Could not update your photo. Try again.");
     } finally {
       setUploadingPhoto(false);
     }
@@ -153,10 +192,15 @@ export default function ProfileTab({ doctor, onToast }) {
     setUploadingPhoto(true);
     setPhotoError(null);
     try {
-      const next = await updateDoctorProfile(doctor.uid, { photoURL: null });
+      const next = normalizeProfile(
+        await updateDoctorProfile(doctor.uid, { photoURL: null }),
+      );
       setSaved(next);
       setForm(next);
       onToast?.("Profile photo removed");
+    } catch (err) {
+      console.error("Photo removal failed:", err);
+      setPhotoError("Could not remove your photo. Try again.");
     } finally {
       setUploadingPhoto(false);
     }
@@ -165,16 +209,21 @@ export default function ProfileTab({ doctor, onToast }) {
   async function handleSave() {
     setSaving(true);
     try {
-      const next = await updateDoctorProfile(doctor.uid, {
-        title: form.title,
-        yearsExperience: form.yearsExperience,
-        languages: form.languages,
-        specialties: form.specialties,
-        bio: form.bio,
-      });
+      const next = normalizeProfile(
+        await updateDoctorProfile(doctor.uid, {
+          title: form.title,
+          yearsExperience: form.yearsExperience,
+          languages: form.languages,
+          specialties: form.specialties,
+          bio: form.bio,
+        }),
+      );
       setSaved(next);
       setForm(next);
       onToast?.("Profile saved");
+    } catch (err) {
+      console.error("Profile save failed:", err);
+      onToast?.("Couldn't save your profile. Please try again.");
     } finally {
       setSaving(false);
     }
@@ -184,10 +233,31 @@ export default function ProfileTab({ doctor, onToast }) {
     setForm(saved);
   }
 
-  if (loading || !form) {
+  if (loading) {
     return (
       <div className="rounded-md border border-dashed border-[#DCE6EC] bg-white p-8 text-center text-sm text-[#5C6B72]">
         Loading your profile…
+      </div>
+    );
+  }
+
+  if (loadError || !form) {
+    return (
+      <div className="rounded-md border border-[#DCE6EC] bg-white p-8 text-center">
+        <p className="text-sm text-[#B23A3A]">
+          {loadError || "Your profile isn't available right now."}
+        </p>
+        <button
+          type="button"
+          onClick={() => {
+            setLoadError(null);
+            setLoading(true);
+            setReloadKey((k) => k + 1);
+          }}
+          className="mt-3 rounded-sm border border-[#DCE6EC] px-3.5 py-2 text-sm font-medium text-[#12242C] transition hover:border-[#0095D9]"
+        >
+          Try again
+        </button>
       </div>
     );
   }

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { getFunctions, httpsCallable } from "firebase/functions";
 
 // ASSUMPTION: your initialised Firebase app. Most projects export it from
@@ -56,6 +56,10 @@ const USE_MOCK_BACKEND = true;
  * arrived here from a doctor's "Select this doctor" button on the home
  * page (Home.jsx → `/book?doctor=<id>`), that doctor is pre-selected and
  * the picker starts closed since there's nothing left to choose.
+ *
+ * The URL (`doctor`, `type`, `mode`, `slotId`) is read once, in the
+ * useState initialisers, rather than in an effect — so arriving via a link
+ * never triggers a second render pass just to copy the URL into state.
  *
  * A specialist doctor costs more than a general doctor for the same
  * consultation type — see src/data/consultationFees.js. Switching type or
@@ -119,8 +123,7 @@ const USE_MOCK_BACKEND = true;
  * own sign-out, so this page doesn't manage that state itself.
  *
  * Placeholder values to update before shipping:
- * - CONSULTATION_FEES amounts (fallback only — live prices come from
- *   useSiteSettings())
+ * - Consultation prices come from useSiteSettings() (live, admin-editable)
  * - PAYSTACK_PUBLIC_KEY (keep the SECRET key server-side only)
  *
  * Defaults: General OPD + Online are pre-selected on step 0, since
@@ -155,12 +158,6 @@ const USE_MOCK_BACKEND = true;
  * a box was ticked at some point. See the TODO on createBookingDraft's
  * real Cloud Function about persisting this server-side.
  */
-
-// Fallback shown for an instant before live prices arrive. Keep in step
-// with DEFAULT_FEES in functions/siteSettings.js. These are GENERAL-tier
-// prices; a specialist doctor adds specialistSurcharge(type) on top — see
-// src/data/consultationFees.js.
-const CONSULTATION_FEES = { OPD: 250, SURGICAL: 300 };
 
 const CURRENCY = "GHS";
 
@@ -466,7 +463,6 @@ function DoctorAvatar({ doctor, size = 44 }) {
 }
 
 export default function BookConsultation() {
-  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 
   const [step, setStep] = useState(0);
@@ -478,6 +474,7 @@ export default function BookConsultation() {
   const [error, setError] = useState(null);
   const errorRef = useRef(null);
   const errorId = useRef(0);
+  const scrollRef = useRef(null);
 
   function showError(message) {
     errorId.current += 1;
@@ -502,12 +499,30 @@ export default function BookConsultation() {
     node.focus({ preventScroll: true });
   }, [error]);
 
-  // Pre-selected: General OPD + Online, the most common path.
-  const [type, setType] = useState("OPD"); // "OPD" | "SURGICAL"
-  const [mode, setMode] = useState("online"); // "online" | "offline"
+  useEffect(() => {
+    const reduce = window.matchMedia(
+      "(prefers-reduced-motion: reduce)",
+    ).matches;
+    const opts = { top: 0, behavior: reduce ? "auto" : "smooth" };
+    scrollRef.current?.scrollTo(opts);
+    window.scrollTo(opts); // harmless fallback if the layout ever changes
+  }, [step]);
+
+  // Pre-selected: General OPD + Online, the most common path. If the page
+  // was opened from a link (`?type=` / `?mode=`), that choice wins — read
+  // once here rather than in an effect.
+  const [type, setType] = useState(() => {
+    const t = searchParams.get("type");
+    return t === "OPD" || t === "SURGICAL" ? t : "OPD";
+  }); // "OPD" | "SURGICAL"
+  const [mode, setMode] = useState(() => {
+    const m = searchParams.get("mode");
+    return m === "online" || m === "offline" ? m : "online";
+  }); // "online" | "offline"
   const [dateOfBirth, setDateOfBirth] = useState("");
   const [sex, setSex] = useState("");
-  const [location, setLocation] = useState("");
+  const [town, setTown] = useState("");
+  const [area, setArea] = useState("");
   const [phone, setPhone] = useState("");
   // Required before continuing to payment — see handleContinueFromDetails
   // and the "Your information" fieldset in step 0.
@@ -517,7 +532,10 @@ export default function BookConsultation() {
   // null = no preference, staff assign someone. Picker starts closed; it
   // only opens when the patient asks for it, or is pre-filled (and left
   // closed) by a `?doctor=<id>` link from the home page.
-  const [selectedDoctorId, setSelectedDoctorId] = useState(null);
+  const [selectedDoctorId, setSelectedDoctorId] = useState(() => {
+    const d = searchParams.get("doctor");
+    return d && doctors.some((x) => x.id === d) ? d : null;
+  });
   const [doctorPickerOpen, setDoctorPickerOpen] = useState(false);
   const [doctorSearch, setDoctorSearch] = useState("");
 
@@ -525,41 +543,23 @@ export default function BookConsultation() {
   // they arrived here that way (see patientAvailableSlots.jsx). Threaded
   // through to createBookingDraft below so the server converts this
   // specific held slot into a booking (open -> held -> booked, per 4.8)
-  // instead of creating an unrelated fresh one.
-  const [slotId, setSlotId] = useState(null);
+  // instead of creating an unrelated fresh one. Read-only: it comes from
+  // the URL and never changes during the flow.
+  const [slotId] = useState(() => searchParams.get("slotId") || null);
 
-  useEffect(() => {
-    const doctorParam = searchParams.get("doctor");
-    if (doctorParam && doctors.some((d) => d.id === doctorParam)) {
-      setSelectedDoctorId(doctorParam);
-    }
-
-    const typeParam = searchParams.get("type");
-    if (typeParam === "OPD" || typeParam === "SURGICAL") {
-      setType(typeParam);
-    }
-
-    const modeParam = searchParams.get("mode");
-    if (modeParam === "online" || modeParam === "offline") {
-      setMode(modeParam);
-    }
-
-    const slotParam = searchParams.get("slotId");
-    if (slotParam) setSlotId(slotParam);
-    // Only read the URL once, on arrival.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
   const selectedDoctor = doctors.find((d) => d.id === selectedDoctorId) || null;
 
   // If the consultation type changes to one the currently-selected doctor
   // doesn't take (e.g. an OPD-only GP after switching to Surgical), drop
-  // the selection rather than silently keep an invalid pairing.
-  useEffect(() => {
-    if (selectedDoctor && !selectedDoctor.availableFor.includes(type)) {
+  // the selection rather than silently keep an invalid pairing. Done in
+  // the click handler, not an effect, so there's no extra render pass.
+  function handleTypeChange(nextType) {
+    setType(nextType);
+    const picked = doctors.find((d) => d.id === selectedDoctorId);
+    if (picked && !picked.availableFor.includes(nextType)) {
       setSelectedDoctorId(null);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [type]);
+  }
 
   const doctorsForType = useMemo(
     () => doctors.filter((d) => d.availableFor.includes(type)),
@@ -582,7 +582,6 @@ export default function BookConsultation() {
 
   // "idle" | "starting" | "checkout" | "verifying" | "pending" | "confirmed"
   const [paymentState, setPaymentState] = useState("idle");
-  const [payment, setPayment] = useState(null); // { reference, transactionId }
 
   // Live estimate before a booking draft exists: the site's general-tier
   // price for this type, plus a specialist surcharge if the chosen doctor
@@ -621,8 +620,12 @@ export default function BookConsultation() {
       showError("Select your sex to continue.");
       return;
     }
-    if (!location.trim()) {
-      showError("Enter your location to continue.");
+    if (!town.trim()) {
+      showError("Enter your town or city to continue.");
+      return;
+    }
+    if (!area.trim()) {
+      showError("Enter your area, suburb or nearest landmark to continue.");
       return;
     }
     if (!phone.trim()) {
@@ -643,7 +646,9 @@ export default function BookConsultation() {
         mode,
         dateOfBirth,
         sex,
-        location,
+        town: town.trim(),
+        area: area.trim(),
+        location: `${area.trim()}, ${town.trim()}`,
         phone,
         doctorId: selectedDoctorId || null,
         slotId: slotId || null,
@@ -661,7 +666,7 @@ export default function BookConsultation() {
       setBooking(result);
       setPaymentState("idle");
       setStep(1);
-    } catch (e) {
+    } catch {
       showError(
         "We couldn't set up your booking. Check your connection and try again.",
       );
@@ -696,11 +701,6 @@ export default function BookConsultation() {
             currency: session.currency,
             customer: session.customer,
           });
-
-      setPayment({
-        reference: session.reference,
-        transactionId: result.transactionId,
-      });
 
       if (result.status === "cancelled") {
         // They closed the popup without paying — but a MoMo prompt can
@@ -738,7 +738,7 @@ export default function BookConsultation() {
         verdict.message ||
           "Your payment didn't go through, so no booking was made. Try again below.",
       );
-    } catch (e) {
+    } catch {
       setPaymentState("idle");
       showError(
         "We couldn't reach the payment service. Your booking isn't confirmed, please try again.",
@@ -773,29 +773,10 @@ export default function BookConsultation() {
         verdict.message ||
           "That payment didn't complete, so no booking was made. You can start it again below.",
       );
-    } catch (e) {
+    } catch {
       setPaymentState("pending");
       showError("We couldn't check your payment just now. Try again shortly.");
     }
-  }
-
-  function resetFlow() {
-    setStep(0);
-    setType("OPD");
-    setMode("online");
-    setDateOfBirth("");
-    setSex("");
-    setLocation("");
-    setPhone("");
-    setConsent(false);
-    setSelectedDoctorId(null);
-    setDoctorPickerOpen(false);
-    setDoctorSearch("");
-    setSlotId(null);
-    setBooking(null);
-    setPayment(null);
-    setPaymentState("idle");
-    clearError();
   }
 
   const payButtonLabel = {
@@ -838,7 +819,10 @@ export default function BookConsultation() {
           `min-h-screen` — see the original note: min-h lets the div grow
           past the viewport so it never scrolls itself, which breaks the
           sticky header. */}
-      <div className="lg:ml-[340px] xl:ml-[380px] h-screen flex flex-col overflow-y-auto">
+      <div
+        ref={scrollRef}
+        className="lg:ml-[340px] xl:ml-[380px] h-screen flex flex-col overflow-y-auto"
+      >
         <Header variant="minimal" cancelHref="/" cancelLabel="Back to home" />
 
         <div className="flex-1">
@@ -930,8 +914,8 @@ export default function BookConsultation() {
                     What kind of consultation do you need?
                   </h2>
                   <p className="mt-2 text-[16px] text-black/80">
-                    You'll pay on the next step. Choose a doctor now if you'd
-                    like, or we'll assign one once your payment is confirmed.
+                    Choose a doctor now if you'd like, or we'll assign one once
+                    your booking is confirmed.
                   </p>
 
                   <fieldset className="mt-8">
@@ -954,7 +938,7 @@ export default function BookConsultation() {
                         <button
                           key={opt.key}
                           type="button"
-                          onClick={() => setType(opt.key)}
+                          onClick={() => handleTypeChange(opt.key)}
                           aria-pressed={type === opt.key}
                           className={
                             "text-left rounded-2xl p-5 border-2 transition-colors " +
@@ -968,15 +952,6 @@ export default function BookConsultation() {
                           </span>
                           <span className="block mt-1 text-[14px] text-black/80">
                             {opt.desc}
-                          </span>
-                          <span className="block mt-3 text-[14px] font-medium text-[#F88535]">
-                            {CURRENCY} {prices[opt.key]}
-                            <span className="font-normal text-black/50">
-                              {" "}
-                              general · {CURRENCY}{" "}
-                              {prices[opt.key] + specialistSurcharge(opt.key)}{" "}
-                              specialist
-                            </span>
                           </span>
                         </button>
                       ))}
@@ -1132,13 +1107,6 @@ export default function BookConsultation() {
                               <p className="mt-2 text-[12.5px] text-black/60">
                                 {doc.specialties.join(" · ")}
                               </p>
-                              <p className="mt-1 text-[12.5px] font-medium text-[#F88535]">
-                                {CURRENCY}{" "}
-                                {prices[type] +
-                                  (doc.tier === "specialist"
-                                    ? specialistSurcharge(type)
-                                    : 0)}
-                              </p>
                             </button>
                           ))}
                           {filteredDoctors.length === 0 && (
@@ -1150,14 +1118,6 @@ export default function BookConsultation() {
                         </div>
                       </div>
                     )}
-
-                    <p className="mt-2 text-[13px] text-black/60">
-                      {selectedDoctor?.tier === "specialist"
-                        ? `Specialist consultations are ${CURRENCY} ${specialistSurcharge(
-                            type,
-                          )} more than a general doctor.`
-                        : "Choosing a specific doctor only changes the fee if they're a specialist."}
-                    </p>
                   </fieldset>
 
                   <fieldset className="mt-8">
@@ -1208,21 +1168,46 @@ export default function BookConsultation() {
 
                       <div>
                         <label
-                          htmlFor="location"
-                          className="block text-[15px] font-medium mb-1.5"
+                          htmlFor="town"
+                          className="block text-[17px] font-medium mb-2"
                         >
-                          Location
+                          Town or city
                         </label>
                         <input
-                          id="location"
+                          id="town"
                           type="text"
                           required
-                          value={location}
-                          onChange={(e) => setLocation(e.target.value)}
-                          placeholder="e.g. Berekum, Kato"
-                          className="w-full rounded-xl border border-black/20 px-4 py-3 text-[16px]
-                                     focus:outline-none focus:border-[#F88535] focus:ring-1 focus:ring-[#F88535]"
+                          autoComplete="address-level2"
+                          value={town}
+                          onChange={(e) => setTown(e.target.value)}
+                          placeholder="e.g. Berekum"
+                          className="w-full rounded-xl border border-black/30 px-4 py-3.5 text-[18px]
+               focus:outline-none focus:border-[#F88535] focus:ring-2 focus:ring-[#F88535]"
                         />
+                      </div>
+
+                      <div>
+                        <label
+                          htmlFor="area"
+                          className="block text-[17px] font-medium mb-2"
+                        >
+                          Area or neighbourhood
+                        </label>
+                        <input
+                          id="area"
+                          type="text"
+                          required
+                          autoComplete="address-level3"
+                          value={area}
+                          onChange={(e) => setArea(e.target.value)}
+                          placeholder="e.g. Kato, Senase, Biadan"
+                          className="w-full rounded-xl border border-black/30 px-4 py-3.5 text-[18px]
+               focus:outline-none focus:border-[#F88535] focus:ring-2 focus:ring-[#F88535]"
+                        />
+                        <p className="mt-2 text-[15px] text-black/75">
+                          The part of town you live in, or a landmark close to
+                          you.
+                        </p>
                       </div>
 
                       <div>
@@ -1255,16 +1240,17 @@ export default function BookConsultation() {
                     <legend className="text-[15px] font-medium mb-2 px-1">
                       Your information
                     </legend>
-                    <p className="text-[14px] text-black/70">
+                    <p className="text-[14px] text-black/90">
                       We collect your date of birth, sex, location and phone
                       number to set up this consultation, assign a doctor, and
                       contact you about your appointment. Clinical details you
                       share are visible only to the doctor handling your
-                      consultation. Payment is handled by Paystack — we don't
-                      see or store your mobile money PIN. Consultation records
-                      are deleted once your consultation is marked complete;
-                      only anonymised, non-identifying metrics are kept
-                      afterward.
+                      consultation. Payment is handled by Paystack, we don't see
+                      or store your mobile money PIN.The consultation details
+                      you have provided above are deleted once your consultation
+                      is marked complete; only anonymised, non-identifying
+                      metrics are kept afterward. We may record your
+                      consultation for legal purposes.
                     </p>
                     <label className="mt-4 flex items-start gap-3 cursor-pointer">
                       <input
@@ -1320,9 +1306,9 @@ export default function BookConsultation() {
                     Pay for your consultation
                   </h2>
                   <p className="mt-2 text-[16px] text-black/80">
-                    Payment is by mobile money and goes straight to the
-                    hospital. You'll get a prompt on your phone to approve it,
-                    and your booking is created the moment the payment clears.
+                    Payment is by mobile money. You'll get a prompt on your
+                    phone to approve it, and your booking is created the moment
+                    the payment clears.
                   </p>
 
                   <div className="mt-7 rounded-2xl border border-black/10 p-6 sm:p-7 space-y-5">
@@ -1389,7 +1375,7 @@ export default function BookConsultation() {
                       <span className="font-medium text-black">
                         Waiting for the network to confirm your payment.
                       </span>{" "}
-                      This can take up to a few minutes. Keep this page open —
+                      This can take up to a few minutes. Keep this page open,
                       we'll finish your booking as soon as it clears.
                     </div>
                   )}
@@ -1457,9 +1443,10 @@ export default function BookConsultation() {
                     Payment confirmed, your booking is in
                   </h2>
                   <p className="mt-2 text-[16px] text-black/80 max-w-md mx-auto sm:mx-0">
-                    We've received {booking.currency} {booking.amount}. Our team
-                    will call or WhatsApp you on {phone || "your number"} with
-                    your appointment time{selectedDoctor ? "" : " and doctor"}.
+                    We've received {booking.currency} {booking.amount}. You will
+                    receive an email with your appointment time
+                    {selectedDoctor ? "" : " and doctor"} the moment your
+                    schedule is confirmed.
                   </p>
 
                   <div className="mt-7 rounded-2xl border border-black/10 px-5 py-4 max-w-md mx-auto sm:mx-0 text-left space-y-3">
@@ -1469,9 +1456,6 @@ export default function BookConsultation() {
                       </span>
                       <span className="mt-0.5 block font-display text-[19px] font-medium">
                         {booking.currency} {booking.amount} by mobile money
-                      </span>
-                      <span className="mt-1 block text-[14px] text-black/60">
-                        A receipt has been sent to you by Paystack.
                       </span>
                     </div>
                     {selectedDoctor && (
@@ -1489,12 +1473,12 @@ export default function BookConsultation() {
                     )}
                   </div>
 
-                  <p className="mt-6 text-[14px] text-black/60 max-w-md mx-auto sm:mx-0">
+                  <p className="mt-6 text-[16px] text-black/60 max-w-md mx-auto sm:mx-0">
                     Your consultation ID comes through with your appointment
                     details once{" "}
                     {selectedDoctor ? "a time is" : "a doctor and time are"}{" "}
                     assigned. You can see this booking any time from your
-                    account.
+                    Dashboard.
                   </p>
 
                   <div className="mt-8 flex flex-wrap justify-center sm:justify-start gap-3">
@@ -1505,14 +1489,13 @@ export default function BookConsultation() {
                     >
                       Back to home
                     </Link>
-                    <button
-                      type="button"
-                      onClick={resetFlow}
+                    <Link
+                      to={"/dashboard"}
                       className="rounded-full bg-[#F88535] text-white text-[16px] font-medium px-6 py-3
                                  hover:brightness-95 active:brightness-90 transition"
                     >
-                      Book another consultation
-                    </button>
+                      Visit my Dashboard
+                    </Link>
                   </div>
                 </section>
               )}

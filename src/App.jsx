@@ -7,9 +7,11 @@ import Dashboard from "../components/patient/dashboard/patientDashboard";
 import { AuthProvider } from "./context/authContext";
 import { ProtectedRoute, PublicOnlyRoute } from "./protectedRoutes";
 import SignIn from "./pages/auth/signIn";
+import StaffSignIn from "./pages/auth/staffSignIn";
 import SignUp from "./pages/auth/signUp";
 import VerifyEmailNotice from "./pages/auth/verifyEmailNotice";
 import Unauthorized from "./pages/auth/unauthorized";
+import { STAFF_LOGIN_PATH } from "./staffRoute";
 
 export default function App() {
   return (
@@ -19,8 +21,11 @@ export default function App() {
 
         {/* Signed-in users get bounced away from these to their own dashboard */}
         <Route element={<PublicOnlyRoute />}>
-          <Route path="/signin" element={<SignIn />} />
+          <Route path="/signin" element={<SignIn audience="patient" />} />
           <Route path="/signup" element={<SignUp />} />
+          {STAFF_LOGIN_PATH && (
+            <Route path={STAFF_LOGIN_PATH} element={<StaffSignIn />} />
+          )}
         </Route>
 
         <Route path="/verify-email" element={<VerifyEmailNotice />} />

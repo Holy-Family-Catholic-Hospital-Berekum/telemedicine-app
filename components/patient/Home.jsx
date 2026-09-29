@@ -502,6 +502,10 @@ function DoctorPortrait({ doctor }) {
  * Advances on its own every 5s, pauses on hover, on focus within, and when
  * the tab is hidden. Reduced-motion visitors get no auto-advance and no
  * sliding transition — the arrows and dots still work.
+ *
+ * `index` is the raw stored position; `safeIndex` is what's actually
+ * rendered. When the viewport changes and maxIndex shrinks, safeIndex is
+ * clamped during render, so no effect is needed to "fix up" state.
  */
 function DoctorsSlider() {
   const [perView, setPerView] = useState(1);
@@ -528,17 +532,24 @@ function DoctorsSlider() {
   }, []);
 
   const maxIndex = Math.max(0, doctors.length - perView);
-
-  useEffect(() => {
-    setIndex((current) => Math.min(current, maxIndex));
-  }, [maxIndex]);
+  const safeIndex = Math.min(index, maxIndex);
 
   const next = useCallback(
-    () => setIndex((current) => (current >= maxIndex ? 0 : current + 1)),
+    () =>
+      setIndex((current) =>
+        Math.min(current, maxIndex) >= maxIndex
+          ? 0
+          : Math.min(current, maxIndex) + 1,
+      ),
     [maxIndex],
   );
   const prev = useCallback(
-    () => setIndex((current) => (current <= 0 ? maxIndex : current - 1)),
+    () =>
+      setIndex((current) =>
+        Math.min(current, maxIndex) <= 0
+          ? maxIndex
+          : Math.min(current, maxIndex) - 1,
+      ),
     [maxIndex],
   );
 
@@ -582,10 +593,10 @@ function DoctorsSlider() {
       >
         <div
           className={`flex ${reduceMotion ? "" : "transition-transform duration-700 ease-out"}`}
-          style={{ transform: `translateX(-${index * (100 / perView)}%)` }}
+          style={{ transform: `translateX(-${safeIndex * (100 / perView)}%)` }}
         >
           {doctors.map((doctor, i) => {
-            const visible = i >= index && i < index + perView;
+            const visible = i >= safeIndex && i < safeIndex + perView;
             return (
               <div
                 key={doctor.id}
@@ -658,9 +669,9 @@ function DoctorsSlider() {
               type="button"
               onClick={() => setIndex(i)}
               aria-label={`Show doctors ${i + 1} of ${maxIndex + 1}`}
-              aria-current={i === index}
+              aria-current={i === safeIndex}
               className={`h-2 rounded-full transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--forest)] ${
-                i === index
+                i === safeIndex
                   ? "w-6 bg-[var(--forest)]"
                   : "w-2 bg-[#14213833] hover:bg-[#14213866]"
               }`}
@@ -765,21 +776,19 @@ function CursorGlow() {
 }
 
 // Triggers a stamp reveal once the privacy section scrolls into view.
-// Respects reduced motion by showing the stamp already in place.
+// Respects reduced motion by showing the stamp already in place — the
+// preference is read in the useState initialiser, so no effect has to set
+// state synchronously.
 function useStampOnce() {
   const ref = useRef(null);
-  const [ready, setReady] = useState(false);
+  const [ready, setReady] = useState(
+    () => window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+  );
 
   useEffect(() => {
-    const reduceMotion = window.matchMedia(
-      "(prefers-reduced-motion: reduce)",
-    ).matches;
+    if (ready) return;
     const el = ref.current;
     if (!el) return;
-    if (reduceMotion) {
-      setReady(true);
-      return;
-    }
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting) {
@@ -791,7 +800,7 @@ function useStampOnce() {
     );
     observer.observe(el);
     return () => observer.disconnect();
-  }, []);
+  }, [ready]);
 
   return { ref, ready };
 }
@@ -1150,7 +1159,7 @@ export default function Home() {
         <section id="services" className="py-16 sm:py-24">
           <div className="mx-auto max-w-5xl px-5 sm:px-8">
             <h2 className="font-display text-[26px] sm:text-[30px] font-medium max-w-lg text-[var(--ink2)]">
-              Choose the care you need
+              Which care do you need?
             </h2>
             <p className="mt-3 text-[15px] sm:text-[16px] text-[#142138cc] max-w-lg">
               Both consultation types are available online or in person,
@@ -1225,7 +1234,7 @@ export default function Home() {
               </div>
               <p className="text-[14px] sm:text-[15px] leading-relaxed text-[#142138b3] max-w-md">
                 Whichever you choose, the same doctors who see you at the
-                hospital are the ones who confirm and hold your consultation.
+                hospital are the ones who hold your consultation.
               </p>
             </div>
           </div>

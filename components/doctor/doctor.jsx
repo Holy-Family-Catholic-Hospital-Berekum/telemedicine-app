@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 // ADDED — real auth instead of mock identity.
 import { useNavigate, Link } from "react-router-dom";
+import { STAFF_LOGIN_PATH } from "../../src/staffRoute.js";
 import {
   CalendarClock,
   ShieldCheck,
@@ -70,7 +71,7 @@ export default function DoctorDashboard() {
   const [activeCallConsultationId, setActiveCallConsultationId] =
     useState(null);
 
-  const today = new Date();
+  const [today] = useState(() => new Date());
 
   // The real signed-in doctor, resolved from Firestore via authContext
   // (adminUsers doc, role: "doctor"). null until both `user` and
@@ -91,13 +92,20 @@ export default function DoctorDashboard() {
   useEffect(() => {
     if (!doctor?.uid) return;
     let active = true;
-    setLoading(true);
-    fetchAssignedConsultations(doctor.uid).then((data) => {
-      if (active) {
-        setConsultations(data);
-        setLoading(false);
-      }
-    });
+    fetchAssignedConsultations(doctor.uid)
+      .then((data) => {
+        if (active) setConsultations(data ?? []);
+      })
+      .catch((err) => {
+        console.error("Failed to load consultations:", err);
+        if (active) {
+          setConsultations([]);
+          showToast("Couldn't load your schedule. Please refresh.");
+        }
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
     return () => {
       active = false;
     };
@@ -162,7 +170,7 @@ export default function DoctorDashboard() {
   // component somehow stays mounted through the transition.
   async function handleLogout() {
     await signOutUser();
-    navigate("/signin", { replace: true });
+    navigate(STAFF_LOGIN_PATH ?? "/signin", { replace: true });
   }
 
   // ---- Auth guards — after all hooks, before the real render. ----

@@ -1,22 +1,4 @@
-// signIn.jsx
-//
-// One shared sign-in form for patients, admins and doctors — role is
-// resolved server-side (via authContext, from Firestore) after a
-// successful password auth. signIn() is expected to resolve with the
-// user's role (e.g. { role: "admin" | "doctor" | "patient" }) so we
-// can redirect immediately, rather than waiting on the auth-state
-// listener to catch up. Adjust ROLE_HOME / the destructure below if
-// your signIn() returns a different shape.
-//
-// There is no role picker on this screen on purpose: letting a user
-// *claim* a role in the UI would be meaningless (and a red flag) since
-// the real check happens against adminUsers/users in Firestore.
-//
-// MFA is intentionally disabled for now — see the "MFA HOOK" comment
-// below for exactly where a TOTP challenge step would go once you turn
-// it back on for staff accounts.
-
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, useLocation, Link } from "react-router-dom";
 import { useAuth } from "../../context/authContext.jsx";
 import HealthcarePreloader from "../../components/common/healthcarePreloader.jsx";
@@ -33,10 +15,16 @@ import {
 import "../../styles/auth.css";
 import logo from "../../assets/logo.png";
 
-const ASIDE_POINTS = [
+const PATIENT_ASIDE_POINTS = [
   "Secured role-based access",
   "Every payment confirmation and schedule change is logged",
   "Encrypted video consultations",
+];
+
+const STAFF_ASIDE_POINTS = [
+  "Authorized hospital staff only",
+  "All sign-ins and actions are logged",
+  "Sessions expire after a short idle period",
 ];
 
 // Where each role lands after a successful sign-in.
@@ -46,7 +34,12 @@ const ROLE_HOME = {
   patient: "/dashboard",
 };
 
-export default function SignIn() {
+// audience: "patient" (public /signin) or "staff" (hidden staff route).
+// signIn() enforces it: an account whose role doesn't belong on this
+// page is signed straight back out and gets the same generic error as
+// a wrong password, so neither page reveals which kind of account exists.
+export default function SignIn({ audience = "patient" }) {
+  const isStaff = audience === "staff";
   const { signIn, resetPassword } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
@@ -59,11 +52,19 @@ export default function SignIn() {
   const [error, setError] = useState("");
   const [resetSent, setResetSent] = useState(false);
 
+  // Keep the staff page out of search results.
+  useEffect(() => {
+    if (!isStaff) return;
+    const meta = document.createElement("meta");
+    meta.name = "robots";
+    meta.content = "noindex, nofollow";
+    document.head.appendChild(meta);
+    return () => {
+      document.head.removeChild(meta);
+    };
+  }, [isStaff]);
+
   const resolveRedirect = (role) => {
-    // If the user was bounced here from a protected route, honor that
-    // ONLY when it matches their role's home area; otherwise send them
-    // to their role's default landing page. Falls back to "/" for an
-    // unrecognized/missing role rather than guessing.
     const roleHome = ROLE_HOME[role];
     if (!roleHome) return "/";
 
@@ -83,12 +84,13 @@ export default function SignIn() {
 
     setSubmitting(true);
     try {
-      const { role } = await signIn(email, password, { rememberMe });
+      const { role } = await signIn(email, password, {
+        rememberMe: isStaff ? false : rememberMe,
+        audience,
+      });
 
-      // MFA HOOK: once MFA is re-enabled for staff, signIn() above will
-      // throw for accounts with mfaEnabled and you'll catch
-      // 'auth/multi-factor-auth-required' here, show a TOTP code input,
-      // and call resolver.resolveSignIn(...) before navigating on.
+      // MFA HOOK: once MFA is re-enabled for staff, catch
+      // 'auth/multi-factor-auth-required' here and show a TOTP input.
 
       navigate(resolveRedirect(role), { replace: true });
     } catch (err) {
@@ -107,9 +109,8 @@ export default function SignIn() {
     try {
       await resetPassword(email);
     } catch {
-      // Intentionally swallowed — see resetPassword() note: we always
-      // show a generic success message so this can't be used to probe
-      // which emails have accounts.
+      // Intentionally swallowed: always show a generic success message so
+      // this can't be used to probe which emails have accounts.
     } finally {
       setResetSent(true);
     }
@@ -118,16 +119,18 @@ export default function SignIn() {
   return (
     <div className="auth-root">
       <AuthAside
-        heading="Sign in to your account"
+        heading={isStaff ? "Staff sign-in" : "Sign in to your account"}
         body=""
-        points={ASIDE_POINTS}
+        points={isStaff ? STAFF_ASIDE_POINTS : PATIENT_ASIDE_POINTS}
       />
 
       <div className="auth-formside">
         <div className="auth-card">
-          <Link to="/" className="auth-back-link">
-            <IconArrowLeft size={14} /> Back to home
-          </Link>
+          {!isStaff && (
+            <Link to="/" className="auth-back-link">
+              <IconArrowLeft size={14} /> Back to home
+            </Link>
+          )}
 
           <div className="auth-mobile-brand">
             <div className="auth-aside-mark" style={{ width: 32, height: 32 }}>
@@ -135,13 +138,19 @@ export default function SignIn() {
             </div>
             <div>
               <strong>Holy Family Catholic Hospital</strong>
-              <small>Telemedicine Platform</small>
+              <small>
+                {isStaff ? "Staff portal" : "Telemedicine Platform"}
+              </small>
             </div>
           </div>
 
           <div className="auth-card-head">
-            <h2>Welcome back</h2>
-            <p>Sign in to continue.</p>
+            <h2>{isStaff ? "Staff sign-in" : "Welcome back"}</h2>
+            <p>
+              {isStaff
+                ? "Authorized hospital staff only."
+                : "Sign in to continue."}
+            </p>
           </div>
 
           {error && (
@@ -203,14 +212,18 @@ export default function SignIn() {
             </div>
 
             <div className="auth-row-between">
-              <label className="auth-remember">
-                <input
-                  type="checkbox"
-                  checked={rememberMe}
-                  onChange={(e) => setRememberMe(e.target.checked)}
-                />
-                Remember me on this device
-              </label>
+              {isStaff ? (
+                <span />
+              ) : (
+                <label className="auth-remember">
+                  <input
+                    type="checkbox"
+                    checked={rememberMe}
+                    onChange={(e) => setRememberMe(e.target.checked)}
+                  />
+                  Remember me on this device
+                </label>
+              )}
               <button
                 type="button"
                 className="auth-forgot"
@@ -234,10 +247,11 @@ export default function SignIn() {
               )}
             </button>
           </form>
-
-          <p className="auth-switch">
-            New patient? <Link to="/signup">Create an account</Link>
-          </p>
+          {!isStaff && (
+            <p className="auth-switch">
+              New patient? <Link to="/signup">Create an account</Link>
+            </p>
+          )}
         </div>
       </div>
     </div>
