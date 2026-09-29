@@ -285,14 +285,6 @@ export default function Footer() {
               © {new Date().getFullYear()} Holy Family Catholic Hospital. All
               rights reserved.
             </p>
-
-            <Link
-              to="/admin"
-              className="inline-flex w-fit items-center gap-2 rounded-full border border-white/20 px-3.5 py-2 text-white/75 transition-all hover:border-white/40 hover:bg-white/10 hover:text-white"
-            >
-              <span className="h-1.5 w-1.5 rounded-full bg-[#F88535]" />
-              Staff login
-            </Link>
           </div>
         </div>
       </div>
