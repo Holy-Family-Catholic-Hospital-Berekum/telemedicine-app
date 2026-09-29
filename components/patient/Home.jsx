@@ -103,11 +103,7 @@ const steps = [
   {
     title: "Book a Consultation",
     detail:
-      "Choose General OPD or Surgical, online or in person. You may select a doctor.",
-  },
-  {
-    title: "Pay by mobile money",
-    detail: "Transfer the fee to the hospital's account.",
+      "Choose General OPD or Surgical, online or in person. You may select a doctor of your choice.",
   },
   {
     title: "We schedule you",
@@ -117,7 +113,7 @@ const steps = [
   {
     title: "Join your consultation",
     detail:
-      "We call or WhatsApp you your appointment time. Join by video, or visit us in person.",
+      "We email you your appointment time. Join by video, or visit us in person.",
   },
 ];
 
@@ -1248,7 +1244,7 @@ export default function Home() {
                 Meet your doctors
               </h2>
               <p className="mt-3 max-w-lg text-[15px] sm:text-[16px] text-[#142138cc]">
-                You'll be assigned to one of them when your payment is
+                You'll be assigned to one of them when your booking is
                 confirmed, based on what you're being seen for.
               </p>
             </div>
@@ -1312,8 +1308,7 @@ export default function Home() {
               </h2>
               <p className="mt-4 text-[15px] sm:text-[16px] leading-relaxed text-[var(--parchment)]/75">
                 Once your appointment ends, the booking details are permanently
-                deleted from our systems. We keep an audio record of what was
-                discussed for security purposes and anonymous, non-identifying
+                deleted from our systems. We keep an audio record of consultations for legal purposes and anonymous, non-identifying
                 statistics are kept to help us improve the service.
               </p>
             </div>
