@@ -285,6 +285,21 @@ export default function Footer() {
               © {new Date().getFullYear()} Holy Family Catholic Hospital. All
               rights reserved.
             </p>
+
+            <nav
+              aria-label="Legal"
+              className="flex items-center gap-x-5 gap-y-2 flex-wrap"
+            >
+              <Link
+                to="/privacy"
+                className="transition-colors hover:text-white"
+              >
+                Privacy policy
+              </Link>
+              <Link to="/terms" className="transition-colors hover:text-white">
+                Terms of service
+              </Link>
+            </nav>
           </div>
         </div>
       </div>

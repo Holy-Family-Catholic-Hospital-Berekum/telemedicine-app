@@ -1262,13 +1262,25 @@ export default function BookConsultation() {
                       <span className="text-[14.5px] text-black/80">
                         I agree to Holy Family Catholic Hospital collecting and
                         using my information as described above to provide this
-                        consultation.{" "}
+                        consultation. Read our {" "}
                         <Link
                           to="/privacy"
+                          rel="opener"
                           target="_blank"
                           className="underline text-[#0095D9] hover:text-[#0077ad]"
                         >
-                          Read our privacy policy
+                          privacy policy
+                        </Link>
+                        {" "}
+                        and
+                        {" "}
+                        <Link
+                          to="/terms"
+                          rel="opener"
+                          target="_blank"
+                          className="underline text-[#0095D9] hover:text-[#0077ad]"
+                        >
+                          terms of service
                         </Link>
                         .
                       </span>

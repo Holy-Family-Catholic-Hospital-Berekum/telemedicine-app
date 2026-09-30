@@ -79,7 +79,8 @@ export default function SignUp() {
       errs.password = "Password doesn't meet the requirements below.";
     if (form.confirm !== form.password) errs.confirm = "Passwords don't match.";
     if (!consentChecked)
-      errs.consent = "Please confirm you've read the data notice.";
+      errs.consent =
+        "Please agree to the Terms of Service and Privacy Policy to continue.";
     setFieldErrors(errs);
     return Object.keys(errs).length === 0;
   };
@@ -110,7 +111,7 @@ export default function SignUp() {
   return (
     <div className="auth-root">
       <AuthAside
-        heading="Your First step to a Better Healthcare"
+        heading="Sign Up to quality healthcare at your doorstep"
         body="Sign up to book a consultation with Holy Family Catholic Hospital's telemedicine service."
         points={ASIDE_POINTS}
       />
@@ -296,9 +297,31 @@ export default function SignUp() {
                 style={{ marginTop: 2 }}
               />
               <span>
-                I understand my consultation details are deleted after each
-                session, and only anonymised usage metrics are kept for
-                reporting.
+                I agree to the{" "}
+                <Link
+                  to="/terms"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    color: "var(--auth-secondary)",
+                    textDecoration: "underline",
+                  }}
+                >
+                  Terms of Service
+                </Link>{" "}
+                and{" "}
+                <Link
+                  to="/privacy"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    color: "var(--auth-secondary)",
+                    textDecoration: "underline",
+                  }}
+                >
+                  Privacy Policy
+                </Link>
+                .
               </span>
             </label>
             {fieldErrors.consent && (

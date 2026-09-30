@@ -4,6 +4,7 @@ import { Clock3, Radio, LogOut, Home as HomeIcon } from "lucide-react";
 import { getAuth, onAuthStateChanged, signOut } from "firebase/auth";
 
 import { app } from "../../../src/firebase";
+import HealthcarePreloader from "../../../src/components/common/healthcarePreloader.jsx";
 
 import {
   fetchMyBookings,
@@ -102,8 +103,8 @@ export default function Dashboard() {
 
   if (!authChecked || (user && bookings === null)) {
     return (
-      <div className="min-h-screen flex items-center justify-center text-sm text-black/60">
-        Loading your bookings…
+      <div className="min-h-screen flex items-center justify-center bg-white">
+        <HealthcarePreloader label="Loading your bookings..." size={48} />
       </div>
     );
   }
@@ -188,7 +189,7 @@ export default function Dashboard() {
           </div>
         </header>
 
-        <main className="mx-auto max-w-4xl px-5 sm:px-8 py-6 sm:py-8 space-y-8 flex-1 w-full">
+        <main className="mx-auto max-w-4xl px-5 sm:px-8 py-6 sm:py-8 space-y-8 min-h-[calc(100dvh-68px+5rem)] w-full">
           <div className="grid grid-cols-2 rounded-md border border-black/10 overflow-hidden">
             <StatTile
               label="Awaiting assignment"

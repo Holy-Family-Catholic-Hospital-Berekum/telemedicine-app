@@ -51,6 +51,7 @@ export default function SignIn({ audience = "patient" }) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [resetSent, setResetSent] = useState(false);
+  const [resetting, setResetting] = useState(false);
 
   // Keep the staff page out of search results.
   useEffect(() => {
@@ -77,6 +78,7 @@ export default function SignIn({ audience = "patient" }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
+    setResetSent(false);
     if (!email.trim() || !password) {
       setError("Enter your email and password.");
       return;
@@ -102,17 +104,27 @@ export default function SignIn({ audience = "patient" }) {
 
   const handleForgotPassword = async () => {
     setError("");
+    setResetSent(false);
     if (!email.trim()) {
       setError('Enter your email above first, then click "Forgot password?".');
       return;
     }
+
+    setResetting(true);
     try {
+      // authContext.resetPassword already swallows "auth/user-not-found",
+      // so an unknown email still reports success without revealing
+      // which addresses have accounts. Any other failure (network,
+      // invalid email, rate limiting, provider disabled) is thrown here.
       await resetPassword(email);
-    } catch {
-      // Intentionally swallowed: always show a generic success message so
-      // this can't be used to probe which emails have accounts.
-    } finally {
       setResetSent(true);
+    } catch (err) {
+      // The real Firebase code is on err.cause. Check the browser console
+      // to see exactly why the reset failed.
+      console.error("Password reset failed:", err.cause ?? err);
+      setError(err.message || "Couldn't send the reset email. Try again.");
+    } finally {
+      setResetting(false);
     }
   };
 
@@ -163,7 +175,8 @@ export default function SignIn({ audience = "patient" }) {
             <div className="auth-alert success">
               <IconCheckCircle size={15} />
               <span>
-                If that email has an account, a reset link is on its way.
+                If that email has an account, a reset link is on its way. Check
+                your spam folder too.
               </span>
             </div>
           )}
@@ -228,14 +241,16 @@ export default function SignIn({ audience = "patient" }) {
                 type="button"
                 className="auth-forgot"
                 onClick={handleForgotPassword}
+                disabled={resetting}
                 style={{
                   background: "none",
                   border: "none",
                   color: "var(--auth-secondary)",
-                  cursor: "pointer",
+                  cursor: resetting ? "default" : "pointer",
+                  opacity: resetting ? 0.6 : 1,
                 }}
               >
-                Forgot password?
+                {resetting ? "Sending..." : "Forgot password?"}
               </button>
             </div>
 

@@ -12,12 +12,16 @@ import SignUp from "./pages/auth/signUp";
 import VerifyEmailNotice from "./pages/auth/verifyEmailNotice";
 import Unauthorized from "./pages/auth/unauthorized";
 import { STAFF_LOGIN_PATH } from "./staffRoute";
+import Privacy from "./pages/privacy";
+import Terms from "./pages/terms";
 
 export default function App() {
   return (
     <AuthProvider>
       <Routes>
         <Route path="/" element={<Home />} />
+        <Route path="/privacy" element={<Privacy />} />
+        <Route path="/terms" element={<Terms />} />
 
         {/* Signed-in users get bounced away from these to their own dashboard */}
         <Route element={<PublicOnlyRoute />}>
