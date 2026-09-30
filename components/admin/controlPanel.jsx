@@ -41,6 +41,7 @@ import {
 } from "../../src/siteSettings";
 import ConfirmDialog from "./confirmDialog.jsx";
 import "./controlPanel.css";
+import LegalDocsCard from "./legalDocsCard.jsx";
 
 const FUNCTIONS_REGION = "europe-west1"; // must match the deployed functions
 const callUpdatePrices = httpsCallable(
@@ -61,8 +62,16 @@ const MAX_UPLOAD_MB = 15; // size of the file picked, before we shrink it
 const MIN_LONG_EDGE = 600; // smaller than this looks soft on a wide screen
 
 const PRICE_ROWS = [
-  { key: "OPD", label: "General OPD", hint: "Everyday health concerns and check-ups" },
-  { key: "SURGICAL", label: "Surgical consultation", hint: "Pre- and post-surgery consultations" },
+  {
+    key: "OPD",
+    label: "General OPD",
+    hint: "Everyday health concerns and check-ups",
+  },
+  {
+    key: "SURGICAL",
+    label: "Surgical consultation",
+    hint: "Pre- and post-surgery consultations",
+  },
 ];
 
 const SLOT_LABEL = {
@@ -85,7 +94,10 @@ function parsePrice(text) {
 
 function friendlyError(err, fallback) {
   const code = err?.code || "";
-  if (code === "storage/unauthorized" || code === "functions/permission-denied") {
+  if (
+    code === "storage/unauthorized" ||
+    code === "functions/permission-denied"
+  ) {
     return "Your account isn't allowed to make this change.";
   }
   if (code === "functions/unauthenticated") {
@@ -93,7 +105,11 @@ function friendlyError(err, fallback) {
   }
   if (code === "storage/canceled") return "The upload was cancelled.";
   // Messages we wrote on the server are safe to show as they are.
-  if (code.startsWith("functions/") && code !== "functions/internal" && err.message) {
+  if (
+    code.startsWith("functions/") &&
+    code !== "functions/internal" &&
+    err.message
+  ) {
     return err.message;
   }
   return fallback;
@@ -109,7 +125,9 @@ async function prepareImage(file, maxDim) {
     throw new Error("Use a JPG, PNG or WebP photo.");
   }
   if (file.size > MAX_UPLOAD_MB * 1024 * 1024) {
-    throw new Error(`That file is over ${MAX_UPLOAD_MB} MB. Choose a smaller photo.`);
+    throw new Error(
+      `That file is over ${MAX_UPLOAD_MB} MB. Choose a smaller photo.`,
+    );
   }
 
   let bitmap;
@@ -122,7 +140,9 @@ async function prepareImage(file, maxDim) {
   const longEdge = Math.max(bitmap.width, bitmap.height);
   if (longEdge < MIN_LONG_EDGE) {
     bitmap.close?.();
-    throw new Error(`That photo is too small (${bitmap.width}×${bitmap.height}). Use one at least ${MIN_LONG_EDGE}px on its longest side.`);
+    throw new Error(
+      `That photo is too small (${bitmap.width}×${bitmap.height}). Use one at least ${MIN_LONG_EDGE}px on its longest side.`,
+    );
   }
 
   const scale = Math.min(1, maxDim / longEdge);
@@ -141,7 +161,8 @@ async function prepareImage(file, maxDim) {
   const blob = await new Promise((resolve) =>
     canvas.toBlob(resolve, "image/jpeg", 0.86),
   );
-  if (!blob) throw new Error("We couldn't process that photo. Try a different file.");
+  if (!blob)
+    throw new Error("We couldn't process that photo. Try a different file.");
   return { blob, width, height };
 }
 
@@ -235,7 +256,10 @@ function PricesCard({ current, onAudit }) {
   const canReview = allValid && changed.length > 0 && !busy;
 
   const summary = changed
-    .map((r) => `${r.label}: ${CURRENCY} ${current[r.key]} to ${CURRENCY} ${parsed[r.key]}`)
+    .map(
+      (r) =>
+        `${r.label}: ${CURRENCY} ${current[r.key]} to ${CURRENCY} ${parsed[r.key]}`,
+    )
     .join(". ");
 
   const onChange = (key) => (e) => {
@@ -251,12 +275,18 @@ function PricesCard({ current, onAudit }) {
       await callUpdatePrices({ OPD: parsed.OPD, SURGICAL: parsed.SURGICAL });
       // Keep showing what was saved until the live snapshot catches up.
       setDraft({ OPD: String(parsed.OPD), SURGICAL: String(parsed.SURGICAL) });
-      setNote({ tone: "ok", text: "Prices updated. New bookings use them now." });
+      setNote({
+        tone: "ok",
+        text: "Prices updated. New bookings use them now.",
+      });
       onAudit?.("Changed consultation prices", summary);
     } catch (err) {
       setNote({
         tone: "error",
-        text: friendlyError(err, "We couldn't update the prices. Check your connection and try again."),
+        text: friendlyError(
+          err,
+          "We couldn't update the prices. Check your connection and try again.",
+        ),
       });
     } finally {
       setBusy(false);
@@ -268,8 +298,8 @@ function PricesCard({ current, onAudit }) {
       <header className="cp-card-head">
         <h2 id="cp-prices-title">Consultation prices</h2>
         <p>
-          The fee patients pay when they book. A booking that is already
-          waiting for payment keeps the price it started with.
+          The fee patients pay when they book. A booking that is already waiting
+          for payment keeps the price it started with.
         </p>
       </header>
 
@@ -381,7 +411,10 @@ function SingleImageCard({
     setNote(null);
     try {
       const prepared = await prepareImage(file, maxDim);
-      setPicked({ ...prepared, previewUrl: URL.createObjectURL(prepared.blob) });
+      setPicked({
+        ...prepared,
+        previewUrl: URL.createObjectURL(prepared.blob),
+      });
     } catch (err) {
       setNote({ tone: "error", text: err.message });
     }
@@ -396,12 +429,18 @@ function SingleImageCard({
       const path = await uploadImage(picked.blob, slot, setProgress);
       await callUpdateImages({ [slot]: path });
       setPicked(null);
-      setNote({ tone: "ok", text: "Saved. The new photo is live on the site." });
+      setNote({
+        tone: "ok",
+        text: "Saved. The new photo is live on the site.",
+      });
       onAudit?.("Changed site images", SLOT_LABEL[slot]);
     } catch (err) {
       setNote({
         tone: "error",
-        text: friendlyError(err, "We couldn't save that photo. Check your connection and try again."),
+        text: friendlyError(
+          err,
+          "We couldn't save that photo. Check your connection and try again.",
+        ),
       });
     } finally {
       setBusy(false);
@@ -415,11 +454,17 @@ function SingleImageCard({
     try {
       await callUpdateImages({ [slot]: null });
       setNote({ tone: "ok", text: "Restored the built-in photo." });
-      onAudit?.("Changed site images", `${SLOT_LABEL[slot]} (restored default)`);
+      onAudit?.(
+        "Changed site images",
+        `${SLOT_LABEL[slot]} (restored default)`,
+      );
     } catch (err) {
       setNote({
         tone: "error",
-        text: friendlyError(err, "We couldn't restore the built-in photo. Try again."),
+        text: friendlyError(
+          err,
+          "We couldn't restore the built-in photo. Try again.",
+        ),
       });
     } finally {
       setBusy(false);
@@ -439,7 +484,9 @@ function SingleImageCard({
       <div className="cp-image-layout">
         <div className="cp-preview" style={{ aspectRatio: aspect }}>
           <img src={src} alt={`Preview of the ${title.toLowerCase()}`} />
-          <span className={`cp-badge${picked ? " cp-badge-new" : ""}`}>{status}</span>
+          <span className={`cp-badge${picked ? " cp-badge-new" : ""}`}>
+            {status}
+          </span>
         </div>
 
         <div>
@@ -465,7 +512,12 @@ function SingleImageCard({
           <div className="cp-actions">
             {picked ? (
               <>
-                <button type="button" className="btn btn-primary" onClick={save} disabled={busy}>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={save}
+                  disabled={busy}
+                >
                   {busy ? "Saving…" : "Save photo"}
                 </button>
                 <button
@@ -532,11 +584,16 @@ function SliderCard({ current, onAudit }) {
   const seq = useRef(0);
   const uploaded = useRef({}); // key -> path, so a retry never uploads twice
   const itemsRef = useRef(null);
-  itemsRef.current = items;
+
+  useEffect(() => {
+    itemsRef.current = items;
+  }, [items]);
 
   useEffect(
     () => () => {
-      (itemsRef.current || []).forEach((i) => i.blob && URL.revokeObjectURL(i.url));
+      (itemsRef.current || []).forEach(
+        (i) => i.blob && URL.revokeObjectURL(i.url),
+      );
     },
     [],
   );
@@ -558,7 +615,10 @@ function SliderCard({ current, onAudit }) {
 
     const room = MAX_SLIDES - list.length;
     if (room <= 0) {
-      setNote({ tone: "error", text: `The slideshow holds up to ${MAX_SLIDES} photos. Remove one to add another.` });
+      setNote({
+        tone: "error",
+        text: `The slideshow holds up to ${MAX_SLIDES} photos. Remove one to add another.`,
+      });
       return;
     }
     setNote(null);
@@ -568,13 +628,19 @@ function SliderCard({ current, onAudit }) {
     for (const file of files.slice(0, room)) {
       try {
         const { blob } = await prepareImage(file, 1400);
-        added.push({ key: `new-${seq.current++}`, blob, url: URL.createObjectURL(blob) });
+        added.push({
+          key: `new-${seq.current++}`,
+          blob,
+          url: URL.createObjectURL(blob),
+        });
       } catch (err) {
         problems.push(`${file.name}: ${err.message}`);
       }
     }
     if (files.length > room) {
-      problems.push(`Only the first ${room} were added. The limit is ${MAX_SLIDES} photos.`);
+      problems.push(
+        `Only the first ${room} were added. The limit is ${MAX_SLIDES} photos.`,
+      );
     }
     if (added.length) setItems((prev) => [...(prev ?? saved), ...added]);
     if (problems.length) setNote({ tone: "error", text: problems.join(" ") });
@@ -612,7 +678,9 @@ function SliderCard({ current, onAudit }) {
     setNote(null);
     setProgress(0);
     try {
-      const pending = list.filter((i) => !i.path && !uploaded.current[i.key]).length;
+      const pending = list.filter(
+        (i) => !i.path && !uploaded.current[i.key],
+      ).length;
       let done = 0;
       const paths = [];
       for (const item of list) {
@@ -630,12 +698,18 @@ function SliderCard({ current, onAudit }) {
       list.forEach(revoke);
       uploaded.current = {};
       setItems(null);
-      setNote({ tone: "ok", text: "Saved. The slideshow is live on the site." });
+      setNote({
+        tone: "ok",
+        text: "Saved. The slideshow is live on the site.",
+      });
       onAudit?.("Changed site images", SLOT_LABEL.slider);
     } catch (err) {
       setNote({
         tone: "error",
-        text: friendlyError(err, "We couldn't save the slideshow. Check your connection and try again."),
+        text: friendlyError(
+          err,
+          "We couldn't save the slideshow. Check your connection and try again.",
+        ),
       });
     } finally {
       setBusy(false);
@@ -650,11 +724,17 @@ function SliderCard({ current, onAudit }) {
       await callUpdateImages({ slider: null });
       discard();
       setNote({ tone: "ok", text: "Restored the built-in photos." });
-      onAudit?.("Changed site images", `${SLOT_LABEL.slider} (restored default)`);
+      onAudit?.(
+        "Changed site images",
+        `${SLOT_LABEL.slider} (restored default)`,
+      );
     } catch (err) {
       setNote({
         tone: "error",
-        text: friendlyError(err, "We couldn't restore the built-in photos. Try again."),
+        text: friendlyError(
+          err,
+          "We couldn't restore the built-in photos. Try again.",
+        ),
       });
     } finally {
       setBusy(false);
@@ -666,9 +746,9 @@ function SliderCard({ current, onAudit }) {
       <header className="cp-card-head">
         <h2 id="cp-slider-title">Side panel slideshow</h2>
         <p>
-          The photos that fade in and out beside the booking page. They play
-          in the order shown here, first photo first. Tall photos work best;
-          the edges are cropped to fit.
+          The photos that fade in and out beside the booking page. They play in
+          the order shown here, first photo first. Tall photos work best; the
+          edges are cropped to fit.
         </p>
       </header>
 
@@ -685,8 +765,8 @@ function SliderCard({ current, onAudit }) {
             ))}
           </ul>
           <p className="cp-help">
-            These are the built-in photos. When you save your own, they
-            replace this set.
+            These are the built-in photos. When you save your own, they replace
+            this set.
           </p>
         </>
       ) : (
@@ -735,8 +815,8 @@ function SliderCard({ current, onAudit }) {
 
       {items !== null && items.length === 0 && (
         <p className="cp-help">
-          The slideshow is empty. Add at least one photo to save, or restore
-          the built-in photos.
+          The slideshow is empty. Add at least one photo to save, or restore the
+          built-in photos.
         </p>
       )}
 
@@ -833,7 +913,9 @@ export default function ControlPanel({ onAudit }) {
   if (raw === undefined) {
     return (
       <div className="cp-stack">
-        <p className="cp-loading" role="status">Loading current settings…</p>
+        <p className="cp-loading" role="status">
+          Loading current settings…
+        </p>
       </div>
     );
   }
@@ -879,6 +961,7 @@ export default function ControlPanel({ onAudit }) {
         fallbackSrc={DEFAULT_IMAGES.auth}
         onAudit={onAudit}
       />
+      <LegalDocsCard onAudit={onAudit} />
     </div>
   );
 }

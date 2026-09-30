@@ -58,7 +58,7 @@ const TAB_TITLES = {
   },
   control: {
     title: "Control panel",
-    sub: "Site photos and consultation prices, live on the public site",
+    sub: "Site photos, prices and legal pages, live on the public site",
   },
 };
 

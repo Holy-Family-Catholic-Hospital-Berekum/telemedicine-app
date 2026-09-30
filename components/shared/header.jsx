@@ -106,6 +106,16 @@ export default function Header({
   const [user, setUser] = useState(null);
   const [authReady, setAuthReady] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [menuPath, setMenuPath] = useState(pathname);
+
+  // Close the mobile menu when the route changes. Adjusting state during
+  // render (instead of in an effect) avoids an extra render pass.
+  if (menuPath !== pathname) {
+    setMenuPath(pathname);
+    setMobileMenuOpen(false);
+  }
+
+  /* ...auth effect stays as is... */
 
   /*
    * Read the real Firebase authentication state. The header updates
@@ -119,10 +129,6 @@ export default function Header({
     });
     return unsubscribe;
   }, []);
-
-  useEffect(() => {
-    setMobileMenuOpen(false);
-  }, [pathname]);
 
   const isLoggedIn = authReady && !!user;
 
@@ -257,19 +263,12 @@ export default function Header({
 
             {/* Mobile minimal actions */}
             <div className="sm:hidden flex items-center gap-2">
-              {isLoggedIn ? (
+              {isLoggedIn && (
                 <Link
                   to="/dashboard"
                   className="rounded-full bg-[#E7F4EF] px-3 py-2 text-[12px] font-semibold text-[var(--teal)]"
                 >
                   Dashboard
-                </Link>
-              ) : (
-                <Link
-                  to="/signin"
-                  className="rounded-full px-3 py-2 text-[12px] font-medium text-[var(--ink)]"
-                >
-                  Sign in
                 </Link>
               )}
 

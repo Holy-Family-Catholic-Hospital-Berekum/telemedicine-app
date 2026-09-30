@@ -1284,7 +1284,7 @@ function HomeContent({ isLoggedIn }) {
             <h2 className="font-display text-[26px] sm:text-[30px] font-medium text-[var(--ink2)]">
               How I get care
             </h2>
-            <h2 className="font-display text-[12px] sm:text-[18px] font-medium text-[#F88535]">
+            <h2 className="font-display text-[14px] sm:text-[18px] font-medium text-[#F88535]">
               I will:
             </h2>
             <ol className="mt-10 sm:mt-14 relative border-l-2 border-dashed border-[var(--forest)]/25 pl-6 sm:pl-8 space-y-9 sm:space-y-10">
