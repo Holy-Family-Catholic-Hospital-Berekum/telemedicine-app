@@ -72,16 +72,132 @@ const DRAFT_LIFETIME_HOURS = 24;
 /* Paystack helpers                                                    */
 /* ------------------------------------------------------------------ */
 
-async function verifyPaystackTransaction(reference, secretKey) {
+// Trimmed so a stray newline from pasting doesn't break authentication.
+const secretKey = () => PAYSTACK_SECRET_KEY.value().trim();
+
+// Paystack statuses for a charge that may still complete (e.g. a MoMo
+// prompt waiting on the patient's phone).
+const IN_FLIGHT = new Set([
+  "ongoing", "pending", "processing", "queued",
+  "send_otp", "send_pin", "send_phone", "send_birthday", "send_address", "open_url",
+]);
+// How long an unfinished attempt blocks a new one.
+const IN_FLIGHT_WINDOW_MINUTES = 30;
+
+async function verifyPaystackTransaction(reference, key) {
   const res = await fetch(
     `${PAYSTACK_API}/transaction/verify/${encodeURIComponent(reference)}`,
-    { headers: { Authorization: `Bearer ${secretKey}` } },
+    { headers: { Authorization: `Bearer ${key}` } },
   );
   const body = await res.json().catch(() => null);
   if (!res.ok) {
-    throw new Error(`Paystack verify ${res.status}`);
+    const err = new Error(`Paystack verify ${res.status}`);
+    err.status = res.status;
+    if (res.status === 401) {
+      // Wrong or missing secret key: every payment would stay "pending".
+      logger.error("Paystack rejected the secret key (401). Check PAYSTACK_SECRET_KEY.");
+    }
+    throw err;
   }
   return body?.data || null;
+}
+
+/**
+ * Money Paystack took that we can't apply to a booking (duplicate attempt,
+ * late payment after the booking was removed, or amount mismatch). Listed
+ * for admins as "refund due" and audited. Idempotent per reference.
+ */
+async function recordPaymentIssue(paystackData, { reason, bookingId = null, patientUid = null }) {
+  const ref = db.collection("paymentIssues").doc(paystackData.reference);
+  const created = await db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    if (snap.exists) return false;
+    tx.set(ref, {
+      reference: paystackData.reference,
+      bookingId,
+      patientUid,
+      amount: Number(paystackData.amount) / 100,
+      currency: paystackData.currency || CURRENCY,
+      channel: paystackData.channel || null,
+      reason,
+      status: "refund_due",
+      createdAt: serverTime(),
+    });
+    audit(tx, {
+      action: `Payment needs a refund (${reason.replace(/_/g, " ")})`,
+      code: "payment.flagged",
+      category: "payment",
+      result: "failed",
+      targetType: "payment",
+      targetId: paystackData.reference,
+      patientUid,
+      details: { bookingId, reason },
+    });
+    return true;
+  });
+  if (created) logger.warn("Payment flagged for refund", { reference: paystackData.reference, reason });
+}
+
+/**
+ * Asks Paystack about EVERY payment attempt on an unpaid booking, newest
+ * first (an older attempt can complete after a newer one was abandoned):
+ *   "paid"      an attempt succeeded; the booking is now confirmed
+ *   "rejected"  an attempt succeeded but didn't match (flagged for refund)
+ *   "in_flight" an attempt may still complete; don't start another
+ *   "unknown"   Paystack couldn't be asked; treat as possibly in flight
+ *   "failed"    the latest attempt failed or was abandoned
+ *   "none"      no attempt has started
+ */
+async function checkAttempts(bookingRef, booking) {
+  const refs = Array.isArray(booking.txRefs) ? [...booking.txRefs].reverse() : [];
+  if (booking.status !== "awaiting_payment") return "paid";
+  if (refs.length === 0) return "none";
+
+  let inFlight = false;
+  let unknown = false;
+  let latestStatus = null;
+  for (const [i, reference] of refs.entries()) {
+    let tx;
+    try {
+      tx = await verifyPaystackTransaction(reference, secretKey());
+    } catch (err) {
+      if (err.status === 404 || err.status === 400) continue; // never started
+      unknown = true;
+      continue;
+    }
+    if (i === 0) latestStatus = tx?.status || null;
+    if (tx?.status === "success") {
+      const result = await markBookingPaid(bookingRef, tx, "verify_api");
+      if (result.status === "paid") return "paid";
+      if (result.status === "rejected") {
+        await recordPaymentIssue(tx, {
+          reason: "amount_mismatch",
+          bookingId: bookingRef.id,
+          patientUid: booking.patientUid,
+        });
+        return "rejected";
+      }
+      if (result.duplicate) {
+        await recordPaymentIssue(tx, {
+          reason: "duplicate_payment",
+          bookingId: bookingRef.id,
+          patientUid: booking.patientUid,
+        });
+      }
+      return "paid"; // already paid by another attempt
+    }
+    const createdAt = Date.parse(tx?.created_at || tx?.createdAt || "");
+    const recent =
+      Number.isFinite(createdAt) &&
+      Date.now() - createdAt < IN_FLIGHT_WINDOW_MINUTES * 60 * 1000;
+    if (IN_FLIGHT.has(tx?.status) && recent) inFlight = true;
+  }
+  if (inFlight) return "in_flight";
+  if (unknown) return "unknown";
+  if (latestStatus === "failed" || latestStatus === "abandoned" || latestStatus === "reversed") {
+    return "failed";
+  }
+  return "none";
 }
 
 /**
@@ -112,10 +228,17 @@ async function markBookingPaid(bookingRef, paystackData, via) {
 
     const booking = snap.data();
     if (booking.status !== "awaiting_payment") {
-      return { changed: false, status: booking.status };
+      // A second successful attempt on a booking that's already paid is a
+      // double charge: report it so the caller can flag it for refund.
+      const duplicate =
+        paystackData?.status === "success" &&
+        paystackData.reference !== booking.paystackReference &&
+        Array.isArray(booking.txRefs) &&
+        booking.txRefs.includes(paystackData.reference);
+      return { changed: false, status: booking.status, duplicate, booking };
     }
     if (!paymentIsAcceptable(paystackData, booking)) {
-      return { changed: false, status: "rejected" };
+      return { changed: false, status: "rejected", booking };
     }
 
     // Reads before writes: the claimed slot, if any.
@@ -190,7 +313,7 @@ async function markBookingPaid(bookingRef, paystackData, via) {
  * data: { type, mode, dateOfBirth, sex, town, area, phone,
  *         doctorUid?, slotId?, consentVersion }
  */
-exports.createBookingDraft = onCall(async (request) => {
+exports.createBookingDraft = onCall({ secrets: [PAYSTACK_SECRET_KEY] }, async (request) => {
   const caller = await requireRole(request, ["patient"]);
   requireVerifiedEmail(caller);
   const uid = caller.uid;
@@ -215,13 +338,29 @@ exports.createBookingDraft = onCall(async (request) => {
 
   await rateLimit(uid, "createBookingDraft", { max: 10, windowSeconds: 86400 });
 
-  const openDrafts = await db
+  // Never let a patient pay for a second booking while an earlier payment
+  // might still go through: that's how double payments happen.
+  const drafts = await db
     .collection("bookings")
     .where("patientUid", "==", uid)
     .where("status", "==", "awaiting_payment")
-    .count()
     .get();
-  if (openDrafts.data().count >= MAX_OPEN_DRAFTS) {
+  for (const draft of drafts.docs) {
+    const state = await checkAttempts(draft.ref, draft.data());
+    if (state === "paid") {
+      throw new HttpsError(
+        "failed-precondition",
+        "A payment you made earlier has just been confirmed. Check your dashboard before booking again.",
+      );
+    }
+    if (state === "in_flight" || state === "unknown") {
+      throw new HttpsError(
+        "failed-precondition",
+        "You have a payment that is still being processed. Approve or decline the prompt on your phone, then check your dashboard before booking again.",
+      );
+    }
+  }
+  if (drafts.size >= MAX_OPEN_DRAFTS) {
     throw new HttpsError(
       "resource-exhausted",
       "You already have unpaid bookings. Finish or wait for those to expire first.",
@@ -352,7 +491,7 @@ exports.createBookingDraft = onCall(async (request) => {
  * A fresh reference for every attempt, so a failed attempt's reference
  * can never be reused to claim a later success.
  */
-exports.initializePayment = onCall(async (request) => {
+exports.initializePayment = onCall({ secrets: [PAYSTACK_SECRET_KEY] }, async (request) => {
   const caller = await requireRole(request, ["patient"]);
   requireVerifiedEmail(caller);
   const bookingId = docId(request.data?.bookingId, "Booking");
@@ -367,6 +506,21 @@ exports.initializePayment = onCall(async (request) => {
   const booking = snap.data();
   if (booking.status !== "awaiting_payment") {
     throw new HttpsError("failed-precondition", "This booking has already been paid for.");
+  }
+  // Don't open a second charge while the previous one may still complete.
+  const last = await checkAttempts(ref, booking);
+  if (last === "paid") return { status: "confirmed" };
+  if (last === "rejected") {
+    throw new HttpsError(
+      "failed-precondition",
+      "We couldn't match your earlier payment to this booking. Please contact the hospital before paying again.",
+    );
+  }
+  if (last === "in_flight" || last === "unknown") {
+    throw new HttpsError(
+      "failed-precondition",
+      "Your last payment attempt is still being processed. Approve or decline the prompt on your phone, then wait a minute before trying again.",
+    );
   }
   if (booking.txRefs.length >= 10) {
     throw new HttpsError(
@@ -421,7 +575,7 @@ exports.paystackWebhook = onRequest(
       res.status(405).send("Method not allowed");
       return;
     }
-    if (!signatureMatches(req.rawBody, req.headers["x-paystack-signature"], PAYSTACK_SECRET_KEY.value())) {
+    if (!signatureMatches(req.rawBody, req.headers["x-paystack-signature"], secretKey())) {
       logger.warn("Rejected webhook with bad or missing signature");
       await audit(null, {
         action: "Rejected a payment webhook with a bad signature",
@@ -441,7 +595,7 @@ exports.paystackWebhook = onRequest(
 
     try {
       // Don't trust the body's numbers: ask Paystack.
-      const tx = await verifyPaystackTransaction(event.data.reference, PAYSTACK_SECRET_KEY.value());
+      const tx = await verifyPaystackTransaction(event.data.reference, secretKey());
       if (!isOurReference(tx?.reference) || tx.reference !== event.data.reference) {
         res.status(200).send("No reference");
         return;
@@ -451,32 +605,22 @@ exports.paystackWebhook = onRequest(
       if (!refSnap.exists) {
         // A real payment we can't attach to a booking (e.g. paid after
         // the draft expired). Flag it so finance can refund.
-        logger.error("Payment for unknown or expired reference", { reference: tx.reference });
-        await audit(null, {
-          action: "Payment received for an expired or unknown booking — refund needed",
-          code: "payment.flagged",
-          category: "payment",
-          result: "failed",
-          targetType: "payment",
-          targetId: tx.reference,
-          details: { amount: Number(tx.amount) / 100, currency: tx.currency },
-        });
+        if (tx.status === "success") {
+          await recordPaymentIssue(tx, { reason: "no_matching_booking" });
+        }
         res.status(200).send("Unknown reference");
         return;
       }
 
       const bookingRef = db.collection("bookings").doc(refSnap.data().bookingId);
       const result = await markBookingPaid(bookingRef, tx, "webhook");
+      const ids = { bookingId: bookingRef.id, patientUid: refSnap.data().patientUid };
       if (result.status === "rejected") {
-        await audit(null, {
-          action: "Payment didn't match its booking — check before confirming",
-          code: "payment.flagged",
-          category: "payment",
-          result: "failed",
-          targetType: "booking",
-          targetId: bookingRef.id,
-          details: { reference: tx.reference },
-        });
+        await recordPaymentIssue(tx, { reason: "amount_mismatch", ...ids });
+      } else if (result.duplicate) {
+        await recordPaymentIssue(tx, { reason: "duplicate_payment", ...ids });
+      } else if (result.status === "missing" && tx.status === "success") {
+        await recordPaymentIssue(tx, { reason: "no_matching_booking", ...ids });
       }
       res.status(200).send("OK");
     } catch (err) {
@@ -504,50 +648,76 @@ exports.getBookingStatus = onCall(
     if (!snap.exists || snap.data().patientUid !== caller.uid) {
       throw new HttpsError("not-found", "Booking not found.");
     }
-    const booking = snap.data();
-    if (booking.status !== "awaiting_payment") return { status: "confirmed" };
-    if (!booking.lastTxRef) return { status: "pending" };
-
-    let tx;
-    try {
-      tx = await verifyPaystackTransaction(booking.lastTxRef, PAYSTACK_SECRET_KEY.value());
-    } catch (err) {
-      // No transaction yet is normal seconds after paying.
-      logger.debug("verify not ready", { bookingId, error: err.message });
-      return { status: "pending" };
-    }
-
-    if (tx?.status === "success") {
-      const result = await markBookingPaid(ref, tx, "verify_api");
-      if (result.status === "paid") return { status: "confirmed" };
-      logger.warn("Successful payment failed our checks", { bookingId });
-      await audit(null, {
-        action: "Payment didn't match its booking — check before confirming",
-        code: "payment.flagged",
-        category: "payment",
-        result: "failed",
-        targetType: "booking",
-        targetId: bookingId,
-        patientUid: caller.uid,
-      });
+    const state = await checkAttempts(ref, snap.data());
+    if (state === "paid") return { status: "confirmed" };
+    if (state === "rejected") {
       return {
         status: "failed",
         message:
           "We couldn't match your payment to this booking. Please contact the hospital before paying again.",
       };
     }
-    if (tx && (tx.status === "failed" || tx.status === "abandoned")) {
+    if (state === "failed") {
       return {
         status: "failed",
         message: "That payment didn't complete, so no booking was made.",
       };
     }
+    // none / in_flight / unknown: keep waiting.
     return { status: "pending" };
   },
 );
 
+/* ------------------------------------------------------------------ */
+/* resolvePaymentIssue                                                 */
+/* ------------------------------------------------------------------ */
+
+/**
+ * data: { reference, note }
+ * Admin records that a flagged payment was refunded (through the Paystack
+ * dashboard: Transactions -> the reference -> Refund). Audited.
+ */
+exports.resolvePaymentIssue = onCall(async (request) => {
+  const caller = await requireRole(request, ["admin"]);
+  const reference = str(request.data?.reference, { field: "Reference", max: 160 });
+  if (!isOurReference(reference)) {
+    throw new HttpsError("invalid-argument", "That reference isn't valid.");
+  }
+  const note = str(request.data?.note, { field: "Note", max: 300, min: 3 });
+  const ref = db.collection("paymentIssues").doc(reference);
+  await db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists) throw new HttpsError("not-found", "Payment issue not found.");
+    if (snap.data().status !== "refund_due") {
+      throw new HttpsError("failed-precondition", "This one is already resolved.");
+    }
+    tx.update(ref, {
+      status: "refunded",
+      resolvedByUid: caller.uid,
+      resolvedAt: serverTime(),
+      note,
+    });
+    audit(tx, {
+      actorId: caller.uid,
+      actorRole: "admin",
+      action: "Marked a payment as refunded",
+      code: "payment.refunded",
+      category: "payment",
+      targetType: "payment",
+      targetId: reference,
+      patientUid: snap.data().patientUid || null,
+      reason: note,
+      meta: requestMeta(request),
+    });
+  });
+  return { ok: true };
+});
+
 // Shared with maintenance.js. Not Cloud Functions: index.js only re-exports
 // the functions above by name.
 exports.markBookingPaid = markBookingPaid;
+exports.recordPaymentIssue = recordPaymentIssue;
+exports.checkAttempts = checkAttempts;
+exports.secretKey = secretKey;
 exports.verifyPaystackTransaction = verifyPaystackTransaction;
 exports.PAYSTACK_SECRET_KEY = PAYSTACK_SECRET_KEY;

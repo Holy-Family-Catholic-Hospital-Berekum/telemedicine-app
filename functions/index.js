@@ -37,6 +37,7 @@ exports.createBookingDraft = payments.createBookingDraft;
 exports.initializePayment = payments.initializePayment;
 exports.paystackWebhook = payments.paystackWebhook;
 exports.getBookingStatus = payments.getBookingStatus;
+exports.resolvePaymentIssue = payments.resolvePaymentIssue;
 
 // Scheduling
 exports.scheduleConsultation = scheduling.scheduleConsultation;

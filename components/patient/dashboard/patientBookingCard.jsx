@@ -6,10 +6,11 @@ import { TYPE_LABELS, MODE_LABELS, formatDateTime } from "../../../src/constants
 import RescheduleForm from "./rescheduleForm";
 import RevealId from "./revealId";
 import JoinCallPanel from "./joinCallPanel";
+import CheckPaymentPanel from "./checkPaymentPanel";
 
 const STATE_META = {
   awaiting_payment: {
-    label: "Not paid",
+    label: "Payment not confirmed",
     color: "#A85420",
     bg: "#F885351A",
   },
@@ -35,9 +36,10 @@ export default function BookingCard({
   onRescheduled,
   onJoined,
   onRejoinCall,
+  onPaymentConfirmed,
 }) {
   const [expanded, setExpanded] = useState(
-    booking.state === "pending_assignment",
+    booking.state === "pending_assignment" || booking.state === "awaiting_payment",
   );
 
   const meta = STATE_META[booking.state] ?? STATE_META.scheduled;
@@ -117,11 +119,7 @@ export default function BookingCard({
       {expanded && (
         <div className="border-t border-[#DCE6EC] px-4 py-4">
           {booking.state === "awaiting_payment" && (
-            <p className="text-sm text-[#5C6B72]">
-              This booking wasn't paid for, so it isn't confirmed. Unpaid
-              bookings and their details are deleted after 24 hours. Start a
-              new booking to try again.
-            </p>
+            <CheckPaymentPanel booking={booking} onConfirmed={onPaymentConfirmed} />
           )}
 
           {booking.state === "pending_assignment" && (

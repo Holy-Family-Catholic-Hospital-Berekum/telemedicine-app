@@ -68,6 +68,12 @@ export default function Dashboard() {
     setActiveCallBookingId(booking.bookingId);
   }
 
+  function reloadBookings() {
+    fetchMyBookings(user.uid)
+      .then((data) => setBookings(data ?? []))
+      .catch((error) => console.error("Failed to reload bookings:", error));
+  }
+
   function updateBooking(bookingId, patch) {
     setBookings((prev) =>
       (prev ?? []).map((booking) =>
@@ -242,6 +248,7 @@ export default function Dashboard() {
                   onRescheduled={() => {}}
                   onJoined={handleJoined}
                   onRejoinCall={handleRejoinCall}
+                  onPaymentConfirmed={reloadBookings}
                 />
               ))}
             </div>

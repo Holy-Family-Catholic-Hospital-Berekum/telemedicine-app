@@ -632,6 +632,12 @@ export default function BookConsultation() {
     setPaymentState("starting");
     try {
       const session = await initializePayment({ bookingId: booking.bookingId });
+      // An earlier attempt on this booking turned out to have succeeded.
+      if (session.status === "confirmed") {
+        setPaymentState("confirmed");
+        setStep(2);
+        return;
+      }
 
       setPaymentState("checkout");
       const result = await openPaystackCheckout({

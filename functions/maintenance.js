@@ -12,11 +12,7 @@
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const logger = require("firebase-functions/logger");
 const { db, Timestamp, FieldValue, serverTime, audit, deleteTree } = require("./lib/core");
-const {
-  markBookingPaid,
-  verifyPaystackTransaction,
-  PAYSTACK_SECRET_KEY,
-} = require("./payments");
+const { checkAttempts, PAYSTACK_SECRET_KEY } = require("./payments");
 
 const BATCH = 200;
 
@@ -34,17 +30,12 @@ exports.cleanupExpiredBookings = onSchedule(
     for (const doc of snap.docs) {
       const booking = doc.data();
 
-      // A mobile-money payment can land late. Last chance to honour it.
-      if (booking.lastTxRef) {
-        try {
-          const tx = await verifyPaystackTransaction(booking.lastTxRef, PAYSTACK_SECRET_KEY.value());
-          if (tx?.status === "success") {
-            const result = await markBookingPaid(doc.ref, tx, "verify_api");
-            if (result.status === "paid") continue;
-          }
-        } catch {
-          // Not found / not paid: fall through to deletion.
-        }
+      // A mobile-money payment can land late. Last chance to honour it,
+      // and never delete while a charge might still complete (try again
+      // next run).
+      const state = await checkAttempts(doc.ref, booking);
+      if (state === "paid" || state === "rejected" || state === "in_flight" || state === "unknown") {
+        continue;
       }
 
       const batch = db.batch();

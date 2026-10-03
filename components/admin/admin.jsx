@@ -19,6 +19,7 @@ import RevenuePanel from "./revenuePanel.jsx";
 import AuditPanel from "./auditPanel.jsx";
 import MetricsPanel from "./metricsPanel.jsx";
 import RecordingsPanel from "./recordingsPanel.jsx";
+import PaymentIssuesPanel from "./paymentIssuesPanel.jsx";
 import ControlPanel from "./controlPanel.jsx";
 import { IconBell, IconRefresh } from "./icons.jsx";
 
@@ -339,7 +340,12 @@ export default function Admin() {
 
           {tab === "recordings" && <RecordingsPanel callAdmin={callAdmin} />}
 
-          {tab === "revenue" && <RevenuePanel payments={payments} />}
+          {tab === "revenue" && (
+            <>
+              <PaymentIssuesPanel callAdmin={callAdmin} />
+              <RevenuePanel payments={payments} />
+            </>
+          )}
 
           {tab === "audit" && <AuditPanel entries={audit} />}
 

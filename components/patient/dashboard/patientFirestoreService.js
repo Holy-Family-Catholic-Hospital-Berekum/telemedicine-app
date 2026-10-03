@@ -21,6 +21,13 @@ import { toDate } from "../../../src/constants";
 
 const callRequestReschedule = httpsCallable(functions, "requestReschedule");
 const callStartVideoCall = httpsCallable(functions, "startVideoCall");
+const callGetBookingStatus = httpsCallable(functions, "getBookingStatus");
+
+/** Re-checks every payment attempt on a booking with Paystack. */
+export async function checkPaymentStatus(bookingId) {
+  const { data } = await callGetBookingStatus({ bookingId });
+  return data; // { status: "confirmed" | "pending" | "failed", message? }
+}
 
 // Dashboard display state, derived from the stored booking status.
 //   awaiting_payment -> "awaiting_payment" (draft; deleted if never paid)
