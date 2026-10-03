@@ -6,17 +6,13 @@
 // writes an audit entry. This screen cannot write to Firestore directly.
 
 import { useRef, useState } from "react";
-import { getFunctions, httpsCallable } from "firebase/functions";
+import { httpsCallable } from "firebase/functions";
 
-import { app } from "../../src/firebase";
+import { functions } from "../../src/firebase";
 import { useLegalDoc, LEGAL_LIMITS } from "../../src/legalDocs";
 import ConfirmDialog from "./confirmDialog.jsx";
 
-const FUNCTIONS_REGION = "europe-west1"; // must match the deployed functions
-const callUpdateLegal = httpsCallable(
-  getFunctions(app, FUNCTIONS_REGION),
-  "updateLegalDocument",
-);
+const callUpdateLegal = httpsCallable(functions, "updateLegalDocument");
 
 const DOCS = [
   { id: "terms", label: "Terms of service", path: "/terms" },

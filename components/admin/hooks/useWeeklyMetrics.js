@@ -4,18 +4,16 @@
 // "consultations by day, OPD vs Surgical" bars from one place instead
 // of duplicating the bucketing logic.
 //
-// Derived client-side from the anonymised `consultationHistory` feed —
+// Derived client-side from the `consultationHistory` feed —
 // no separate aggregate collection exists yet. Fine while history stays
 // small; if it grows large, move this into a Cloud Function / a
 // precomputed daily-rollup doc instead of scanning the full collection
 // in the browser on every render.
 //
-// ASSUMPTION: `type` on a history entry is one of "General OPD" /
-// "Surgical" — adjust OPD_TYPES below if your actual values differ.
 
 import { useMemo } from "react";
 
-const OPD_TYPES = new Set(["General OPD", "OPD"]);
+const OPD_TYPES = new Set(["OPD"]);
 const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 export function useWeeklyMetrics(history) {

@@ -1,15 +1,14 @@
 import { useMemo, useState } from "react";
 
+import { TYPE_LABELS } from "../../src/constants";
+
 // Admin creates an open slot — a doctor, a consultation type, and a time
 // window when that doctor is free. Patients see this as a specific
 // bookable slot, as an alternative to the general flow (pay first, admin
-// assigns doctor and time afterwards).
+// assigns doctor and time afterwards). Times are hospital time (UTC+0).
 //
-// IMPORTANT: overlap checking here is a client-side convenience only. Two
-// admins creating slots for the same doctor at the same time is a real
-// race condition — the Cloud Function that writes availableSlots must
-// re-check for an overlap inside a transaction before committing, the same
-// way reference-code claims are protected (architecture 4.3).
+// The overlap check here is a convenience; createAvailableSlot re-checks
+// inside a transaction on the server.
 
 function toMinutes(hhmm) {
   const [h, m] = hhmm.split(":").map(Number);
@@ -20,7 +19,7 @@ function overlaps(aStart, aEnd, bStart, bEnd) {
   return toMinutes(aStart) < toMinutes(bEnd) && toMinutes(bStart) < toMinutes(aEnd);
 }
 
-const EMPTY = { doctorId: "", mode: "", date: "", startTime: "", endTime: "" };
+const EMPTY = { doctorUid: "", type: "", mode: "", date: "", startTime: "", endTime: "" };
 
 export default function CreateScheduleModal({ doctors, existingSlots, onClose, onCreate }) {
   const [form, setForm] = useState(EMPTY);
@@ -31,13 +30,16 @@ export default function CreateScheduleModal({ doctors, existingSlots, onClose, o
     setError(null);
   };
 
-  const doctor = doctors.find((d) => d.id === form.doctorId);
+  const doctor = doctors.find((d) => d.id === form.doctorUid);
+  const typesForDoctor = doctor?.availableFor?.length
+    ? doctor.availableFor
+    : Object.keys(TYPE_LABELS);
 
   const conflict = useMemo(() => {
-    if (!form.doctorId || !form.date || !form.startTime || !form.endTime) return null;
+    if (!form.doctorUid || !form.date || !form.startTime || !form.endTime) return null;
     return existingSlots.find(
       (s) =>
-        s.doctorId === form.doctorId &&
+        s.doctorUid === form.doctorUid &&
         s.date === form.date &&
         s.status !== "cancelled" &&
         overlaps(form.startTime, form.endTime, s.startTime, s.endTime),
@@ -47,7 +49,8 @@ export default function CreateScheduleModal({ doctors, existingSlots, onClose, o
   const timeValid =
     form.startTime && form.endTime && toMinutes(form.endTime) > toMinutes(form.startTime);
 
-  const canSubmit = form.doctorId && form.mode && form.date && timeValid && !conflict;
+  const canSubmit =
+    form.doctorUid && form.type && form.mode && form.date && timeValid && !conflict;
 
   const submit = () => {
     if (!canSubmit) {
@@ -57,8 +60,8 @@ export default function CreateScheduleModal({ doctors, existingSlots, onClose, o
       return;
     }
     onCreate({
-      doctorId: form.doctorId,
-      type: doctor?.department,
+      doctorUid: form.doctorUid,
+      type: form.type,
       mode: form.mode,
       date: form.date,
       startTime: form.startTime,
@@ -84,7 +87,7 @@ export default function CreateScheduleModal({ doctors, existingSlots, onClose, o
 
         <div className="admin-field">
           <label htmlFor="cs-doctor">Doctor</label>
-          <select id="cs-doctor" value={form.doctorId} onChange={set("doctorId")}>
+          <select id="cs-doctor" value={form.doctorUid} onChange={set("doctorUid")}>
             <option value="">Select a doctor…</option>
             {doctors.map((d) => (
               <option key={d.id} value={d.id}>
@@ -94,19 +97,24 @@ export default function CreateScheduleModal({ doctors, existingSlots, onClose, o
           </select>
         </div>
 
-        {doctor && (
-          <p className="field-hint">
-            Slot will be listed under {doctor.department}. Patients booking it
-            skip the general assignment step.
-          </p>
-        )}
+        <div className="admin-field">
+          <label htmlFor="cs-type">Consultation type</label>
+          <select id="cs-type" value={form.type} onChange={set("type")}>
+            <option value="">Select a type…</option>
+            {typesForDoctor.map((t) => (
+              <option key={t} value={t}>
+                {TYPE_LABELS[t] ?? t}
+              </option>
+            ))}
+          </select>
+        </div>
 
         <div className="admin-field">
           <label htmlFor="cs-mode">Mode</label>
           <select id="cs-mode" value={form.mode} onChange={set("mode")}>
             <option value="">Select how the doctor is available…</option>
-            <option value="Online">Online</option>
-            <option value="In person">In person</option>
+            <option value="online">Online</option>
+            <option value="in_person">In person</option>
           </select>
         </div>
 

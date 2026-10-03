@@ -37,7 +37,7 @@ import logo from "../../assets/logo.png";
 const ASIDE_POINTS = [
   "Book General OPD or Surgical consultations, online or in-person",
   "Pay by mobile money",
-  "Your consultation details are deleted once the session closes",
+  "Booking details are deleted once your consultation closes",
 ];
 
 export default function SignUp() {
@@ -97,6 +97,7 @@ export default function SignUp() {
         phone: form.phone,
         email: form.email,
         password: form.password,
+        acceptedTerms: consentChecked,
       });
       navigate("/verify-email", { replace: true });
     } catch (err) {

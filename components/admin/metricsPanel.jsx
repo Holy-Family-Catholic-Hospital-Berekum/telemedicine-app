@@ -22,9 +22,9 @@ export default function MetricsPanel({
       <div className="admin-banner">
         <IconShield size={18} />
         <p>
-          These figures are anonymised. Booking and consultation records are
-          erased once a doctor closes a session, so only date, consultation
-          type, mode, outcome and department are kept.
+          Built from consultation history. Patients' booking details are
+          deleted when a consultation closes; history keeps only doctor,
+          times, type, mode, outcome and amount.
         </p>
       </div>
 

@@ -1,0 +1,81 @@
+// src/constants.js
+//
+// Enum values shared with the Cloud Functions (functions/lib/core.js).
+// Functions deploy from functions/ alone, so keep the two copies in step.
+
+export const TYPE_LABELS = { OPD: "General OPD", SURGICAL: "Surgical" };
+export const MODE_LABELS = { online: "Online", in_person: "In person" };
+export const OUTCOME_LABELS = { completed: "Completed", no_show: "No-show" };
+
+// Video room opens this long before the scheduled time (server enforces).
+export const CALL_UNLOCK_MINUTES = 5;
+
+/** Firestore Timestamp / Date / ISO string -> Date (or null). */
+export function toDate(value) {
+  if (!value) return null;
+  if (typeof value.toDate === "function") return value.toDate();
+  const d = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+// Ghana is UTC+0 all year, but always format in the hospital's zone so a
+// viewer abroad sees hospital time.
+export const HOSPITAL_TIME_ZONE = "Africa/Accra";
+
+export function formatDateTime(value, options) {
+  const d = toDate(value);
+  if (!d) return "—";
+  return d.toLocaleString(undefined, {
+    timeZone: HOSPITAL_TIME_ZONE,
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    hour: "numeric",
+    minute: "2-digit",
+    ...options,
+  });
+}
+
+export function formatDate(value) {
+  const d = toDate(value);
+  if (!d) return "—";
+  return d.toLocaleDateString(undefined, {
+    timeZone: HOSPITAL_TIME_ZONE,
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+export function formatTime(value) {
+  const d = toDate(value);
+  if (!d) return "—";
+  return d.toLocaleTimeString(undefined, {
+    timeZone: HOSPITAL_TIME_ZONE,
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+/** Turns a Firebase callable error into something safe to show. */
+export function callableMessage(err, fallback = "Something went wrong. Please try again.") {
+  const code = String(err?.code || "").replace("functions/", "");
+  if (
+    [
+      "invalid-argument",
+      "failed-precondition",
+      "not-found",
+      "already-exists",
+      "permission-denied",
+      "resource-exhausted",
+      "unauthenticated",
+    ].includes(code) &&
+    err?.message
+  ) {
+    return err.message;
+  }
+  if (code === "unavailable" || code === "deadline-exceeded") {
+    return "Network problem. Check your connection and try again.";
+  }
+  return fallback;
+}

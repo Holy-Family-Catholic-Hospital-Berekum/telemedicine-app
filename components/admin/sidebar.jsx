@@ -18,6 +18,7 @@ const NAV_ITEMS = [
   { key: "bookings", label: "New Bookings", icon: IconCalendar },
   { key: "history", label: "Consultation History", icon: IconClock },
   { key: "users", label: "Users", icon: IconUsers },
+  { key: "recordings", label: "Call Recordings", icon: IconPulse },
   { key: "revenue", label: "Revenue", icon: IconTag },
   { key: "audit", label: "Audit Log", icon: IconShield },
   { key: "metrics", label: "Metrics & Reports", icon: IconChart },
@@ -65,7 +66,7 @@ export default function Sidebar({
         <div className="admin-avatar">{admin.initials}</div>
         <div className="who">
           <strong>{admin.name}</strong>
-          <small>{admin.role} · MFA verified</small>
+          <small>{admin.role}</small>
         </div>
         <button onClick={onLogout} title="Log out" aria-label="Log out">
           <IconLogout size={17} />

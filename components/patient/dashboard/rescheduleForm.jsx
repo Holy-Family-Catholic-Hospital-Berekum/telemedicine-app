@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { RefreshCw, Loader2 } from "lucide-react";
 import { requestReschedule } from "./patientFirestoreService";
+import { callableMessage } from "../../../src/constants";
 
 export default function RescheduleForm({ booking, onRequested }) {
   const [open, setOpen] = useState(false);
@@ -25,7 +26,7 @@ export default function RescheduleForm({ booking, onRequested }) {
       setDone(true);
       onRequested?.(booking.bookingId, result);
     } catch (err) {
-      setError(err.message);
+      setError(callableMessage(err, "We couldn't send your request."));
     } finally {
       setSubmitting(false);
     }
@@ -66,17 +67,19 @@ export default function RescheduleForm({ booking, onRequested }) {
         required
         value={consultationId}
         onChange={(e) => setConsultationId(e.target.value)}
-        placeholder="e.g. CID-7X29K4"
+        placeholder="e.g. HFC-XXXXXXXXXX"
         className="w-full rounded-sm border border-[#DCE6EC] px-3 py-2 text-sm font-mono uppercase text-[#12242C] focus:border-[#0095D9] focus:outline-none"
       />
       <input
         type="text"
+        maxLength={80}
         value={preferredTime}
         onChange={(e) => setPreferredTime(e.target.value)}
         placeholder="Preferred new time (optional)"
         className="w-full rounded-sm border border-[#DCE6EC] px-3 py-2 text-sm text-[#12242C] focus:border-[#0095D9] focus:outline-none"
       />
       <textarea
+        maxLength={300}
         value={reason}
         onChange={(e) => setReason(e.target.value)}
         placeholder="Reason (optional)"

@@ -1,5 +1,10 @@
 # Control Panel — integration guide
 
+> **Historical.** This guide describes the original Control Panel drop-in.
+> It is already integrated. The rules snippets below are superseded: the
+> source of truth is `firestore.rules` and `storage.rules` at the repo root
+> (admin checks use the `role` custom claim, not an `adminUsers` lookup).
+
 This adds one admin sidebar tab, **Control Panel**, where an admin can:
 1. change the home page hero photo
 2. set the two consultation prices

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Video, Lock, Loader2, ShieldQuestion, PhoneCall } from "lucide-react";
 import { getCallWindow } from "./patientUtils";
 import { joinVideoCall } from "./patientFirestoreService";
+import { callableMessage } from "../../../src/constants";
 
 // Mirrors the architecture's join flow (Section 7): "the patient logs in,
 // enters the consultation ID, and joins the video room." Typing the ID is
@@ -25,7 +26,7 @@ export default function JoinCallPanel({ booking, onJoined }) {
       });
       onJoined(booking.bookingId, result);
     } catch (err) {
-      setError(err.message);
+      setError(callableMessage(err, "We couldn't open the video room."));
     } finally {
       setJoining(false);
     }
@@ -71,7 +72,7 @@ export default function JoinCallPanel({ booking, onJoined }) {
             setEnteredId(e.target.value);
             setError(null);
           }}
-          placeholder="e.g. CID-7X29K4"
+          placeholder="e.g. HFC-XXXXXXXXXX"
           className="min-w-0 flex-1 rounded-sm border border-[#DCE6EC] px-3 py-2 text-sm font-mono uppercase text-[#12242C] focus:border-[#0095D9] focus:outline-none"
         />
         <button
@@ -88,6 +89,11 @@ export default function JoinCallPanel({ booking, onJoined }) {
           {joining ? "Checking…" : "Join call"}
         </button>
       </div>
+      <p className="mt-2 text-[11px] text-[#5C6B72]">
+        Calls may be recorded (video and audio) when the hospital has
+        recording switched on. You'll see a REC sign on screen if this call
+        is recorded.
+      </p>
       {error && (
         <p className="mt-2 text-xs text-[#B23A3A]">
           {error} Check the message from the hospital.

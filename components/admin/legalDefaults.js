@@ -29,7 +29,7 @@ export const DEFAULT_LEGAL = {
 - Account details: your name, phone number and email address, and a password that is handled by our sign-in provider (we never see or store it in readable form).
 - Booking details: consultation type, online or in-person mode, your date of birth, sex, town or city, area or nearest landmark, phone number, and the doctor you choose, if any.
 - Payment details: the amount, the payment reference and whether the payment succeeded. Payment is made by mobile money through Paystack. We never see or store your mobile money PIN.
-- Consultation information: what you share with your doctor during the consultation, and an audio record of the consultation (see "Consultation recording" below).
+- Consultation information: what you share with your doctor during the consultation and, when the hospital has call recording switched on, a video and audio recording of online consultations (see "Consultation recording" below).
 - Basic technical data needed to keep the service working and secure, such as sign-in activity.`,
       },
       {
@@ -39,7 +39,8 @@ export const DEFAULT_LEGAL = {
 - To contact you about your appointment by phone, WhatsApp or email.
 - To confirm your payment.
 - To keep the platform secure and to keep a record of important actions, such as payment confirmations and schedule changes.
-- To produce anonymous statistics that help us improve the service.`,
+- To keep a short record of each consultation (doctor, date, start and end time, outcome and amount paid), which you can see in your dashboard.
+- To produce statistics that help us improve the service.`,
       },
       {
         id: "who-sees-it",
@@ -57,14 +58,15 @@ We do not sell your information and we do not use it for advertising.`,
       {
         id: "recording",
         title: "Consultation recording",
-        body: `We keep an audio record of consultations for legal and security purposes. Access to recordings is restricted, and they are not used for marketing or for any purpose unrelated to the consultation.`,
+        body: `When the hospital has call recording switched on, online video consultations are recorded (video and audio) for legal and security purposes. A REC sign shows on screen for both you and your doctor whenever a call is being recorded. Recordings are stored securely, can only be opened by authorised hospital administrators, and every time one is played, downloaded or deleted it is logged with the reason. They are never used for marketing or for any purpose unrelated to the consultation. In-person consultations are not recorded.`,
       },
       {
         id: "retention",
         title: "How long we keep it",
-        body: `- Booking and consultation details you provided are deleted once your consultation is marked complete.
-- Only anonymised, non-identifying statistics are kept afterward.
-- Consultation audio recordings are kept only as long as needed for the legal purposes above, then deleted.
+        body: `- The details you give when booking (date of birth, sex, location and phone number) are permanently deleted once your consultation is closed. Unpaid bookings are deleted after 24 hours.
+- A short record of each consultation (doctor, date, start and end time, outcome and amount paid) is kept so you and the hospital can see your history.
+- A record that you agreed to this policy, and when, is kept as proof of your consent.
+- Consultation recordings are kept only as long as needed for the purposes above; authorised administrators delete them when they are no longer needed.
 - Your account details are kept while your account is active. You can ask us to delete your account at any time (see "Your rights" below).`,
       },
       {
@@ -174,7 +176,7 @@ If you are not happy with how we handle your information, you can complain to Gh
       {
         id: "privacy",
         title: "Your information and recordings",
-        body: `How we collect, use, store and delete your information is explained in our [privacy policy](/privacy). That includes the audio record we keep of consultations for legal purposes. By booking, you agree to the way we handle your information as described there.`,
+        body: `How we collect, use, store and delete your information is explained in our [privacy policy](/privacy). That includes the video and audio recordings of online consultations made when the hospital has call recording switched on. By booking, you agree to the way we handle your information as described there.`,
       },
       {
         id: "availability",

@@ -64,7 +64,9 @@ export function ProtectedRoute({ allowedRoles, requireVerifiedEmail = false, red
     return <Navigate to="/verify-email" replace />;
   }
 
-  if (allowedRoles && role && !allowedRoles.includes(role)) {
+  // Fail closed: a signed-in user with no role (no claim, deactivated, or
+  // a profile that couldn't load) gets no protected page.
+  if (allowedRoles && !allowedRoles.includes(role)) {
     return <Navigate to="/unauthorized" replace />;
   }
 

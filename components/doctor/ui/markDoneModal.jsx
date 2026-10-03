@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { X, CheckCircle2, AlertTriangle, Loader2, ShieldAlert } from 'lucide-react';
 
 export default function MarkDoneModal({ consultation, onClose, onSubmit }) {
-  const [outcome, setOutcome] = useState(null); // 'Completed' | 'No-show'
+  const [outcome, setOutcome] = useState(null); // 'completed' | 'no_show'
   const [step, setStep] = useState('choose'); // 'choose' | 'confirm'
   const [submitting, setSubmitting] = useState(false);
 
@@ -31,10 +31,10 @@ export default function MarkDoneModal({ consultation, onClose, onSubmit }) {
             <div className="grid grid-cols-2 gap-3">
               <button
                 type="button"
-                onClick={() => setOutcome('Completed')}
+                onClick={() => setOutcome('completed')}
                 className="flex flex-col items-start gap-1.5 rounded-md border p-3.5 text-left transition"
                 style={
-                  outcome === 'Completed'
+                  outcome === 'completed'
                     ? { borderColor: '#0095D9', backgroundColor: '#0095D90D' }
                     : { borderColor: '#DCE6EC' }
                 }
@@ -45,10 +45,10 @@ export default function MarkDoneModal({ consultation, onClose, onSubmit }) {
               </button>
               <button
                 type="button"
-                onClick={() => setOutcome('No-show')}
+                onClick={() => setOutcome('no_show')}
                 className="flex flex-col items-start gap-1.5 rounded-md border p-3.5 text-left transition"
                 style={
-                  outcome === 'No-show'
+                  outcome === 'no_show'
                     ? { borderColor: '#F88535', backgroundColor: '#F885350D' }
                     : { borderColor: '#DCE6EC' }
                 }
@@ -59,7 +59,7 @@ export default function MarkDoneModal({ consultation, onClose, onSubmit }) {
               </button>
             </div>
 
-            {outcome === 'No-show' && (
+            {outcome === 'no_show' && (
               <p className="mt-4 text-xs text-[#5C6B72]">
                 Any refund or forfeit is handled automatically by reception — nothing further needed from you.
               </p>
@@ -82,12 +82,15 @@ export default function MarkDoneModal({ consultation, onClose, onSubmit }) {
             <div className="flex gap-3 rounded-md border border-[#DCE6EC] bg-[#F5F8FA] p-3.5">
               <ShieldAlert size={20} strokeWidth={1.75} className="mt-0.5 shrink-0" style={{ color: '#F88535' }} />
               <p className="text-sm text-[#12242C]">
-                This permanently deletes the booking and consultation records for this session — there is no
-                backup and no undo. An anonymised record is kept for reporting only.
+                This closes the consultation and permanently deletes the patient's booking details (date of
+                birth, sex, location, phone). A short record (doctor, times, amount) is kept. This can't be undone.
               </p>
             </div>
             <p className="mt-4 text-sm text-[#5C6B72]">
-              Confirm outcome: <span className="font-medium text-[#12242C]">{outcome}</span>
+              Confirm outcome:{' '}
+              <span className="font-medium text-[#12242C]">
+                {outcome === 'no_show' ? 'No-show' : 'Completed'}
+              </span>
             </p>
             <div className="mt-5 flex gap-3">
               <button
@@ -105,7 +108,7 @@ export default function MarkDoneModal({ consultation, onClose, onSubmit }) {
                 className="flex flex-1 items-center justify-center gap-2 rounded-sm bg-[#B23A3A] py-2.5 text-sm font-medium text-white transition hover:bg-[#96302F] disabled:cursor-not-allowed disabled:opacity-70"
               >
                 {submitting && <Loader2 size={15} strokeWidth={2} className="animate-spin" />}
-                {submitting ? 'Erasing session…' : 'Confirm & erase session'}
+                {submitting ? 'Closing…' : 'Close consultation'}
               </button>
             </div>
           </div>

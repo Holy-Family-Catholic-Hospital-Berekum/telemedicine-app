@@ -70,7 +70,7 @@ export default function AuthAside({ heading, body, points }) {
       </svg>
 
       <div className="auth-aside-footer">
-        Session data is encrypted in transit and erased after each consultation.
+        Data is encrypted in transit. Booking details are deleted when your consultation closes.
       </div>
     </aside>
   );

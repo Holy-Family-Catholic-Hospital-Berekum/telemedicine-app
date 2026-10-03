@@ -21,6 +21,13 @@ import {
 
 const BIO_MAX_LENGTH = 400;
 
+// Only show photos served from our Firebase Storage bucket over https
+// (firestore.rules enforce the same on write).
+const STORAGE_URL_PREFIX = "https://firebasestorage.googleapis.com/";
+function safePhotoUrl(url) {
+  return typeof url === "string" && url.startsWith(STORAGE_URL_PREFIX) ? url : null;
+}
+
 const EMPTY_PROFILE = {
   title: "",
   yearsExperience: 0,
@@ -277,9 +284,9 @@ export default function ProfileTab({ doctor, onToast }) {
 
           <div className="mt-4 flex items-center gap-4">
             <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-full bg-[#F5F8FA]">
-              {form.photoURL ? (
+              {safePhotoUrl(form.photoURL) ? (
                 <img
-                  src={form.photoURL}
+                  src={safePhotoUrl(form.photoURL)}
                   alt=""
                   className="h-full w-full object-cover"
                 />
@@ -486,9 +493,9 @@ export default function ProfileTab({ doctor, onToast }) {
         <div className="mt-4 rounded-md border border-[#DCE6EC] p-4">
           <div className="flex items-center gap-3">
             <div className="h-14 w-14 shrink-0 overflow-hidden rounded-full bg-[#F5F8FA]">
-              {form.photoURL ? (
+              {safePhotoUrl(form.photoURL) ? (
                 <img
-                  src={form.photoURL}
+                  src={safePhotoUrl(form.photoURL)}
                   alt=""
                   className="h-full w-full object-cover"
                 />

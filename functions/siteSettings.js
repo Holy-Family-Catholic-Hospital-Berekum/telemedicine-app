@@ -6,9 +6,8 @@
  * Prices decide how much patients are charged, so they can't be writable
  * from a browser. Firestore rules make siteSettings read-only to clients;
  * the only writers are the two callables below, and both start with
- * requireAdmin(), which checks adminUsers/{uid} on the server (architecture
- * 6.1: privileges are checked against adminUsers, never trusted from the
- * browser). Doctors also live in adminUsers, so the check is on `role`.
+ * requireAdmin(), which checks the signed `role` claim and an active
+ * adminUsers profile on the server, never anything the browser says.
  *
  * Images are uploaded straight to Storage by the browser (Storage rules
  * allow admins only), then the browser calls updateSiteImages with the
@@ -19,21 +18,12 @@
  * Every change writes an auditLog entry (actorId, action, targetId,
  * timestamp — same shape as section 5 of the architecture).
  *
- * ── HOOKING IT UP (functions/index.js) ───────────────────────────────
- * See INTEGRATION.md. index.js requires this file AFTER admin.initializeApp().
+ * index.js re-exports updateConsultationPrices and updateSiteImages.
  */
 
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const logger = require("firebase-functions/logger");
-const admin = require("firebase-admin");
-
-// Keep in step with FUNCTIONS_REGION in the client and setGlobalOptions.
-const REGION = "europe-west1";
-
-// The value stored in adminUsers/{uid}.role for administrators.
-// ASSUMPTION: "admin" (that is what the Users tab uses). Change it if your
-// adminUsers documents use another string.
-const ADMIN_ROLE = "admin";
+const { admin, db, FieldValue, REGION, requireRole } = require("./lib/core");
 
 // Fallback fees, used until an admin sets prices. Keep in step with
 // DEFAULT_PRICES in src/siteSettings.js.
@@ -52,31 +42,18 @@ const SLOT_LABEL = {
 };
 const PATH_RE = /^siteAssets\/(hero|auth|slider)\/[\w.-]+\.jpg$/;
 
-const getDb = () => admin.firestore();
+const getDb = () => db;
 const settingsDoc = () => getDb().doc("siteSettings/public");
-const SERVER_TIME = () => admin.firestore.FieldValue.serverTimestamp();
+const SERVER_TIME = () => FieldValue.serverTimestamp();
 
 /* ------------------------------------------------------------------ */
 /* helpers                                                             */
 /* ------------------------------------------------------------------ */
 
 async function requireAdmin(request) {
-  if (!request.auth) {
-    throw new HttpsError("unauthenticated", "Please sign in to continue.");
-  }
-  const snap = await getDb().collection("adminUsers").doc(request.auth.uid).get();
-  if (!snap.exists || snap.data().role !== ADMIN_ROLE) {
-    throw new HttpsError(
-      "permission-denied",
-      "Only administrators can change these settings.",
-    );
-  }
-  // MFA: architecture 6.2 requires it for staff. It is switched off in
-  // signIn.jsx for now; when you turn it back on, also enforce it here:
-  //   if (!request.auth.token.firebase?.sign_in_second_factor) {
-  //     throw new HttpsError("permission-denied", "Sign in with MFA to continue.");
-  //   }
-  return request.auth.uid;
+  // Signed role claim plus an active adminUsers profile (lib/core.js).
+  const caller = await requireRole(request, ["admin"]);
+  return caller.uid;
 }
 
 /** Pull valid prices out of a settings document, falling back per type. */

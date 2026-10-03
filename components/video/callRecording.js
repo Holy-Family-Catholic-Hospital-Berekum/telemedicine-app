@@ -1,33 +1,25 @@
 // callRecording.js
 //
-// Client-side call recording. There's no media server in this
-// architecture (calls are direct peer-to-peer WebRTC, signaled through
-// Firestore — see signaling.firebase.js), so recording both
-// participants means compositing what's already in the browser:
-//   - video: draw the local + remote <video> elements onto an offscreen
-//     canvas every frame (full-frame remote + small local PiP, mirroring
-//     the on-screen layout in VideoCallModal.jsx), then canvas.captureStream()
-//   - audio: mix the local + remote audio tracks with the Web Audio API
-//     into a single MediaStreamDestination
-//   - MediaRecorder records the combined video+audio stream and uploads
-//     the result to Firebase Storage when the call ends
+// Records a consultation from the doctor's browser. Calls are peer-to-peer
+// WebRTC with no media server, so recording both people means compositing
+// what is already on screen:
+//   - video: the remote and local <video> elements drawn onto a canvas
+//     (full-frame remote + small local picture-in-picture)
+//   - audio: both audio tracks mixed with the Web Audio API
 //
-// Runs on the doctor's client only (see useWebRTCCall.js) — one
-// recording per consultation, not one per participant.
+// Whether to record is decided by the server, never here: startRecording
+// returns { recording: false } unless an admin had call recording switched
+// on when the call started. Doctors and patients have no control over it.
 //
-// SECURITY NOTE: this file can WRITE a recording, but nothing here
-// grants READ access. Read access ("only admin can access", per the
-// product requirement) has to be enforced in Firestore/Storage security
-// rules, not in this client code — see firebase-rules-recordings.md.
-import {
-  doc,
-  addDoc,
-  updateDoc,
-  collection,
-  serverTimestamp,
-} from "firebase/firestore";
-import { getStorage, ref as storageRef, uploadBytes } from "firebase/storage";
-import { db } from "../../src/firebase";
+// Upload is segmented: every SEGMENT_MS the recorder emits a chunk, which is
+// uploaded straight away to recordings/{recordingId}/parts/NNNNNN.webm
+// (Storage rules allow only this doctor to create parts for this recording,
+// and nobody to read them). A crash or closed tab loses at most one segment;
+// the server's hourly recovery job finishes any recording left open. On
+// stop, finalizeRecording stitches the parts into one file and hashes it.
+import { httpsCallable } from "firebase/functions";
+import { ref as storageRef, uploadBytes } from "firebase/storage";
+import { functions, storage } from "../../src/firebase";
 
 const CANVAS_WIDTH = 1280;
 const CANVAS_HEIGHT = 720;
@@ -35,11 +27,19 @@ const PIP_WIDTH = 240;
 const PIP_HEIGHT = 180;
 const PIP_MARGIN = 24;
 const CANVAS_FPS = 24;
+const SEGMENT_MS = 30_000;
+// Caps storage at roughly 5 MB per minute.
+const VIDEO_BITS_PER_SECOND = 600_000;
+const AUDIO_BITS_PER_SECOND = 64_000;
+const UPLOAD_RETRIES = 4;
+
+const callStartRecording = httpsCallable(functions, "startRecording");
+const callFinalizeRecording = httpsCallable(functions, "finalizeRecording");
 
 function pickSupportedMimeType() {
   const candidates = [
-    "video/webm;codecs=vp9,opus",
     "video/webm;codecs=vp8,opus",
+    "video/webm;codecs=vp9,opus",
     "video/webm",
   ];
   return (
@@ -48,16 +48,15 @@ function pickSupportedMimeType() {
   );
 }
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
 /**
- * Creates a recorder bound to the given local/remote <video> elements and
- * MediaStreams (the same ones already driving the on-screen call UI).
+ * Usage: const recorder = createCompositeRecorder({...});
+ *        const { recording } = await recorder.start();
+ *        ... await recorder.stop();
  *
- * Usage: const recorder = createCompositeRecorder({...}); await recorder.start();
- * ... later ... await recorder.stop();
- *
- * start() and stop() are both async — stop() doesn't resolve until the
- * upload attempt has finished (success or failure), so callers should
- * await it before tearing down anything else the recording depends on.
+ * stop() resolves once every segment has been uploaded (or given up on)
+ * and the server has been asked to finalise.
  */
 export function createCompositeRecorder({
   consultationId,
@@ -72,11 +71,12 @@ export function createCompositeRecorder({
   let remoteAudioSource = null;
   let remoteAudioAttachInterval = null;
   let mediaRecorder;
-  let chunks = [];
   let drawHandle = null;
-  let recordingDocId = null;
-  let startedAt = null;
+  let recordingId = null;
+  let partIndex = 0;
   let stopped = false;
+  // Uploads run one after another so parts arrive in order.
+  let uploadChain = Promise.resolve();
 
   function drawFrame() {
     if (stopped) return;
@@ -97,121 +97,108 @@ export function createCompositeRecorder({
     drawHandle = requestAnimationFrame(drawFrame);
   }
 
-  // Attaches a stream's audio track to the mix, if it has one and isn't
-  // already attached. Returns the source node (or the existing one).
   function tryAttachAudio(stream, existingSource) {
     if (existingSource || !stream || !audioCtx) return existingSource;
     const audioTracks = stream.getAudioTracks();
     if (audioTracks.length === 0) return existingSource;
-    const source = audioCtx.createMediaStreamSource(
-      new MediaStream(audioTracks),
-    );
+    const source = audioCtx.createMediaStreamSource(new MediaStream(audioTracks));
     source.connect(audioDestination);
     return source;
   }
 
-  async function start() {
-    try {
-      canvas = document.createElement("canvas");
-      canvas.width = CANVAS_WIDTH;
-      canvas.height = CANVAS_HEIGHT;
-      ctx = canvas.getContext("2d");
-      canvasStream = canvas.captureStream(CANVAS_FPS);
-
-      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-      audioDestination = audioCtx.createMediaStreamDestination();
-
-      localAudioSource = tryAttachAudio(localStream, localAudioSource);
-      remoteAudioSource = tryAttachAudio(remoteStream, remoteAudioSource);
-      // The remote audio track can arrive a moment after "connected"
-      // fires, so keep trying for a few seconds rather than missing it.
-      let attempts = 0;
-      remoteAudioAttachInterval = setInterval(() => {
-        remoteAudioSource = tryAttachAudio(remoteStream, remoteAudioSource);
-        attempts += 1;
-        if (remoteAudioSource || attempts > 10) {
-          clearInterval(remoteAudioAttachInterval);
+  async function uploadPart(blob, index) {
+    const name = String(index).padStart(6, "0");
+    const fileRef = storageRef(storage, `recordings/${recordingId}/parts/${name}.webm`);
+    for (let attempt = 0; attempt <= UPLOAD_RETRIES; attempt++) {
+      try {
+        await uploadBytes(fileRef, blob, { contentType: "video/webm" });
+        return;
+      } catch (err) {
+        if (attempt === UPLOAD_RETRIES) {
+          onError?.(new Error(`Recording segment ${name} failed to upload: ${err.message}`));
+          return;
         }
-      }, 500);
-
-      const combinedStream = new MediaStream([
-        ...canvasStream.getVideoTracks(),
-        ...audioDestination.stream.getAudioTracks(),
-      ]);
-
-      const mimeType = pickSupportedMimeType();
-      mediaRecorder = new MediaRecorder(
-        combinedStream,
-        mimeType ? { mimeType } : undefined,
-      );
-      chunks = [];
-      mediaRecorder.ondataavailable = (event) => {
-        if (event.data && event.data.size > 0) chunks.push(event.data);
-      };
-
-      startedAt = Date.now();
-      // Medical-record metadata doc — kept indefinitely, no TTL (unlike
-      // the ephemeral call-signaling docs in signaling.firebase.js).
-      const metaDoc = await addDoc(collection(db, "recordings"), {
-        consultationId,
-        startedAt: serverTimestamp(),
-        status: "recording",
-      });
-      recordingDocId = metaDoc.id;
-
-      mediaRecorder.start(1000); // 1s timeslices so chunks survive a mid-call crash
-      drawFrame();
-    } catch (err) {
-      onError?.(err);
+        await sleep(1000 * 2 ** attempt);
+      }
     }
   }
 
+  function enqueue(blob) {
+    partIndex += 1;
+    const index = partIndex;
+    uploadChain = uploadChain.then(() => uploadPart(blob, index));
+  }
+
+  /** Resolves { recording: boolean }. */
+  async function start() {
+    const { data } = await callStartRecording({ consultationId });
+    if (!data?.recording) return { recording: false };
+    recordingId = data.recordingId;
+
+    canvas = document.createElement("canvas");
+    canvas.width = CANVAS_WIDTH;
+    canvas.height = CANVAS_HEIGHT;
+    ctx = canvas.getContext("2d");
+    canvasStream = canvas.captureStream(CANVAS_FPS);
+
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    audioDestination = audioCtx.createMediaStreamDestination();
+
+    localAudioSource = tryAttachAudio(localStream, localAudioSource);
+    remoteAudioSource = tryAttachAudio(remoteStream, remoteAudioSource);
+    // The remote audio track can arrive a moment after "connected".
+    let attempts = 0;
+    remoteAudioAttachInterval = setInterval(() => {
+      remoteAudioSource = tryAttachAudio(remoteStream, remoteAudioSource);
+      attempts += 1;
+      if (remoteAudioSource || attempts > 10) clearInterval(remoteAudioAttachInterval);
+    }, 500);
+
+    const combinedStream = new MediaStream([
+      ...canvasStream.getVideoTracks(),
+      ...audioDestination.stream.getAudioTracks(),
+    ]);
+
+    const mimeType = pickSupportedMimeType();
+    mediaRecorder = new MediaRecorder(combinedStream, {
+      ...(mimeType ? { mimeType } : {}),
+      videoBitsPerSecond: VIDEO_BITS_PER_SECOND,
+      audioBitsPerSecond: AUDIO_BITS_PER_SECOND,
+    });
+    mediaRecorder.ondataavailable = (event) => {
+      if (event.data && event.data.size > 0) enqueue(event.data);
+    };
+    mediaRecorder.onerror = (event) => onError?.(event.error || new Error("Recorder error"));
+
+    mediaRecorder.start(SEGMENT_MS);
+    drawFrame();
+    return { recording: true };
+  }
+
   async function stop() {
+    if (stopped) return;
     stopped = true;
     if (drawHandle) cancelAnimationFrame(drawHandle);
     if (remoteAudioAttachInterval) clearInterval(remoteAudioAttachInterval);
 
-    if (!mediaRecorder || mediaRecorder.state === "inactive") {
-      await audioCtx?.close().catch(() => {});
-      return;
+    if (mediaRecorder && mediaRecorder.state !== "inactive") {
+      await new Promise((resolve) => {
+        mediaRecorder.addEventListener("stop", resolve, { once: true });
+        mediaRecorder.stop(); // emits the last chunk before "stop"
+      });
     }
-
-    const blob = await new Promise((resolve) => {
-      mediaRecorder.addEventListener(
-        "stop",
-        () => resolve(new Blob(chunks, { type: mediaRecorder.mimeType })),
-        { once: true },
-      );
-      mediaRecorder.stop();
-    });
+    canvasStream?.getTracks().forEach((t) => t.stop());
     await audioCtx?.close().catch(() => {});
 
+    if (!recordingId) return;
+    await uploadChain;
     try {
-      const storage = getStorage();
-      const path = `recordings/${consultationId}/${startedAt}.webm`;
-      const fileRef = storageRef(storage, path);
-      await uploadBytes(fileRef, blob, {
-        contentType: blob.type || "video/webm",
-      });
-
-      if (recordingDocId) {
-        await updateDoc(doc(db, "recordings", recordingDocId), {
-          status: "uploaded",
-          storagePath: path,
-          endedAt: serverTimestamp(),
-          sizeBytes: blob.size,
-        });
-      }
+      await callFinalizeRecording({ recordingId });
     } catch (err) {
-      if (recordingDocId) {
-        await updateDoc(doc(db, "recordings", recordingDocId), {
-          status: "upload_failed",
-          endedAt: serverTimestamp(),
-        }).catch(() => {});
-      }
+      // The server's recovery job will finish it; still worth surfacing.
       onError?.(err);
     }
   }
 
-  return { start, stop };
+  return { start, stop, isActive: () => Boolean(recordingId) && !stopped };
 }

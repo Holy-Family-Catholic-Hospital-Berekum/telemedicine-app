@@ -1,9 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Clock3, Radio, LogOut, Home as HomeIcon } from "lucide-react";
-import { getAuth, onAuthStateChanged, signOut } from "firebase/auth";
-
-import { app } from "../../../src/firebase";
+import { useAuth } from "../../../src/context/authContext.jsx";
 import HealthcarePreloader from "../../../src/components/common/healthcarePreloader.jsx";
 
 import {
@@ -24,24 +22,14 @@ import Footer from "../../shared/footer";
 
 export default function Dashboard() {
   const navigate = useNavigate();
-
-  const [user, setUser] = useState(null);
-  const [authChecked, setAuthChecked] = useState(false);
+  // The route is wrapped in ProtectedRoute (patient, verified email), so
+  // `user` is always a signed-in patient here.
+  const { user, profile, signOutUser } = useAuth();
 
   const [bookings, setBookings] = useState(null);
   const [slots, setSlots] = useState([]);
   const [history, setHistory] = useState(null);
   const [activeCallBookingId, setActiveCallBookingId] = useState(null);
-
-  useEffect(() => {
-    const auth = getAuth(app);
-    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
-      setUser(firebaseUser);
-      setAuthChecked(true);
-      if (!firebaseUser) navigate("/signin");
-    });
-    return unsubscribe;
-  }, [navigate]);
 
   useEffect(() => {
     if (!user) return;
@@ -71,6 +59,7 @@ export default function Dashboard() {
     };
   }, [user]);
 
+
   function handleRejoinCall(booking) {
     if (!booking?.consultationId) {
       console.error("Cannot rejoin call: consultation ID is missing.");
@@ -93,15 +82,11 @@ export default function Dashboard() {
   }
 
   async function handleSignOut() {
-    try {
-      await signOut(getAuth(app));
-    } catch (error) {
-      console.error("Sign out failed:", error);
-    }
+    await signOutUser();
     navigate("/signin");
   }
 
-  if (!authChecked || (user && bookings === null)) {
+  if (user && bookings === null) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-white">
         <HealthcarePreloader label="Loading your bookings..." size={48} />
@@ -129,7 +114,7 @@ export default function Dashboard() {
     (booking) => booking.mode === "online" && Boolean(booking.callStartedAt),
   );
 
-  const firstName = (user.displayName || "there").split(" ")[0];
+  const firstName = (profile?.name || user.displayName || "there").split(" ")[0];
 
   return (
     <div className="min-h-screen bg-white font-sans text-black">
@@ -137,7 +122,7 @@ export default function Dashboard() {
         heading="Your care, one place."
         body="Track bookings, and join your video consultation without ever visiting the hospital in person."
         points={[
-          "Session details erased after every visit",
+          "Booking details deleted when your visit closes",
           "Same doctors as our hospital",
         ]}
       />
@@ -269,9 +254,9 @@ export default function Dashboard() {
           <section>
             <h2 className="text-base font-medium">Consultation history</h2>
             <p className="mt-1 text-xs text-black/60">
-              Past, closed consultations. Session details are removed once a
-              consultation ends, so this list only shows what your hospital's
-              current history feature chooses to keep.
+              Past, closed consultations: doctor, times and amount paid. The
+              personal details you gave when booking are deleted once a
+              consultation closes.
             </p>
             <div className="mt-3">
               {history === null ? (

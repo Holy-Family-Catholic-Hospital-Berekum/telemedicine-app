@@ -1,52 +1,25 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { getFunctions, httpsCallable } from "firebase/functions";
+import { httpsCallable } from "firebase/functions";
 
-// ASSUMPTION: your initialised Firebase app. Most projects export it from
-// a single src/firebase.js — adjust this path if yours lives elsewhere.
-import { app } from "../../src/firebase";
-
-// ASSUMPTION: adjust these two import paths to match your actual shared
-// header/footer components — I don't have their real location, so this
-// points at the conventional spot. If your project keeps them elsewhere
-// (e.g. "../components/layout/Header"), just update these two lines.
+import { functions } from "../../src/firebase";
 import Header from "../shared/header";
 import Footer from "../shared/footer";
 // Fixed, auto-slideshow brand panel — see BrandAside.jsx.
 import BrandAside from "../shared/brandAside";
 import { useSiteSettings } from "../../src/siteSettings";
-
-// Doctor directory + fee table. See those files for the data shape and for
-// notes on swapping mock data for a Firestore `doctorProfiles` read.
-import doctors from "../../src/data/doctors";
-import { specialistSurcharge } from "../../src/data/consultationFees";
-
-// DEV-ONLY mock of the Cloud Functions + Paystack popup — see that file for
-// why it exists and how to turn it off.
+import { useListedDoctors } from "../../src/doctorDirectory";
+import { callableMessage } from "../../src/constants";
 import {
-  mockCreateBookingDraft,
-  mockInitializePayment,
-  mockGetBookingStatus,
-  useMockCheckout,
-} from "../../src/mockPaymentBackend";
+  BOOKING_CONSENT_TEXT,
+  CURRENT_BOOKING_CONSENT,
+} from "../../src/consentText";
 
 /**
  * bookConsultation.jsx
- * Patient-facing booking flow, lives at "/book".
- * Assumes the patient is already signed in and email-verified (per the
- * architecture, accounts are created before booking) — wrap this route in
- * whatever auth guard / protected route pattern the rest of the app uses.
- *
- * ── DEV MODE: NO CLOUD FUNCTIONS YET ────────────────────────────────
- * Cloud Functions need Firebase's Blaze plan, which isn't activated yet.
- * USE_MOCK_BACKEND below swaps createBookingDraft / initializePayment /
- * getBookingStatus for in-memory fakes, and swaps the real Paystack popup
- * for an on-screen mock with buttons for each outcome (approved, delayed,
- * failed, cancelled) — see src/mockPaymentBackend.jsx. Flip it to false
- * once Cloud Functions are deployed; nothing else in this file needs to
- * change, since the mock functions mirror the real callables' shapes.
+ * Patient-facing booking flow, lives at "/book" behind a ProtectedRoute
+ * (signed-in patient with a verified email).
  */
-const USE_MOCK_BACKEND = true;
 
 /**
  * ── DOCTOR SELECTION ─────────────────────────────────────────────────
@@ -61,10 +34,9 @@ const USE_MOCK_BACKEND = true;
  * useState initialisers, rather than in an effect — so arriving via a link
  * never triggers a second render pass just to copy the URL into state.
  *
- * A specialist doctor costs more than a general doctor for the same
- * consultation type — see src/data/consultationFees.js. Switching type or
- * removing/changing the doctor recalculates the fee live; only the amount
- * actually charged is ever decided by the server.
+ * The fee depends only on the consultation type (siteSettings prices);
+ * choosing a doctor doesn't change it. The amount actually charged is
+ * always decided by the server.
  *
  * ── PAYMENT MODEL (Paystack) ─────────────────────────────────────────
  * Payment is collected ONLINE through Paystack (mobile money), which
@@ -80,8 +52,7 @@ const USE_MOCK_BACKEND = true;
  * success step. A "pending" verdict parks them on a waiting state with a
  * "Check payment status" retry; a "failed" verdict keeps them on the
  * payment step so they can try again. In no branch does the patient get
- * a booking without a server-confirmed payment. (In dev, the mock
- * checkout stands in for the server's verdict — see USE_MOCK_BACKEND.)
+ * a booking without a server-confirmed payment.
  *
  * The three calls this page makes — createBookingDraft,
  * initializePayment and getBookingStatus — are Firebase callable
@@ -150,13 +121,10 @@ const USE_MOCK_BACKEND = true;
  * banner stays in the orange family rather than introducing red.
  *
  * ── DATA CONSENT ─────────────────────────────────────────────────────
- * Step 0 ends with a required consent checkbox before the patient can
- * continue to payment — validated the same way as the other required
- * fields in handleContinueFromDetails. It isn't just a boolean: the
- * payload sends consentGivenAt (an ISO timestamp taken at submit time),
- * so there's an actual record of when consent was given, not just that
- * a box was ticked at some point. See the TODO on createBookingDraft's
- * real Cloud Function about persisting this server-side.
+ * Step 0 ends with a required consent checkbox showing the versioned text
+ * from src/consentText.js. The page sends only the version it displayed;
+ * createBookingDraft stores a consent record with that version, a hash of
+ * the server's copy of the text, the server time, IP and browser.
  */
 
 const CURRENCY = "GHS";
@@ -170,9 +138,6 @@ const PAYSTACK_PUBLIC_KEY = import.meta.env.VITE_PAYSTACK_PUBLIC_KEY;
 // Paystack's inline checkout script. Loaded on demand, once.
 const PAYSTACK_SCRIPT = "https://js.paystack.co/v1/inline.js";
 
-// Must match the region your functions are deployed to.
-const FUNCTIONS_REGION = "europe-west1";
-
 const STEP_LABELS = ["Consultation", "Payment", "Confirmation"];
 
 /* ===================================================================
@@ -181,22 +146,16 @@ const STEP_LABELS = ["Consultation", "Payment", "Confirmation"];
    Note what is NOT here: no amount is ever sent up to the server, and
    nothing in this file can mark a booking as paid. The server reads the
    fee from its own table and decides, on its own, whether money arrived.
-   Everything below either asks the server (or, in dev, the mock) a
-   question, or opens the Paystack popup (or, in dev, its mock).
    =================================================================== */
 
-// Only touches Cloud Functions when they can actually be called — avoids
-// requiring a working Functions deployment just to preview the UI.
-const fns = USE_MOCK_BACKEND ? null : getFunctions(app, FUNCTIONS_REGION);
-const callCreateBookingDraft = fns && httpsCallable(fns, "createBookingDraft");
-const callInitializePayment = fns && httpsCallable(fns, "initializePayment");
-const callGetBookingStatus = fns && httpsCallable(fns, "getBookingStatus");
+const callCreateBookingDraft = httpsCallable(functions, "createBookingDraft");
+const callInitializePayment = httpsCallable(functions, "initializePayment");
+const callGetBookingStatus = httpsCallable(functions, "getBookingStatus");
 
 // Creates an unpaid booking draft. The server computes the fee — we only
 // send what the patient actually chose (including which doctor, if any).
-// Resolves: { bookingId, amount, currency }
+// Resolves: { bookingId, amount, currency, type, mode }
 async function createBookingDraft(payload) {
-  if (USE_MOCK_BACKEND) return mockCreateBookingDraft(payload);
   const { data } = await callCreateBookingDraft(payload);
   return data;
 }
@@ -206,7 +165,6 @@ async function createBookingDraft(payload) {
 // makes retries after a failed payment safe.
 // Resolves: { reference, amount, currency, customer }
 async function initializePayment({ bookingId }) {
-  if (USE_MOCK_BACKEND) return mockInitializePayment({ bookingId });
   const { data } = await callInitializePayment({ bookingId });
   return data;
 }
@@ -248,6 +206,9 @@ function loadPaystack() {
  * Resolves: { status: "successful", transactionId } | { status: "cancelled" }
  */
 async function openPaystackCheckout({ reference, amount, currency, customer }) {
+  if (!PAYSTACK_PUBLIC_KEY) {
+    throw new Error("Payments aren't configured (VITE_PAYSTACK_PUBLIC_KEY is missing).");
+  }
   await loadPaystack();
 
   return new Promise((resolve) => {
@@ -303,7 +264,6 @@ async function openPaystackCheckout({ reference, amount, currency, customer }) {
 // check and not just a database read.
 // Resolves: { status: "confirmed" | "pending" | "failed", message? }
 async function fetchBookingStatus(bookingId) {
-  if (USE_MOCK_BACKEND) return mockGetBookingStatus(bookingId);
   const { data } = await callGetBookingStatus({ bookingId });
   return data;
 }
@@ -517,8 +477,8 @@ export default function BookConsultation() {
   }); // "OPD" | "SURGICAL"
   const [mode, setMode] = useState(() => {
     const m = searchParams.get("mode");
-    return m === "online" || m === "offline" ? m : "online";
-  }); // "online" | "offline"
+    return m === "online" || m === "in_person" ? m : "online";
+  }); // "online" | "in_person"
   const [dateOfBirth, setDateOfBirth] = useState("");
   const [sex, setSex] = useState("");
   const [town, setTown] = useState("");
@@ -532,10 +492,12 @@ export default function BookConsultation() {
   // null = no preference, staff assign someone. Picker starts closed; it
   // only opens when the patient asks for it, or is pre-filled (and left
   // closed) by a `?doctor=<id>` link from the home page.
-  const [selectedDoctorId, setSelectedDoctorId] = useState(() => {
-    const d = searchParams.get("doctor");
-    return d && doctors.some((x) => x.id === d) ? d : null;
-  });
+  const { doctors } = useListedDoctors();
+  // An id from the URL that isn't a listed doctor simply never matches
+  // (selectedDoctor stays null), so nothing invalid reaches the server.
+  const [selectedDoctorId, setSelectedDoctorId] = useState(
+    () => searchParams.get("doctor") || null,
+  );
   const [doctorPickerOpen, setDoctorPickerOpen] = useState(false);
   const [doctorSearch, setDoctorSearch] = useState("");
 
@@ -563,7 +525,7 @@ export default function BookConsultation() {
 
   const doctorsForType = useMemo(
     () => doctors.filter((d) => d.availableFor.includes(type)),
-    [type],
+    [doctors, type],
   );
 
   const filteredDoctors = useMemo(() => {
@@ -583,24 +545,14 @@ export default function BookConsultation() {
   // "idle" | "starting" | "checkout" | "verifying" | "pending" | "confirmed"
   const [paymentState, setPaymentState] = useState("idle");
 
-  // Live estimate before a booking draft exists: the site's general-tier
-  // price for this type, plus a specialist surcharge if the chosen doctor
-  // is a specialist. Once a booking exists, its server-returned amount is
-  // authoritative.
-  const liveFee =
-    prices[type] +
-    (selectedDoctor?.tier === "specialist" ? specialistSurcharge(type) : 0);
+  // Live estimate before a booking draft exists: the site's price for this
+  // type. Once a booking exists, its server-returned amount is authoritative.
+  const liveFee = prices[type];
   const fee = booking?.amount ?? liveFee;
   const paying =
     paymentState === "starting" ||
     paymentState === "checkout" ||
     paymentState === "verifying";
-
-  // Dev-only mock checkout modal — see src/mockPaymentBackend.jsx. `modal`
-  // is only ever non-null while USE_MOCK_BACKEND is true and a checkout is
-  // in progress.
-  const { open: openMockCheckout, modal: mockCheckoutModal } =
-    useMockCheckout();
 
   function goToStep(n) {
     clearError();
@@ -648,27 +600,21 @@ export default function BookConsultation() {
         sex,
         town: town.trim(),
         area: area.trim(),
-        location: `${area.trim()}, ${town.trim()}`,
         phone,
-        doctorId: selectedDoctorId || null,
+        doctorUid: selectedDoctor?.id || null,
         slotId: slotId || null,
-        consentGivenAt: new Date().toISOString(),
+        consentVersion: CURRENT_BOOKING_CONSENT,
       };
-      // The real function computes the fee itself from doctorId; these two
-      // extra fields only exist so the mock backend (which has no server
-      // logic of its own) knows what fee to hand back. Never send a
-      // client-computed fee to the real endpoint.
-      if (USE_MOCK_BACKEND) {
-        payload.doctorTier = selectedDoctor?.tier ?? "general";
-        payload.baseFee = liveFee;
-      }
       const result = await createBookingDraft(payload);
       setBooking(result);
       setPaymentState("idle");
       setStep(1);
-    } catch {
+    } catch (err) {
       showError(
-        "We couldn't set up your booking. Check your connection and try again.",
+        callableMessage(
+          err,
+          "We couldn't set up your booking. Check your connection and try again.",
+        ),
       );
     } finally {
       setLoading(false);
@@ -688,19 +634,12 @@ export default function BookConsultation() {
       const session = await initializePayment({ bookingId: booking.bookingId });
 
       setPaymentState("checkout");
-      const result = USE_MOCK_BACKEND
-        ? await openMockCheckout({
-            bookingId: booking.bookingId,
-            reference: session.reference,
-            amount: session.amount,
-            currency: session.currency,
-          })
-        : await openPaystackCheckout({
-            reference: session.reference,
-            amount: session.amount,
-            currency: session.currency,
-            customer: session.customer,
-          });
+      const result = await openPaystackCheckout({
+        reference: session.reference,
+        amount: session.amount,
+        currency: session.currency,
+        customer: session.customer,
+      });
 
       if (result.status === "cancelled") {
         // They closed the popup without paying — but a MoMo prompt can
@@ -738,10 +677,13 @@ export default function BookConsultation() {
         verdict.message ||
           "Your payment didn't go through, so no booking was made. Try again below.",
       );
-    } catch {
+    } catch (err) {
       setPaymentState("idle");
       showError(
-        "We couldn't reach the payment service. Your booking isn't confirmed, please try again.",
+        callableMessage(
+          err,
+          "We couldn't reach the payment service. Your booking isn't confirmed, please try again.",
+        ),
       );
     }
   }
@@ -970,7 +912,7 @@ export default function BookConsultation() {
                           desc: "Video consultation from your phone or computer.",
                         },
                         {
-                          key: "offline",
+                          key: "in_person",
                           title: "In person",
                           desc: "Visit the hospital for your appointment.",
                         },
@@ -1015,11 +957,6 @@ export default function BookConsultation() {
                               </p>
                               <p className="text-[13px] text-black/60">
                                 {selectedDoctor.role}
-                                {selectedDoctor.tier === "specialist" && (
-                                  <span className="ml-2 rounded-full bg-[#F88535]/10 px-2 py-0.5 text-[11px] font-medium text-[#A85420]">
-                                    Specialist
-                                  </span>
-                                )}
                               </p>
                             </div>
                           </div>
@@ -1098,11 +1035,6 @@ export default function BookConsultation() {
                                     {doc.role}
                                   </p>
                                 </div>
-                                {doc.tier === "specialist" && (
-                                  <span className="ml-auto shrink-0 rounded-full bg-[#F88535]/10 px-2.5 py-1 text-[11px] font-medium text-[#A85420]">
-                                    Specialist
-                                  </span>
-                                )}
                               </div>
                               <p className="mt-2 text-[12.5px] text-black/60">
                                 {doc.specialties.join(" · ")}
@@ -1240,17 +1172,10 @@ export default function BookConsultation() {
                     <legend className="text-[15px] font-medium mb-2 px-1">
                       Your information
                     </legend>
+                    {/* Versioned wording: the server records which version
+                        was agreed to (see src/consentText.js). */}
                     <p className="text-[14px] text-black/90">
-                      We collect your date of birth, sex, location and phone
-                      number to set up this consultation, assign a doctor, and
-                      contact you about your appointment. Clinical details you
-                      share are visible only to the doctor handling your
-                      consultation. Payment is handled by Paystack, we don't see
-                      or store your mobile money PIN.The consultation details
-                      you have provided above are deleted once your consultation
-                      is marked complete; only anonymised, non-identifying
-                      metrics are kept afterward. We may record your
-                      consultation for legal purposes.
+                      {BOOKING_CONSENT_TEXT}
                     </p>
                     <label className="mt-4 flex items-start gap-3 cursor-pointer">
                       <input
@@ -1342,11 +1267,6 @@ export default function BookConsultation() {
                           <DoctorAvatar doctor={selectedDoctor} size={32} />
                           <span className="text-[15px] font-medium">
                             {selectedDoctor.name}
-                            {selectedDoctor.tier === "specialist" && (
-                              <span className="block text-[12.5px] font-normal text-[#A85420]">
-                                Specialist
-                              </span>
-                            )}
                           </span>
                         </span>
                       ) : (
@@ -1369,13 +1289,6 @@ export default function BookConsultation() {
                     Your booking is only created once we've confirmed the
                     payment, so please don't close this page until it's done.
                   </p>
-
-                  {USE_MOCK_BACKEND && (
-                    <p className="mt-4 text-[13px] rounded-lg bg-black/5 px-4 py-2.5 text-black/60">
-                      Dev preview: no Cloud Functions yet, so "Pay" opens a mock
-                      checkout you can drive to any outcome.
-                    </p>
-                  )}
 
                   {/* Awaiting-network state: payment left the phone but the
                       server hasn't confirmed it yet. No booking yet. */}
@@ -1422,7 +1335,7 @@ export default function BookConsultation() {
                         </button>
                       )}
 
-                      {paymentState === "checkout" && !USE_MOCK_BACKEND && (
+                      {paymentState === "checkout" && (
                         <span className="text-[14px] text-black/60">
                           Approve the prompt on your phone to continue.
                         </span>
@@ -1518,9 +1431,6 @@ export default function BookConsultation() {
         </div>
       </div>
 
-      {/* Dev-only mock Paystack popup. Renders nothing when idle or when
-          USE_MOCK_BACKEND is false. */}
-      {mockCheckoutModal}
     </div>
   );
 }

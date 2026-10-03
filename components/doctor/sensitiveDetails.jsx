@@ -12,10 +12,9 @@ function age(dobString) {
   return years;
 }
 
-// Visibility of this data is enforced server-side by Firestore Security
-// Rules (request.auth.uid === consultation.doctorId, see 6.1) — this
-// component doesn't add security, it just reflects that this doctor is
-// the one account allowed to see it.
+// Visibility is enforced by Firestore Security Rules (only the assigned
+// doctor and admins can read the consultation). These details are deleted
+// when the consultation is closed.
 export default function SensitiveDetails({ details }) {
   const [open, setOpen] = useState(false);
 
@@ -41,19 +40,26 @@ export default function SensitiveDetails({ details }) {
           <div>
             <p className="text-xs text-[#5C6B72]">Date of birth</p>
             <p className="text-[#12242C]">
-              {new Date(details.dateOfBirth).toLocaleDateString(undefined, {
-                year: "numeric",
-                month: "short",
-                day: "numeric",
-              })}{" "}
-              <span className="text-[#5C6B72]">
-                ({age(details.dateOfBirth)} yrs)
-              </span>
+              {details.dateOfBirth ? (
+                <>
+                  {new Date(`${details.dateOfBirth}T00:00:00Z`).toLocaleDateString(undefined, {
+                    timeZone: "UTC",
+                    year: "numeric",
+                    month: "short",
+                    day: "numeric",
+                  })}{" "}
+                  <span className="text-[#5C6B72]">
+                    ({age(details.dateOfBirth)} yrs)
+                  </span>
+                </>
+              ) : (
+                "—"
+              )}
             </p>
           </div>
           <div>
             <p className="text-xs text-[#5C6B72]">Sex</p>
-            <p className="text-[#12242C]">{details.sex}</p>
+            <p className="text-[#12242C] capitalize">{details.sex || "—"}</p>
           </div>
         </div>
       )}

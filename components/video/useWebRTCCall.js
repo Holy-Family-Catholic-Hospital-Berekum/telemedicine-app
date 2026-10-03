@@ -2,27 +2,25 @@
 import { useEffect, useRef, useState } from "react";
 import { httpsCallable } from "firebase/functions";
 import { functions } from "../../src/firebase";
-import { createOffer, joinCall, teardownCallSignaling } from "./signaling";
+import { createOffer, joinCall, watchRecordingState } from "./signaling";
 import { createCompositeRecorder } from "./callRecording";
-import { isCallRecordingEnabled } from "./featureFlags";
 
-// Google's free STUN server. Used both as part of the normal ICE server
-// list and as the fallback if fetching TURN credentials fails — STUN
-// alone still lets most direct connections succeed, so a TURN outage
-// degrades the call rather than blocking it outright.
+// Google's free STUN server: the fallback if TURN credentials can't be
+// fetched. STUN alone still connects most calls.
 const STUN_ONLY_FALLBACK = {
   iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
 };
 
-// Fetches short-lived TURN credentials from the getTurnCredentials
-// Cloud Function (see functions/getTurnCredentials.js) instead of
-// hardcoding a secret in the frontend. Cloudflare's response already
-// includes their STUN servers too, so this alone is normally a
-// complete ICE server list.
-async function fetchIceServers() {
+// Longest we wait for the last recording segment to upload on hang-up.
+const FINALIZE_WAIT_MS = 20_000;
+
+const callGetTurnCredentials = httpsCallable(functions, "getTurnCredentials");
+
+// Short-lived TURN credentials, issued only to a participant of this
+// consultation (functions/consultations.js getTurnCredentials).
+async function fetchIceServers(consultationId) {
   try {
-    const call = httpsCallable(functions, "getTurnCredentials");
-    const result = await call();
+    const result = await callGetTurnCredentials({ consultationId });
     return { iceServers: result.data.iceServers };
   } catch (err) {
     console.warn("Couldn't fetch TURN credentials, falling back to STUN only:", err);
@@ -33,25 +31,23 @@ async function fetchIceServers() {
 /**
  * useWebRTCCall
  *
- * Manages one peer-to-peer call for a given consultationId. Both the
- * doctor and patient use this same hook — pass role: "doctor" (always
- * the one who starts the call / WebRTC offerer, matching your existing
- * flow where the doctor clicks "Start call" first) or "patient"
- * (answerer, joins whatever offer is already waiting).
+ * One peer-to-peer call for a consultation. startVideoCall must already
+ * have succeeded for this user (it creates the signalling room).
  *
- * Recording (when the systemSettings/features.callRecordingEnabled flag
- * is on) runs only on the doctor's side — see callRecording.js for why.
+ *   role "doctor"  -> makes the WebRTC offer, and asks the server to record
+ *   role "patient" -> answers the doctor's offer
  *
- * Returns local/remote MediaStream refs to attach to <video> elements,
- * connection status, recording status, and controls (toggleMic,
- * toggleCamera, hangUp).
+ * Recording is decided by the server (the admin switch), never by either
+ * participant. `isRecording` follows the server-set calls.recordingActive
+ * flag, so the patient sees REC exactly when the doctor's side is recording.
  */
 export function useWebRTCCall({ consultationId, role, onEnded }) {
-  const [status, setStatus] = useState("connecting"); // connecting | connected | ended | error
+  const [status, setStatus] = useState("connecting"); // connecting | connected | ending | ended | error
   const [errorMessage, setErrorMessage] = useState("");
   const [micOn, setMicOn] = useState(true);
   const [cameraOn, setCameraOn] = useState(true);
   const [isRecording, setIsRecording] = useState(false);
+  const [recordingWarning, setRecordingWarning] = useState("");
 
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
@@ -62,16 +58,28 @@ export function useWebRTCCall({ consultationId, role, onEnded }) {
   const recorderRef = useRef(null);
   const recordingStartedRef = useRef(false);
 
+  // REC indicator for both sides, straight from the server's flag.
+  useEffect(() => {
+    if (!consultationId) return undefined;
+    return watchRecordingState(consultationId, setIsRecording);
+  }, [consultationId]);
+
+  // Warn before closing the tab mid-recording: it would cut the recording.
+  useEffect(() => {
+    if (!isRecording || role !== "doctor") return undefined;
+    const onBeforeUnload = (e) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [isRecording, role]);
+
   useEffect(() => {
     let cancelled = false;
 
     async function start() {
       try {
-        // echoCancellation/noiseSuppression/autoGainControl are the
-        // browser's built-in audio processing — this is the actual fix
-        // for echo, not which platform you're using. They're on by
-        // default in most browsers, but setting them explicitly makes
-        // sure nothing silently turns them off.
         const localStream = await navigator.mediaDevices.getUserMedia({
           video: true,
           audio: {
@@ -89,7 +97,9 @@ export function useWebRTCCall({ consultationId, role, onEnded }) {
           localVideoRef.current.srcObject = localStream;
         }
 
-        const peerConnection = new RTCPeerConnection(await fetchIceServers());
+        const peerConnection = new RTCPeerConnection(
+          await fetchIceServers(consultationId),
+        );
         peerConnectionRef.current = peerConnection;
 
         localStream
@@ -122,22 +132,15 @@ export function useWebRTCCall({ consultationId, role, onEnded }) {
           }
         });
 
-        if (role === "doctor") {
-          unsubscribeSignalingRef.current = await createOffer(
-            consultationId,
-            peerConnection,
-          );
-        } else {
-          unsubscribeSignalingRef.current = await joinCall(
-            consultationId,
-            peerConnection,
-          );
-        }
+        unsubscribeSignalingRef.current =
+          role === "doctor"
+            ? await createOffer(consultationId, peerConnection)
+            : await joinCall(consultationId, peerConnection);
       } catch (err) {
         if (!cancelled) {
           setStatus("error");
           setErrorMessage(
-            err.message?.includes("Permission")
+            err.name === "NotAllowedError"
               ? "Camera/microphone permission was blocked. Allow access and try again."
               : err.message || "Couldn't start the call.",
           );
@@ -146,16 +149,10 @@ export function useWebRTCCall({ consultationId, role, onEnded }) {
     }
 
     async function maybeStartRecording() {
-      // One recording per consultation: only the doctor's client
-      // records (see callRecording.js), and only once per call even if
-      // connectionstatechange fires more than once.
-      if (role !== "doctor" || recordingStartedRef.current || cancelled) {
-        return;
-      }
-      const enabled = await isCallRecordingEnabled();
-      if (!enabled || cancelled || recordingStartedRef.current) return;
-
+      // One recording per call, from the doctor's browser only.
+      if (role !== "doctor" || recordingStartedRef.current || cancelled) return;
       recordingStartedRef.current = true;
+
       const recorder = createCompositeRecorder({
         consultationId,
         localVideoEl: localVideoRef.current,
@@ -164,11 +161,24 @@ export function useWebRTCCall({ consultationId, role, onEnded }) {
         remoteStream: remoteStreamRef.current,
         onError: (err) => {
           console.error("Call recording error:", err);
+          setRecordingWarning(
+            "There was a problem saving part of the recording. The call can continue.",
+          );
         },
       });
       recorderRef.current = recorder;
-      await recorder.start();
-      if (!cancelled) setIsRecording(true);
+      try {
+        await recorder.start();
+      } catch (err) {
+        // Failure policy: the call continues; the server logs the gap.
+        console.error("Recording didn't start:", err);
+        recorderRef.current = null;
+        if (!cancelled) {
+          setRecordingWarning(
+            "Recording couldn't start. The call can continue; the hospital has been notified.",
+          );
+        }
+      }
     }
 
     start();
@@ -180,16 +190,21 @@ export function useWebRTCCall({ consultationId, role, onEnded }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [consultationId, role]);
 
+  function stopRecorder() {
+    const recorder = recorderRef.current;
+    recorderRef.current = null;
+    if (!recorder) return Promise.resolve();
+    return recorder.stop().catch((err) => {
+      console.error("Failed to finalise call recording:", err);
+    });
+  }
+
   function cleanup() {
     unsubscribeSignalingRef.current?.();
-    // Fire-and-forget: stopping a recording finishes its upload
-    // asynchronously, which shouldn't block tearing down the call UI.
-    if (recorderRef.current) {
-      recorderRef.current.stop().catch((err) => {
-        console.error("Failed to finalize call recording:", err);
-      });
-      recorderRef.current = null;
-    }
+    unsubscribeSignalingRef.current = null;
+    // On unmount we can't wait; uploads keep going while the page is open
+    // and the server recovers anything left unfinished.
+    stopRecorder();
     localStreamRef.current?.getTracks().forEach((track) => track.stop());
     peerConnectionRef.current?.close();
   }
@@ -208,11 +223,14 @@ export function useWebRTCCall({ consultationId, role, onEnded }) {
     setCameraOn(videoTrack.enabled);
   }
 
-  function hangUp() {
+  // Finish the recording (last segment + finalise) before tearing down.
+  async function hangUp() {
+    setStatus("ending");
+    await Promise.race([
+      stopRecorder(),
+      new Promise((r) => setTimeout(r, FINALIZE_WAIT_MS)),
+    ]);
     cleanup();
-    // Whoever hangs up clears the shared signaling doc; harmless if the
-    // other side also calls this on their own hangup.
-    teardownCallSignaling(consultationId);
     setStatus("ended");
     onEnded?.();
   }
@@ -225,6 +243,7 @@ export function useWebRTCCall({ consultationId, role, onEnded }) {
     micOn,
     cameraOn,
     isRecording,
+    recordingWarning,
     toggleMic,
     toggleCamera,
     hangUp,

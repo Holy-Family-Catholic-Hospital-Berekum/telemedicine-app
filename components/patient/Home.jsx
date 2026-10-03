@@ -7,10 +7,9 @@ import landingImage from "../../src/assets/landingImage.jpg";
 import { useAuth } from "../../src/context/authContext.jsx";
 import HealthcarePreloader from "../../src/components/common/healthcarePreloader.jsx";
 
-// Doctor details + placeholder image paths live here. Also used by the
-// "Choose your doctor" picker on the booking page (bookConsultation.jsx) —
-// see src/data/doctors.js for the shape (tier, specialties, availableFor).
-import doctors from "../../src/data/doctors";
+// Live public doctor directory (doctorProfiles), shared with the booking
+// page's doctor picker.
+import { useListedDoctors } from "../../src/doctorDirectory";
 import heroDefault from "../../src/assets/hero-consult.jpg";
 import { useSiteSettings } from "../../src/siteSettings";
 /**
@@ -24,8 +23,8 @@ import { useSiteSettings } from "../../src/siteSettings";
  * generic "video call a doctor" product. That slip/ticket is the page's
  * throughline: it "floats" over a real photo in the hero, appears again
  * (unfilled) for each consultation type, structures the booking steps, and
- * is shown "closed" in the privacy section to represent record erasure
- * after a visit.
+ * is shown "closed" in the privacy section to represent the booking
+ * details being erased after a visit.
  *
  * DOCTOR SELECTION: each doctor card in "Meet your doctors" carries a
  * "Select this doctor" link to `/book?doctor=<id>`. bookConsultation.jsx
@@ -45,8 +44,8 @@ import { useSiteSettings } from "../../src/siteSettings";
  *
  * Images needed:
  * - src/assets/hero-consult.jpg (hero photo, see the import note above)
- * - public/doctors/*.jpg (doctor portraits, see src/data/doctors.js).
- *   Missing doctor photos degrade to an initials tile, they don't break.
+ * - Doctor portraits come from each doctor's profile photo (doctor portal).
+ *   Missing photos degrade to an initials tile, they don't break.
  *
  * Auth: the default export (Home, at the bottom of this file) waits for
  * Firebase to resolve the session, showing the custom preloader meanwhile,
@@ -108,7 +107,7 @@ const steps = [
   {
     title: "Book a Consultation",
     detail:
-      "Choose General OPD or Surgical, online or in person. You may select a doctor of your choice.",
+      "Choose General OPD or Surgical, online or in person, and pay securely by mobile money. You may select a doctor of your choice.",
   },
   {
     title: "Get scheduled",
@@ -118,7 +117,7 @@ const steps = [
   {
     title: "Join my consultation",
     detail:
-      "We email you your appointment time. Join by video, or visit us in person.",
+      "We call or WhatsApp you with your time and consultation ID. Join by video, or visit us in person.",
   },
 ];
 
@@ -441,7 +440,7 @@ function BookingSlip({
             style={{ animation: "var(--stamp-anim, none)" }}
             data-stamp
           >
-            Record erased
+            Details erased
           </span>
         </div>
       )}
@@ -451,9 +450,7 @@ function BookingSlip({
 
 // Doctor portrait that survives a missing file: if the image 404s (or no
 // path is set yet) it falls back to an initials tile, so the slider still
-// looks finished while photos are being collected. The "Specialist" badge
-// (top-right) reflects doctor.tier from src/data/doctors.js — that same
-// tier is what drives the fee difference on the booking page.
+// looks finished while photos are being collected.
 function DoctorPortrait({ doctor }) {
   const [failed, setFailed] = useState(false);
   const showImage = Boolean(doctor.image) && !failed;
@@ -488,11 +485,6 @@ function DoctorPortrait({ doctor }) {
       <span className="absolute bottom-3 left-3 rounded-full bg-[var(--parchment)]/90 px-3 py-1 text-[11px] font-medium text-[var(--ink2)]">
         {doctor.availability}
       </span>
-      {doctor.tier === "specialist" && (
-        <span className="absolute top-3 right-3 rounded-full bg-[var(--gold)] px-3 py-1 text-[11px] font-medium text-[var(--ink2)]">
-          Specialist
-        </span>
-      )}
     </div>
   );
 }
@@ -509,6 +501,7 @@ function DoctorPortrait({ doctor }) {
  * clamped during render, so no effect is needed to "fix up" state.
  */
 function DoctorsSlider() {
+  const { doctors, loading } = useListedDoctors();
   const [perView, setPerView] = useState(1);
   const [index, setIndex] = useState(0);
   const [paused, setPaused] = useState(false);
@@ -569,6 +562,14 @@ function DoctorsSlider() {
   const onTouchStart = (e) => {
     touchStartX.current = e.touches[0].clientX;
   };
+
+  if (!loading && doctors.length === 0) {
+    return (
+      <p className="mt-8 px-2 sm:px-3 text-[15px] text-[#142138cc]">
+        Our doctors' profiles will appear here soon.
+      </p>
+    );
+  }
   const onTouchEnd = (e) => {
     if (touchStartX.current === null) return;
     const delta = e.changedTouches[0].clientX - touchStartX.current;
@@ -1461,10 +1462,14 @@ function HomeContent({ isLoggedIn }) {
                 How We Handle Your data
               </h2>
               <p className="mt-4 text-[15px] sm:text-[16px] leading-relaxed text-[var(--parchment)]/75">
-                Once your appointment ends, the booking details are permanently
-                deleted from our systems. We keep an audio record of
-                consultations for legal purposes and anonymous, non-identifying
-                statistics are kept to help us improve the service.
+                When your consultation closes, the details you gave when
+                booking (date of birth, sex, location and phone) are
+                permanently deleted. We keep a short record of each visit
+                (doctor, date, times and amount paid). Online consultations
+                may be recorded (video and audio) when the hospital has
+                recording switched on; you'll see a REC sign whenever a call
+                is recorded, and only authorised administrators can open
+                recordings.
               </p>{" "}
               Read our{" "}
               <Link

@@ -1,12 +1,18 @@
 import { useState } from "react";
 import { ShieldCheck, ChevronDown, ChevronUp, Video } from "lucide-react";
 
-import { formatCurrency, formatDateTime } from "./patientUtils";
+import { formatCurrency } from "./patientUtils";
+import { TYPE_LABELS, MODE_LABELS, formatDateTime } from "../../../src/constants";
 import RescheduleForm from "./rescheduleForm";
 import RevealId from "./revealId";
 import JoinCallPanel from "./joinCallPanel";
 
 const STATE_META = {
+  awaiting_payment: {
+    label: "Not paid",
+    color: "#A85420",
+    bg: "#F885351A",
+  },
   pending_assignment: {
     label: "Payment confirmed",
     color: "#0095D9",
@@ -16,6 +22,11 @@ const STATE_META = {
     label: "Confirmed",
     color: "#1E8E5A",
     bg: "#1E8E5A1A",
+  },
+  in_progress: {
+    label: "In progress",
+    color: "#F88535",
+    bg: "#F885351A",
   },
 };
 
@@ -31,8 +42,10 @@ export default function BookingCard({
 
   const meta = STATE_META[booking.state] ?? STATE_META.scheduled;
 
+  const isScheduled =
+    booking.state === "scheduled" || booking.state === "in_progress";
   const callInProgress =
-    booking.state === "scheduled" && Boolean(booking.callStartedAt);
+    booking.mode === "online" && booking.state === "in_progress";
 
   return (
     <div className="rounded-md border border-[#DCE6EC] overflow-hidden">
@@ -44,7 +57,7 @@ export default function BookingCard({
         >
           <div className="flex items-center gap-2 flex-wrap">
             <span className="font-medium text-[#12242C] text-sm truncate">
-              {booking.type}
+              {TYPE_LABELS[booking.type] ?? booking.type}
             </span>
 
             <span
@@ -59,9 +72,7 @@ export default function BookingCard({
           </div>
 
           <p className="mt-0.5 text-xs text-[#5C6B72] truncate">
-            {booking.mode === "online" ? "Online" : "In person"}
-            {" · "}
-            {booking.referenceCode}
+            {MODE_LABELS[booking.mode] ?? booking.mode}
 
             {booking.scheduledTime && (
               <>
@@ -105,33 +116,54 @@ export default function BookingCard({
 
       {expanded && (
         <div className="border-t border-[#DCE6EC] px-4 py-4">
+          {booking.state === "awaiting_payment" && (
+            <p className="text-sm text-[#5C6B72]">
+              This booking wasn't paid for, so it isn't confirmed. Unpaid
+              bookings and their details are deleted after 24 hours. Start a
+              new booking to try again.
+            </p>
+          )}
+
           {booking.state === "pending_assignment" && (
             <p className="flex items-center gap-2 text-sm text-[#5C6B72]">
               <ShieldCheck size={15} strokeWidth={1.75} />
-              Paid {formatCurrency(booking.amount)} · we're assigning your
+              Paid {formatCurrency(booking.amountPaid ?? booking.amount)} · we're assigning your
               doctor and appointment time. You'll hear from us by phone or
               WhatsApp shortly.
             </p>
           )}
 
-          {booking.state === "scheduled" && (
+          {isScheduled && (
             <div className="space-y-4">
               <div className="flex items-center justify-between gap-3">
                 <div className="text-sm text-[#12242C]">
                   <p className="font-medium">{booking.doctorName}</p>
 
-                  <p className="text-xs text-[#5C6B72]">{booking.department}</p>
+                  <p className="text-xs text-[#5C6B72]">{booking.doctorDepartment}</p>
                 </div>
 
                 <RevealId id={booking.consultationId} />
               </div>
 
-              <JoinCallPanel
-                booking={booking}
-                onJoined={(bookingId, result) => onJoined?.(bookingId, result)}
-              />
+              {booking.mode === "online" ? (
+                <JoinCallPanel
+                  booking={booking}
+                  onJoined={(bookingId, result) => onJoined?.(bookingId, result)}
+                />
+              ) : (
+                <p className="text-sm text-[#5C6B72]">
+                  Please come to the hospital at your appointment time.
+                </p>
+              )}
 
-              <RescheduleForm booking={booking} onRequested={onRescheduled} />
+              {booking.state === "scheduled" &&
+                (booking.rescheduleRequest?.status === "requested" ? (
+                  <p className="text-xs text-[#5C6B72]">
+                    Reschedule requested — we'll confirm by phone or WhatsApp.
+                  </p>
+                ) : (
+                  <RescheduleForm booking={booking} onRequested={onRescheduled} />
+                ))}
             </div>
           )}
         </div>

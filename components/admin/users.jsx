@@ -2,44 +2,18 @@
 //
 // Admin-only user management.
 //
-// PERMISSION RULE — this is the whole point of the component, so it's
-// enforced in exactly one place (isActionable, below) rather than
-// scattered across JSX conditions:
-//   Admin can deactivate or delete ANY account EXCEPT:
-//     1. their own account
-//     2. any other admin's account
-//   Only patient and doctor rows ever get action buttons. Everything
-//   else in the UI follows from that one rule.
+// PERMISSION RULE (UI side, enforced in isActionable below):
+//   Admin can deactivate or reactivate any patient or doctor account,
+//   never their own and never another admin's. setAccountStatus enforces
+//   the same rule on the server, which is the real gate.
 //
-// This UI-side check is a convenience, not the real gate — the
-// deactivate/delete/create-doctor operations themselves MUST re-check
-// role and identity server-side (Cloud Functions / Firestore rules),
-// since a client can call any function regardless of what buttons are
-// rendered here.
+// Accounts are deactivated, never deleted: deactivation disables sign-in
+// and revokes sessions at once, and keeps history and recordings
+// resolving to a real person. Admin accounts are created only with the
+// hospital's staffAdmin script, never from the app.
 //
-// ASSUMPTIONS (adjust to match your actual project):
-// - Patients self-register via signUp.jsx. Doctors have no public
-//   sign-up — per signIn.jsx's own comment, "admin and doctor accounts
-//   are created manually by the hospital" — so this screen is the ONLY
-//   place a doctor account gets created.
-// - Creating a doctor account is a privileged, server-side call (e.g. a
-//   Firebase Cloud Function `createDoctorAccount`), NOT a client-side
-//   createUserWithEmailAndPassword — that would sign the admin out of
-//   their own session and into the new doctor's. The function should
-//   create the Auth user, write role: "doctor" to Firestore, and email
-//   the doctor an invite/password-set link. This component just calls
-//   whatever `onCreateDoctor` prop the parent wires up to that function.
-// - `users` is the full account list the parent dashboard already loads,
-//   shaped roughly as:
-//     { id, name, email, phone, role: "patient" | "doctor" | "admin",
-//       status: "active" | "deactivated", specialty?, createdAt }
-// - `currentAdminId` is the signed-in admin's own uid/doc id.
-// - IconUserX / IconUserCheck / IconTrash / IconPlus / IconAlert: swap
-//   for whatever your icons.jsx actually exports if these names don't
-//   match — same file as the icons BookingsPanel/PaymentsPanel import.
-// - Validators (isValidEmail/isValidPhone/isValidName) reused from
-//   signUp.jsx's utils — update the import path if this file doesn't sit
-//   at the same depth as bookingsPanel.jsx.
+// Doctors are created by createDoctorAccount (server). The doctor then
+// receives Firebase's password-reset email to set their own password.
 
 import { useMemo, useState } from "react";
 import ConfirmDialog from "./confirmDialog.jsx";
@@ -47,7 +21,6 @@ import {
   IconPlus,
   IconUserX,
   IconUserCheck,
-  IconTrash,
   IconAlert,
   IconX,
 } from "./icons.jsx";
@@ -56,6 +29,7 @@ import {
   isValidPhone,
   isValidName,
 } from "../../src/utils/validators.js";
+import { callableMessage } from "../../src/constants";
 
 const ROLE_LABELS = {
   patient: "Patient",
@@ -124,6 +98,7 @@ function CreateDoctorModal({ onClose, onCreate }) {
     email: "",
     phone: "",
     specialty: "",
+    availableFor: ["OPD"],
   });
   const [fieldErrors, setFieldErrors] = useState({});
   const [error, setError] = useState("");
@@ -138,6 +113,8 @@ function CreateDoctorModal({ onClose, onCreate }) {
     if (!isValidEmail(form.email)) errs.email = "Enter a valid email address.";
     if (!isValidPhone(form.phone)) errs.phone = "Enter a valid phone number.";
     if (!form.specialty.trim()) errs.specialty = "Enter a specialty.";
+    if (form.availableFor.length === 0)
+      errs.availableFor = "Choose at least one consultation type.";
     setFieldErrors(errs);
     return Object.keys(errs).length === 0;
   };
@@ -149,11 +126,17 @@ function CreateDoctorModal({ onClose, onCreate }) {
 
     setSubmitting(true);
     try {
-      await onCreate(form);
+      await onCreate({
+        name: form.name.trim(),
+        email: form.email.trim(),
+        phone: form.phone.trim(),
+        department: form.specialty.trim(),
+        availableFor: form.availableFor,
+      });
       onClose();
     } catch (err) {
       setError(
-        err.message || "Couldn't create the doctor account. Please try again.",
+        callableMessage(err, "Couldn't create the doctor account. Please try again."),
       );
     } finally {
       setSubmitting(false);
@@ -235,6 +218,33 @@ function CreateDoctorModal({ onClose, onCreate }) {
             )}
           </div>
 
+          <div className="admin-field">
+            <span>Takes consultations</span>
+            {[
+              ["OPD", "General OPD"],
+              ["SURGICAL", "Surgical"],
+            ].map(([value, label]) => (
+              <label key={value} style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <input
+                  type="checkbox"
+                  checked={form.availableFor.includes(value)}
+                  onChange={(e) =>
+                    setForm((f) => ({
+                      ...f,
+                      availableFor: e.target.checked
+                        ? [...f.availableFor, value]
+                        : f.availableFor.filter((t) => t !== value),
+                    }))
+                  }
+                />
+                {label}
+              </label>
+            ))}
+            {fieldErrors.availableFor && (
+              <div className="auth-field-error">{fieldErrors.availableFor}</div>
+            )}
+          </div>
+
           <div className="admin-modal-actions">
             <button
               type="button"
@@ -264,13 +274,11 @@ export default function Users({
   onCreateDoctor,
   onDeactivate,
   onReactivate,
-  onDelete,
 }) {
   const [subtab, setSubtab] = useState("all");
   const [creatingDoctor, setCreatingDoctor] = useState(false);
   const [deactivating, setDeactivating] = useState(null);
   const [reactivating, setReactivating] = useState(null);
-  const [deleting, setDeleting] = useState(null);
 
   // One query per subtab, same reasoning as BookingsPanel: switching
   // between "Doctors" and "Patients" to compare something shouldn't lose
@@ -426,12 +434,6 @@ export default function Users({
                               <IconUserCheck size={14} /> Reactivate
                             </button>
                           )}
-                          <button
-                            className="btn btn-outline danger"
-                            onClick={() => setDeleting(u)}
-                          >
-                            <IconTrash size={14} /> Delete
-                          </button>
                         </div>
                       ) : (
                         <span className="admin-cell-sub">
@@ -461,7 +463,8 @@ export default function Users({
           title="Deactivate this account?"
           body={
             <>
-              {deactivating.name} won't be able to sign in until reactivated.
+              {deactivating.name} is signed out everywhere and can't sign in
+              until reactivated.
               {deactivating.role === "doctor"
                 ? " Reassign any of their upcoming scheduled consultations separately — this doesn't do that for you."
                 : " Their existing bookings are unaffected."}
@@ -492,26 +495,6 @@ export default function Users({
         />
       )}
 
-      {deleting && (
-        <ConfirmDialog
-          title="Delete this account?"
-          body={
-            <>
-              This permanently deletes {deleting.name}'s account and sign-in
-              access. There are no backups, so it cannot be undone.
-              {deleting.role === "doctor" &&
-                " Make sure they have no upcoming scheduled consultations first."}
-            </>
-          }
-          confirmLabel="Delete"
-          tone="danger"
-          onConfirm={() => {
-            onDelete(deleting);
-            setDeleting(null);
-          }}
-          onClose={() => setDeleting(null)}
-        />
-      )}
     </>
   );
 }

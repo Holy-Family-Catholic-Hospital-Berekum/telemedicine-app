@@ -9,7 +9,7 @@ export default function AuditPanel({ entries }) {
   const rows = entries.filter((e) => {
     const q = query.trim().toLowerCase();
     if (!q) return true;
-    return [e.actorId, e.action, e.targetId]
+    return [e.actorId, e.actorRole, e.action, e.targetId, e.reason]
       .join(" ")
       .toLowerCase()
       .includes(q);
@@ -20,9 +20,10 @@ export default function AuditPanel({ entries }) {
       <div className="admin-banner">
         <IconShield size={18} />
         <p>
-          This log is permanent and is not affected when session data is erased.
-          Review it periodically — a weekly sample of confirmed payments checked
-          by a second person is the recommended practice.
+          This log is permanent: nobody, including admins, can edit or delete
+          an entry. It covers payments, scheduling, account changes and every
+          play, download or deletion of a call recording. Review it regularly,
+          and look into any entry marked as failed.
         </p>
       </div>
 
@@ -60,13 +61,22 @@ export default function AuditPanel({ entries }) {
                   <tr key={e.id}>
                     <td>
                       <div className="admin-cell-name">{e.actorId}</div>
+                      {e.actorRole && <div className="admin-cell-sub">{e.actorRole}</div>}
                     </td>
-                    <td>{e.action}</td>
+                    <td>
+                      {e.action}
+                      {e.result && e.result !== "success" && (
+                        <div className="admin-cell-sub" style={{ color: "var(--color-danger)" }}>
+                          {e.result}
+                        </div>
+                      )}
+                      {e.reason && <div className="admin-cell-sub">Reason: {e.reason}</div>}
+                    </td>
                     <td>
                       <span className="code-chip">{e.targetId}</span>
                     </td>
                     <td className="admin-cell-sub">
-                      {new Date(e.timestamp).toLocaleString()}
+                      {e.timestamp ? new Date(e.timestamp).toLocaleString() : "—"}
                     </td>
                   </tr>
                 ))}

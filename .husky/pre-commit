@@ -1,1 +1,17 @@
+# Secret scan on staged changes. Fails closed if trufflehog isn't installed.
+# Git for Windows runs this with its bundled sh, so POSIX syntax works on Windows too.
+TRUFFLEHOG="$(command -v trufflehog || command -v trufflehog.exe || true)"
+if [ -z "$TRUFFLEHOG" ] && [ -x "$HOME/bin/trufflehog.exe" ]; then
+  TRUFFLEHOG="$HOME/bin/trufflehog.exe"
+fi
+if [ -z "$TRUFFLEHOG" ]; then
+  echo "pre-commit: trufflehog not found. Install it from https://github.com/trufflesecurity/trufflehog/releases and put it on PATH (or in ~/bin)." >&2
+  exit 1
+fi
+
+"$TRUFFLEHOG" git file://. --since-commit HEAD --fail --no-update || {
+  echo "pre-commit: trufflehog found possible secrets in staged changes. Commit blocked." >&2
+  exit 1
+}
+
 npx lint-staged

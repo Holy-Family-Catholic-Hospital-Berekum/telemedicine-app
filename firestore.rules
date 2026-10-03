@@ -1,19 +1,186 @@
 rules_version = '2';
 
+// Firestore Security Rules: the real enforcement boundary for the browser.
+//
+// - Default deny: anything not matched below is unreadable and unwritable.
+// - Identity comes from the signed `role` custom claim, which only Cloud
+//   Functions set. Staff (admin/doctor) must also have an active adminUsers
+//   profile, so deactivation takes effect immediately.
+// - Clinical, payment, consent, recording and audit data are written only by
+//   Cloud Functions (Admin SDK bypasses these rules). Clients never write
+//   them. The two client writes allowed are a doctor's own presentational
+//   profile fields and WebRTC signalling between the two call participants.
+//
+// MFA HOOK: when staff TOTP is switched on, add
+//   request.auth.token.firebase.sign_in_second_factor == 'totp'
+// to isAdmin() and isDoctor().
+
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // This rule allows anyone with your Firestore database reference to view, edit,
-    // and delete all data in your Firestore database. It is useful for getting
-    // started, but it is configured to expire after 30 days because it
-    // leaves your app open to attackers. At that time, all client
-    // requests to your Firestore database will be denied.
-    //
-    // Make sure to write security rules for your app before that time, or else
-    // all client requests to your Firestore database will be denied until you Update
-    // your rules
-    match /{document=**} {
-      allow read, write: if request.time < timestamp.date(2026, 10, 15);
+    function signedIn() { return request.auth != null; }
+    function myUid() { return request.auth.uid; }
+    function role() { return request.auth.token.get('role', ''); }
+    function staffActive() {
+      return get(/databases/$(database)/documents/adminUsers/$(myUid())).data.status == 'active';
     }
+    function isAdmin() { return signedIn() && role() == 'admin' && staffActive(); }
+    function isDoctor() { return signedIn() && role() == 'doctor' && staffActive(); }
+    function isPatient() { return signedIn() && role() == 'patient'; }
+
+    // ---------------- identity ----------------
+
+    match /users/{userId} {
+      allow read: if (isPatient() && myUid() == userId) || isAdmin();
+      allow write: if false; // registerPatient, setAccountStatus
+    }
+
+    match /adminUsers/{userId} {
+      allow read: if (signedIn() && myUid() == userId && role() in ['admin', 'doctor'])
+                  || isAdmin();
+      allow write: if false; // createDoctorAccount, setAccountStatus, staffAdmin script
+    }
+
+    // Public doctor directory. A doctor may edit only their own
+    // presentational fields; listing, name and consultation types are
+    // admin-controlled.
+    match /doctorProfiles/{doctorUid} {
+      allow read: if true;
+      allow update: if isDoctor() && myUid() == doctorUid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(
+             ['title', 'yearsExperience', 'specialties', 'languages', 'focus',
+              'bio', 'photoURL', 'isAvailable', 'availabilityNote', 'updatedAt'])
+        && (!('title' in request.resource.data)
+            || (request.resource.data.title is string && request.resource.data.title.size() <= 80))
+        && (!('yearsExperience' in request.resource.data)
+            || (request.resource.data.yearsExperience is int
+                && request.resource.data.yearsExperience >= 0
+                && request.resource.data.yearsExperience <= 70))
+        && request.resource.data.specialties is list
+        && request.resource.data.specialties.size() <= 12
+        && request.resource.data.languages is list
+        && request.resource.data.languages.size() <= 12
+        && request.resource.data.bio is string
+        && request.resource.data.bio.size() <= 1000
+        && request.resource.data.focus is string
+        && request.resource.data.focus.size() <= 160
+        && request.resource.data.isAvailable is bool
+        && (request.resource.data.photoURL == null
+            || (request.resource.data.photoURL is string
+                && request.resource.data.photoURL.size() <= 600
+                && request.resource.data.photoURL.matches('^https://firebasestorage[.]googleapis[.]com/.*')))
+        && request.resource.data.updatedAt == request.time;
+      allow create, delete: if false;
+    }
+
+    // ---------------- booking and care ----------------
+
+    match /bookings/{bookingId} {
+      allow read: if isAdmin()
+                  || (isPatient() && resource.data.patientUid == myUid());
+      allow write: if false;
+    }
+
+    match /consultations/{consultationId} {
+      allow read: if isAdmin()
+                  || (isDoctor() && resource.data.doctorUid == myUid());
+      allow write: if false;
+    }
+
+    match /consultationHistory/{consultationId} {
+      allow read: if isAdmin()
+                  || (isPatient() && resource.data.patientUid == myUid());
+      allow write: if false;
+    }
+
+    match /availableSlots/{slotId} {
+      allow read: if isAdmin()
+                  || (isPatient() && resource.data.status == 'open');
+      allow write: if false;
+    }
+
+    // ---------------- WebRTC signalling ----------------
+    // startVideoCall creates calls/{consultationId} with the two participant
+    // UIDs. Only those two can read it; the doctor may write only `offer`,
+    // the patient only `answer`. Each side adds only its own ICE candidates.
+    match /calls/{consultationId} {
+      function party(c) {
+        return signedIn() && (myUid() == c.doctorUid || myUid() == c.patientUid);
+      }
+      function callData() {
+        return get(/databases/$(database)/documents/calls/$(consultationId)).data;
+      }
+      function sdp(field) {
+        return request.resource.data[field] is map
+          && request.resource.data[field].keys().hasOnly(['type', 'sdp'])
+          && request.resource.data[field].sdp is string
+          && request.resource.data[field].sdp.size() < 100000;
+      }
+
+      allow read: if party(resource.data);
+      allow create, delete: if false;
+      allow update: if party(resource.data) && (
+        (myUid() == resource.data.doctorUid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['offer'])
+          && sdp('offer'))
+        || (myUid() == resource.data.patientUid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['answer'])
+          && sdp('answer'))
+      );
+
+      match /offerCandidates/{candidateId} {
+        allow read: if party(callData());
+        allow create: if signedIn() && myUid() == callData().doctorUid
+                      && request.resource.data.size() <= 5;
+        allow update, delete: if false;
+      }
+      match /answerCandidates/{candidateId} {
+        allow read: if party(callData());
+        allow create: if signedIn() && myUid() == callData().patientUid
+                      && request.resource.data.size() <= 5;
+        allow update, delete: if false;
+      }
+    }
+
+    // ---------------- admin-only records ----------------
+
+    match /recordings/{recordingId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+    match /confirmedPayments/{paymentId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+    match /auditLog/{entryId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+    match /consents/{consentId} {
+      allow read: if isAdmin()
+                  || (signedIn() && resource.data.subjectUid == myUid());
+      allow write: if false;
+    }
+
+    // ---------------- settings and public content ----------------
+
+    match /siteSettings/{docId} {
+      allow read: if true;
+      allow write: if false; // updateConsultationPrices, updateSiteImages
+    }
+    match /legalDocs/{docId} {
+      allow read: if true;
+      allow write: if false; // updateLegalDocument
+      match /versions/{version} {
+        allow read: if isAdmin();
+        allow write: if false;
+      }
+    }
+    match /systemSettings/{docId} {
+      allow read: if signedIn();
+      allow write: if false; // setCallRecordingEnabled
+    }
+
+    // paymentRefs, rateLimits and anything else: no client access.
   }
 }

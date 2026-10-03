@@ -1,6 +1,7 @@
 // controlPanel.jsx
 //
 // Admin "Control Panel" tab. Lets an administrator:
+//   0. switch call recording on or off (RecordingSwitchCard)
 //   1. change the photo on the home page hero
 //   2. set the consultation prices
 //   3. manage the photos in the BrandAside slideshow (add / remove / reorder)
@@ -18,22 +19,13 @@
 // Photos are resized in the browser before upload (long edge capped, saved as
 // JPEG), so a 9 MB phone photo becomes a few hundred KB. That keeps the public
 // pages quick on mobile data and keeps Storage usage negligible.
-//
-// ASSUMPTIONS — adjust if your project differs:
-//   - lives in the admin folder next to sidebar.jsx and confirmDialog.jsx
-//   - ../../src/firebase exports `app`; ../../src/siteSettings is the new module
-//   - `btn`, `btn-primary`, `btn-outline` come from admin.css (as in ConfirmDialog)
 
 import { useEffect, useRef, useState } from "react";
 import { onSnapshot } from "firebase/firestore";
-import { getFunctions, httpsCallable } from "firebase/functions";
-import {
-  getStorage,
-  ref as storageRef,
-  uploadBytesResumable,
-} from "firebase/storage";
+import { httpsCallable } from "firebase/functions";
+import { ref as storageRef, uploadBytesResumable } from "firebase/storage";
 
-import { app } from "../../src/firebase";
+import { functions, storage } from "../../src/firebase";
 import {
   settingsRef,
   DEFAULT_IMAGES,
@@ -42,17 +34,10 @@ import {
 import ConfirmDialog from "./confirmDialog.jsx";
 import "./controlPanel.css";
 import LegalDocsCard from "./legalDocsCard.jsx";
+import RecordingSwitchCard from "./recordingSwitchCard.jsx";
 
-const FUNCTIONS_REGION = "europe-west1"; // must match the deployed functions
-const callUpdatePrices = httpsCallable(
-  getFunctions(app, FUNCTIONS_REGION),
-  "updateConsultationPrices",
-);
-const callUpdateImages = httpsCallable(
-  getFunctions(app, FUNCTIONS_REGION),
-  "updateSiteImages",
-);
-const storage = getStorage(app);
+const callUpdatePrices = httpsCallable(functions, "updateConsultationPrices");
+const callUpdateImages = httpsCallable(functions, "updateSiteImages");
 
 const CURRENCY = "GHS";
 const MAX_PRICE = 5000; // same limit as the server; catches 2500-for-250 typos
@@ -927,6 +912,8 @@ export default function ControlPanel({ onAudit }) {
 
   return (
     <div className="cp-stack">
+      <RecordingSwitchCard />
+
       <SingleImageCard
         slot="hero"
         title="Home page photo"

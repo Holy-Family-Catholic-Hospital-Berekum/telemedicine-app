@@ -1,100 +1,65 @@
 // signaling.firebase.js
 //
-// Production signaling backend, using Firestore as the message bus
-// between the doctor and patient browsers while a WebRTC connection is
-// negotiated (Firestore is only used to exchange the SDP offer/answer
-// and ICE candidates — once connected, video/audio flows directly
-// between the two browsers, not through Firestore).
+// WebRTC signalling over Firestore. Firestore only carries the SDP
+// offer/answer and ICE candidates; once connected, video and audio flow
+// directly between the two browsers (DTLS-SRTP), or through the TURN relay,
+// which can't decrypt them.
 //
-// One document per call, keyed by consultationId, holding the SDP
-// offer/answer, plus two subcollections for ICE candidates trickling in
-// from each side.
-//
-// ASSUMPTION: adjust this import to wherever your Firestore instance is
-// initialized. If docFirestoreService.js / patientFirestoreService.js
-// already set one up, use that path and delete the firebase.js
-// placeholder in this folder.
+// calls/{consultationId} is created by the startVideoCall Cloud Function
+// with the doctor's and patient's UIDs; clients can't create or delete it.
+// Security Rules let only those two people read it, the doctor write only
+// `offer`, the patient write only `answer`, and each side add only its own
+// ICE candidates. The server removes the whole thing when the consultation
+// closes, when the doctor rejoins (fresh start), or after 6 hours.
 import { db } from "../../src/firebase";
 import {
   doc,
   getDoc,
-  setDoc,
   updateDoc,
-  deleteDoc,
   collection,
   addDoc,
-  getDocs,
-  writeBatch,
   onSnapshot,
-  serverTimestamp,
-  Timestamp,
 } from "firebase/firestore";
-
-// How long a call document is allowed to live before it's considered
-// abandoned. Paired with a Firestore TTL policy (see firestore.rules.example
-// and the setup note at the bottom of this file) so stale call docs get
-// deleted automatically even if a client crashes before it can call
-// teardownCallSignaling itself — the same "don't keep what you don't
-// need" principle your architecture doc already applies to consultation
-// records (section 4.6).
-const CALL_DOC_TTL_HOURS = 6;
 
 function callDocRef(consultationId) {
   return doc(db, "calls", consultationId);
 }
 
 function candidatesCollection(consultationId, side) {
-  // side is "offerCandidates" (doctor's ICE candidates) or
-  // "answerCandidates" (patient's ICE candidates)
+  // "offerCandidates" (doctor) or "answerCandidates" (patient)
   return collection(db, "calls", consultationId, side);
 }
 
 /**
- * Doctor side. Call is always initiated by the doctor (they click
- * "Start call" first in your existing flow, before the patient joins),
- * so the doctor is always the WebRTC "offerer".
- *
- * Returns an unsubscribe function — call it when the doctor hangs up or
- * the component unmounts.
+ * Doctor side: the doctor is always the WebRTC offerer. startVideoCall must
+ * have run first (it resets the call document for a clean start).
+ * Returns an unsubscribe function.
  */
 export async function createOffer(consultationId, peerConnection, onAnswer) {
   const callDoc = callDocRef(consultationId);
-  const offerCandidates = candidatesCollection(consultationId, "offerCandidates");
 
   const unsubscribeIceGathering = watchLocalIceCandidates(
     peerConnection,
-    offerCandidates,
+    candidatesCollection(consultationId, "offerCandidates"),
   );
 
   const offerDescription = await peerConnection.createOffer();
   await peerConnection.setLocalDescription(offerDescription);
-
-  const expiresAt = Timestamp.fromMillis(
-    Date.now() + CALL_DOC_TTL_HOURS * 60 * 60 * 1000,
-  );
-
-  await setDoc(callDoc, {
-    offer: {
-      sdp: offerDescription.sdp,
-      type: offerDescription.type,
-    },
-    createdAt: serverTimestamp(),
-    expiresAt, // used by the Firestore TTL policy, see setup notes below
+  await updateDoc(callDoc, {
+    offer: { sdp: offerDescription.sdp, type: offerDescription.type },
   });
 
   const unsubscribeAnswer = onSnapshot(callDoc, (snapshot) => {
     const data = snapshot.data();
     if (!peerConnection.currentRemoteDescription && data?.answer) {
-      const answerDescription = new RTCSessionDescription(data.answer);
-      peerConnection.setRemoteDescription(answerDescription);
+      peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer));
       onAnswer?.();
     }
   });
 
-  const answerCandidates = candidatesCollection(consultationId, "answerCandidates");
   const unsubscribeRemoteIce = watchRemoteIceCandidates(
     peerConnection,
-    answerCandidates,
+    candidatesCollection(consultationId, "answerCandidates"),
   );
 
   return () => {
@@ -105,39 +70,30 @@ export async function createOffer(consultationId, peerConnection, onAnswer) {
 }
 
 /**
- * Patient side. Waits for the doctor's offer (retrying briefly in case
- * the patient's app loaded a moment before the doctor's "Start call"
- * write landed), then answers it.
+ * Patient side: waits briefly for the doctor's offer, then answers it.
+ * Returns an unsubscribe function.
  */
 export async function joinCall(consultationId, peerConnection) {
   const callDoc = callDocRef(consultationId);
   const callSnapshot = await waitForOffer(callDoc);
-  const offerDescription = callSnapshot.data().offer;
 
   await peerConnection.setRemoteDescription(
-    new RTCSessionDescription(offerDescription),
+    new RTCSessionDescription(callSnapshot.data().offer),
   );
-
   const answerDescription = await peerConnection.createAnswer();
   await peerConnection.setLocalDescription(answerDescription);
 
-  await updateDoc(callDoc, {
-    answer: {
-      type: answerDescription.type,
-      sdp: answerDescription.sdp,
-    },
-  });
-
-  const answerCandidates = candidatesCollection(consultationId, "answerCandidates");
   const unsubscribeIceGathering = watchLocalIceCandidates(
     peerConnection,
-    answerCandidates,
+    candidatesCollection(consultationId, "answerCandidates"),
   );
+  await updateDoc(callDoc, {
+    answer: { type: answerDescription.type, sdp: answerDescription.sdp },
+  });
 
-  const offerCandidates = candidatesCollection(consultationId, "offerCandidates");
   const unsubscribeRemoteIce = watchRemoteIceCandidates(
     peerConnection,
-    offerCandidates,
+    candidatesCollection(consultationId, "offerCandidates"),
   );
 
   return () => {
@@ -146,29 +102,44 @@ export async function joinCall(consultationId, peerConnection) {
   };
 }
 
+/**
+ * Follows the server-set `recordingActive` flag so BOTH participants see
+ * the REC indicator. Returns an unsubscribe function.
+ */
+export function watchRecordingState(consultationId, onChange) {
+  return onSnapshot(
+    callDocRef(consultationId),
+    (snapshot) => onChange(snapshot.data()?.recordingActive === true),
+    () => onChange(false),
+  );
+}
+
 function waitForOffer(callDoc, attempt = 0) {
   return new Promise((resolve, reject) => {
-    getDoc(callDoc).then((snapshot) => {
-      if (snapshot.exists() && snapshot.data()?.offer) {
-        resolve(snapshot);
-      } else if (attempt > 20) {
-        // ~10 seconds of retrying — after that, the doctor almost
-        // certainly hasn't clicked "Start call" yet.
-        reject(new Error("The doctor hasn't started the call yet."));
-      } else {
-        setTimeout(
-          () => waitForOffer(callDoc, attempt + 1).then(resolve, reject),
-          500,
-        );
-      }
-    });
+    getDoc(callDoc)
+      .then((snapshot) => {
+        if (snapshot.exists() && snapshot.data()?.offer) {
+          resolve(snapshot);
+        } else if (attempt > 40) {
+          // ~20 seconds: the doctor almost certainly hasn't started yet.
+          reject(new Error("The doctor hasn't started the call yet. Please try again in a moment."));
+        } else {
+          setTimeout(
+            () => waitForOffer(callDoc, attempt + 1).then(resolve, reject),
+            500,
+          );
+        }
+      })
+      .catch(reject);
   });
 }
 
 function watchLocalIceCandidates(peerConnection, candidatesCollectionRef) {
   function handleIceCandidate(event) {
     if (event.candidate) {
-      addDoc(candidatesCollectionRef, event.candidate.toJSON());
+      addDoc(candidatesCollectionRef, event.candidate.toJSON()).catch(() => {
+        // A rejected candidate only narrows the connection options.
+      });
     }
   }
   peerConnection.addEventListener("icecandidate", handleIceCandidate);
@@ -177,44 +148,15 @@ function watchLocalIceCandidates(peerConnection, candidatesCollectionRef) {
 }
 
 function watchRemoteIceCandidates(peerConnection, candidatesCollectionRef) {
-  const unsubscribe = onSnapshot(candidatesCollectionRef, (snapshot) => {
+  return onSnapshot(candidatesCollectionRef, (snapshot) => {
     snapshot.docChanges().forEach((change) => {
       if (change.type === "added") {
-        const candidate = new RTCIceCandidate(change.doc.data());
-        peerConnection.addIceCandidate(candidate).catch(() => {
-          // Benign if it arrives after the connection already closed.
-        });
+        peerConnection
+          .addIceCandidate(new RTCIceCandidate(change.doc.data()))
+          .catch(() => {
+            // Benign if it arrives after the connection already closed.
+          });
       }
     });
-  });
-  return unsubscribe;
-}
-
-/**
- * Cleans up the call document AND its candidate subcollections. Call
- * this once, from whichever side hangs up last (safe to call twice —
- * the second call just finds nothing left to delete).
- *
- * Deleting the parent "calls/{id}" document alone does NOT delete its
- * offerCandidates/answerCandidates subcollections — Firestore doesn't
- * cascade — so without this, every call would leave orphaned candidate
- * documents behind forever. This is separate from, and in addition to,
- * the section-4.6 erasure of the booking/consultation documents
- * themselves.
- */
-export async function teardownCallSignaling(consultationId) {
-  const batch = writeBatch(db);
-
-  for (const side of ["offerCandidates", "answerCandidates"]) {
-    const snapshot = await getDocs(candidatesCollection(consultationId, side));
-    snapshot.forEach((candidateDoc) => batch.delete(candidateDoc.ref));
-  }
-
-  batch.delete(callDocRef(consultationId));
-
-  await batch.commit().catch(() => {
-    // If this fails (e.g. the client lost connectivity mid-hangup), the
-    // Firestore TTL policy on `expiresAt` is the backstop that still
-    // cleans this up within CALL_DOC_TTL_HOURS.
   });
 }

@@ -40,10 +40,8 @@ export default function BrandAside({
   body,
   points = [],
   images, // optional override; when omitted, uses the admin's slideshow
-  // Kept for compatibility with existing callers — no longer changes the
-  // color (there's only one brand gradient now), but callers can still
-  // pass it without needing an update.
-  tone,
+  // `tone` is still accepted from older callers but no longer used
+  // (there's only one brand gradient now).
 }) {
   const { settings } = useSiteSettings();
   const slides =
@@ -171,7 +169,7 @@ export default function BrandAside({
       </svg>
 
       <p className="relative z-10 mt-4 text-[11.5px] leading-relaxed text-white/55">
-        Session data is encrypted in transit and erased after each consultation.
+        Data is encrypted in transit. Booking details are deleted when your consultation closes.
       </p>
     </aside>
   );

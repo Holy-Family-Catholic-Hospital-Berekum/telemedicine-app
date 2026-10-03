@@ -9,25 +9,19 @@ import {
 } from "lucide-react";
 import { useWebRTCCall } from "./useWebRTCCall";
 
-// ASSUMPTION: adjust this import path to wherever src/assets actually
-// sits relative to components/video/VideoCallModal.jsx in your project
-// — same idea as the logo imports already in DoctorDashboard.jsx and
-// the patient Dashboard.jsx. This assumes components/video sits at the
-// same depth as components/doctor, so it copies that file's path.
 import hospitalLogo from "../../src/assets/logo.png";
 
 /**
  * VideoCallModal
  *
- * Drop-in replacement for the Jitsi-based version — same shape of props,
- * so nothing else in DoctorDashboard.jsx or Dashboard.jsx needs to
- * change beyond passing a `role` prop now (see integration notes).
- *
  * Props:
  * - consultationId: string (required)
- * - role: "doctor" | "patient" (required) — decides who initiates the
- *   call (see webrtcSignaling.js for why the doctor always initiates)
+ * - role: "doctor" | "patient" (required) — the doctor makes the WebRTC
+ *   offer; the patient answers
  * - onClose: () => void (required)
+ *
+ * Both participants see REC whenever the server says this call is being
+ * recorded (calls.recordingActive).
  */
 export default function VideoCallModal({ consultationId, role, onClose }) {
   const {
@@ -38,6 +32,7 @@ export default function VideoCallModal({ consultationId, role, onClose }) {
     micOn,
     cameraOn,
     isRecording,
+    recordingWarning,
     toggleMic,
     toggleCamera,
     hangUp,
@@ -49,9 +44,10 @@ export default function VideoCallModal({ consultationId, role, onClose }) {
 
   if (!consultationId) return null;
 
+  // hangUp finishes saving the recording, then calls onClose itself.
   function handleHangUp() {
+    if (status === "ending") return;
     hangUp();
-    onClose();
   }
 
   return (
@@ -69,7 +65,7 @@ export default function VideoCallModal({ consultationId, role, onClose }) {
           {isRecording && (
             <span
               className="ml-1 flex shrink-0 items-center gap-1 rounded-full bg-black/25 px-2 py-0.5 text-[11px] font-medium text-white"
-              title="This consultation is being recorded and kept as part of the medical record."
+              title="This consultation is being recorded (video and audio). Only authorised hospital administrators can open recordings."
             >
               <Circle size={8} strokeWidth={0} fill="#E4483C" />
               REC
@@ -78,30 +74,34 @@ export default function VideoCallModal({ consultationId, role, onClose }) {
         </div>
 
         <div className="flex shrink-0 items-center gap-3">
-          {/* True regardless of connection status below — WebRTC's
-              DTLS-SRTP encryption is mandatory by spec and holds even
-              when a call relays through the TURN server, since the
-              relay never holds the decryption keys. Note this is about
-              transport encryption; it's independent of whether the call
-              is also being recorded (see the REC badge above). */}
+          {/* Transport encryption (DTLS-SRTP) holds even through the TURN
+              relay. It's not "end-to-end" in the privacy sense when the
+              hospital records the call, so the wording doesn't claim that. */}
           <div
             className="hidden items-center gap-1.5 text-xs text-white/70 sm:flex"
-            title="Video and audio are encrypted directly between you and the other participant."
+            title="Video and audio are encrypted in transit between you and the other participant."
           >
             <ShieldCheck size={13} strokeWidth={2} />
-            End-to-end encrypted
+            Encrypted connection
           </div>
 
           <div className="flex items-center gap-2 text-xs text-white/70">
             <span className="inline-block h-2 w-2 rounded-full bg-[#E4483C]" />
             {status === "connecting" && "Connecting…"}
             {status === "connected" &&
-              (isRecording ? "Live consultation · recording" : "Live consultation · not recorded")}
+              (isRecording ? "Live consultation · being recorded" : "Live consultation")}
+            {status === "ending" && "Ending call…"}
             {status === "ended" && "Call ended"}
             {status === "error" && "Connection problem"}
           </div>
         </div>
       </div>
+
+      {recordingWarning && role === "doctor" && (
+        <div className="bg-[#2A3B44] px-4 py-2 text-center text-xs text-white">
+          {recordingWarning}
+        </div>
+      )}
 
       <div className="relative flex-1 bg-black">
         {status === "error" ? (
@@ -160,6 +160,7 @@ export default function VideoCallModal({ consultationId, role, onClose }) {
         <button
           type="button"
           onClick={handleHangUp}
+          disabled={status === "ending"}
           className="flex h-11 w-11 items-center justify-center rounded-full bg-[#E4483C] text-white"
           aria-label="Leave call"
         >

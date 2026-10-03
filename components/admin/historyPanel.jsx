@@ -1,12 +1,10 @@
 import { useMemo, useState } from "react";
 import { IconShield, IconSearch } from "./icons.jsx";
+import { TYPE_LABELS, MODE_LABELS, OUTCOME_LABELS, formatDateTime } from "../../src/constants";
 
-// Consultation history — permanent and anonymised.
-//
-// This survives session-close erasure, so it must never carry a patient name,
-// phone, email or anything that identifies who was seen. It holds timing and
-// outcome only. The consultation ID is kept because it is expired and dead
-// once a session is marked done; it links nothing back to a person.
+// Consultation history, written by markConsultationDone. It survives the
+// deletion of the booking details, so it holds no date of birth, sex,
+// location or phone: doctor, times, outcome and amounts only.
 //
 // Timing rules:
 //   In person — starts at the scheduled time, ends when marked done.
@@ -26,8 +24,8 @@ const duration = (a, b) => {
 
 const FILTERS = [
   { key: "all", label: "All" },
-  { key: "Online", label: "Online" },
-  { key: "In person", label: "In person" },
+  { key: "online", label: "Online" },
+  { key: "in_person", label: "In person" },
 ];
 
 export default function HistoryPanel({ history }) {
@@ -41,7 +39,7 @@ export default function HistoryPanel({ history }) {
         .filter((h) => {
           const q = query.trim().toLowerCase();
           if (!q) return true;
-          return [h.consultationId, h.type, h.doctorOrDept, h.outcome]
+          return [h.consultationId, h.type, h.doctorName, h.outcome]
             .join(" ")
             .toLowerCase()
             .includes(q);
@@ -50,16 +48,16 @@ export default function HistoryPanel({ history }) {
     [history, mode, query],
   );
 
-  const completed = rows.filter((h) => h.outcome === "Completed").length;
+  const completed = rows.filter((h) => h.outcome === "completed").length;
 
   return (
     <>
       <div className="admin-banner">
         <IconShield size={18} />
         <p>
-          Timing and outcome only. Patient names, phone numbers and booking
-          records are erased when a consultation is marked done, so this history
-          cannot be used to look up who was seen.
+          Doctor, timing, outcome and amount only. The patient's booking details
+          (date of birth, sex, location, phone) are deleted when a consultation
+          is closed.
         </p>
       </div>
 
@@ -110,6 +108,7 @@ export default function HistoryPanel({ history }) {
                   <th>Ended</th>
                   <th>Duration</th>
                   <th>Outcome</th>
+                  <th>Paid</th>
                 </tr>
               </thead>
               <tbody>
@@ -121,27 +120,31 @@ export default function HistoryPanel({ history }) {
                       </span>
                     </td>
                     <td>
-                      <div>{h.type}</div>
-                      <div className="admin-cell-sub">{h.mode}</div>
+                      <div>{TYPE_LABELS[h.type] ?? h.type}</div>
+                      <div className="admin-cell-sub">{MODE_LABELS[h.mode] ?? h.mode}</div>
                     </td>
-                    <td>{h.doctorOrDept}</td>
-                    <td className="admin-cell-sub">
-                      {new Date(h.startedAt).toLocaleString()}
-                    </td>
-                    <td className="admin-cell-sub">
-                      {new Date(h.endedAt).toLocaleString()}
-                    </td>
+                    <td>{h.doctorName}</td>
+                    <td className="admin-cell-sub">{formatDateTime(h.startedAt)}</td>
+                    <td className="admin-cell-sub">{formatDateTime(h.endedAt)}</td>
                     <td>
                       <strong>{duration(h.startedAt, h.endedAt)}</strong>
                     </td>
                     <td>
                       <span
                         className={`status-pill ${
-                          h.outcome === "Completed" ? "confirmed" : "rejected"
+                          h.outcome === "completed" ? "confirmed" : "rejected"
                         }`}
                       >
-                        {h.outcome}
+                        {OUTCOME_LABELS[h.outcome] ?? h.outcome}
                       </span>
+                    </td>
+                    <td>
+                      {h.currency || "GHS"} {Number(h.amountPaid ?? 0).toFixed(2)}
+                      {h.refundOwed > 0 && (
+                        <div className="admin-cell-sub">
+                          Refund owed: {Number(h.refundOwed).toFixed(2)}
+                        </div>
+                      )}
                     </td>
                   </tr>
                 ))}

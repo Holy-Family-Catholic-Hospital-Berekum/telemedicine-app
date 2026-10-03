@@ -4,32 +4,20 @@
 // changed. Checks the caller is an admin, validates the text, archives the
 // previous version and writes an audit entry, all in one transaction.
 //
-// Export it from functions/index.js:
-//   exports.updateLegalDocument = require("./legalDocs").updateLegalDocument;
-//
-// ADJUST TO YOUR PROJECT:
-//   - assertAdmin(): swap in the admin check your other callables use.
-//   - the auditLog entry: match the field names AuditPanel expects.
-//   - CommonJS is used here; convert to `import` if your functions use ESM.
+// index.js re-exports updateLegalDocument.
 
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
-const { getFirestore, FieldValue } = require("firebase-admin/firestore");
-
-const db = getFirestore();
+const { db, FieldValue, requireRole } = require("./lib/core");
 
 const DOC_LABELS = { terms: "Terms of service", privacy: "Privacy policy" };
 const ID_RE = /^[a-z0-9-]{1,60}$/;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const LIMITS = { intro: 1000, title: 120, body: 8000, sections: 40, email: 254 };
 
+// Admins only. Doctors also live in adminUsers, so checking that a profile
+// exists is not enough: the role claim decides.
 async function assertAdmin(request) {
-  if (!request.auth) {
-    throw new HttpsError("unauthenticated", "Sign in to continue.");
-  }
-  const snap = await db.collection("adminUsers").doc(request.auth.uid).get();
-  if (!snap.exists) {
-    throw new HttpsError("permission-denied", "Only administrators can do this.");
-  }
+  await requireRole(request, ["admin"]);
 }
 
 function text(value, max, label) {
@@ -76,7 +64,7 @@ function validate(data) {
   return { docId: data.docId, intro, contactEmail, sections };
 }
 
-exports.updateLegalDocument = onCall({ region: "europe-west1" }, async (request) => {
+exports.updateLegalDocument = onCall(async (request) => {
   await assertAdmin(request);
   const { docId, ...clean } = validate(request.data);
 
@@ -103,6 +91,9 @@ exports.updateLegalDocument = onCall({ region: "europe-west1" }, async (request)
 
     tx.set(db.collection("auditLog").doc(), {
       action: "Changed legal text",
+      code: "legal.updated",
+      category: "compliance",
+      actorRole: "admin",
       targetId: DOC_LABELS[docId],
       actorId: request.auth.uid,
       timestamp: FieldValue.serverTimestamp(),

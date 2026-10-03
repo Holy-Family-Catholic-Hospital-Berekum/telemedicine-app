@@ -4,7 +4,6 @@ import { useNavigate, Link } from "react-router-dom";
 import { STAFF_LOGIN_PATH } from "../../src/staffRoute.js";
 import {
   CalendarClock,
-  ShieldCheck,
   Video,
   Clock3,
   Stethoscope,
@@ -30,28 +29,19 @@ import {
 } from "./docFirestoreService";
 import VideoCallModal from "../video/videoCallModal";
 import hospitalLogo from "../../src/assets/logo.png";
-
-// DEV-ONLY: lets you open the video call UI without a real
-// admin-assigned consultation ID, for testing the call flow in
-// isolation. Uses an obviously-fake ID so it can't be confused with a
-// real one in logs/Jitsi room names. Gated behind import.meta.env.DEV
-// below, so the button — and the ability to open a fake call — simply
-// doesn't exist in a production build.
-const DEV_TEST_CALL_ID = "TEST-CALL-DEV-ONLY";
+import { callableMessage, HOSPITAL_TIME_ZONE } from "../../src/constants";
 
 const TABS = [
   { id: "schedule", label: "Schedule", icon: CalendarDays },
   { id: "profile", label: "My profile", icon: UserRound },
 ];
 
-function isSameDay(isoA, isoB) {
-  const a = new Date(isoA);
-  const b = new Date(isoB);
-  return (
-    a.getFullYear() === b.getFullYear() &&
-    a.getMonth() === b.getMonth() &&
-    a.getDate() === b.getDate()
-  );
+// Calendar day in hospital time.
+function dayKey(value) {
+  return new Date(value).toLocaleDateString("en-CA", { timeZone: HOSPITAL_TIME_ZONE });
+}
+function isSameDay(a, b) {
+  return dayKey(a) === dayKey(b);
 }
 
 export default function DoctorDashboard() {
@@ -85,7 +75,6 @@ export default function DoctorDashboard() {
           name: profile.name,
           department: profile.department || "Department not set",
           role: profile.role,
-          mfaEnabled: !!profile.mfaEnabled,
         }
       : null;
 
@@ -122,7 +111,7 @@ export default function DoctorDashboard() {
   }, [consultations, today]);
 
   const liveCallCount = consultations.filter(
-    (c) => c.mode === "online" && c.callStartedAt,
+    (c) => c.mode === "online" && c.status === "in_progress",
   ).length;
 
   function showToast(message, duration = 3000) {
@@ -130,35 +119,52 @@ export default function DoctorDashboard() {
     setTimeout(() => setToast(null), duration);
   }
 
-  async function handleStartCall(consultationId) {
+  // Resolves { ok } so the ID modal can show a mismatch inline. The
+  // server checks the typed ID; the client never compares it.
+  async function handleStartCall(consultationId, enteredId) {
     setStartingCallId(consultationId);
-    const result = await startVideoCall(consultationId);
-    setConsultations((prev) =>
-      prev.map((c) =>
-        c.consultationId === consultationId
-          ? { ...c, callStartedAt: result.callStartedAt }
-          : c,
-      ),
-    );
-    setStartingCallId(null);
-    showToast("Connected to the video room");
-    setActiveCallConsultationId(consultationId);
+    try {
+      const result = await startVideoCall(consultationId, enteredId);
+      setConsultations((prev) =>
+        prev.map((c) =>
+          c.consultationId === consultationId
+            ? {
+                ...c,
+                status: "in_progress",
+                callStartedAt: result.callStartedAt
+                  ? new Date(result.callStartedAt)
+                  : c.callStartedAt,
+              }
+            : c,
+        ),
+      );
+      setActiveCallConsultationId(consultationId);
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, message: callableMessage(err, "Couldn't open the video room.") };
+    } finally {
+      setStartingCallId(null);
+    }
   }
 
   async function handleMarkDoneSubmit({ consultation, outcome }) {
-    await markConsultationDone({
-      consultationId: consultation.consultationId,
-      outcome,
-      amountPaid: consultation.amountPaid,
-    });
+    try {
+      await markConsultationDone({
+        consultationId: consultation.consultationId,
+        outcome,
+      });
+    } catch (err) {
+      showToast(callableMessage(err, "Couldn't close the consultation."), 4000);
+      return;
+    }
     setConsultations((prev) =>
       prev.filter((c) => c.consultationId !== consultation.consultationId),
     );
     setMarkDoneTarget(null);
     showToast(
-      outcome === "No-show"
-        ? "Marked no-show — session record erased"
-        : "Marked completed — session record erased",
+      outcome === "no_show"
+        ? "Closed as no-show — booking details deleted"
+        : "Closed as completed — booking details deleted",
       3500,
     );
   }
@@ -232,18 +238,6 @@ export default function DoctorDashboard() {
               <p className="text-xs text-[#5C6B72]">Doctor portal</p>
             </div>
             <div className="flex items-center gap-2">
-              {/* DEV-ONLY test entry point — see DEV_TEST_CALL_ID note
-                  above. Doesn't exist in a production build. */}
-              {import.meta.env.DEV && (
-                <button
-                  type="button"
-                  onClick={() => setActiveCallConsultationId(DEV_TEST_CALL_ID)}
-                  className="rounded-md border border-dashed border-[#0095D9] px-3 py-1.5 text-xs font-medium text-[#0095D9] hover:bg-[#0095D9]/5"
-                  title="Dev-only: open the video call UI without a real consultation"
-                >
-                  Start test call
-                </button>
-              )}
               <LogoutButton onConfirm={handleLogout} />
             </div>
           </div>
@@ -271,32 +265,8 @@ export default function DoctorDashboard() {
             </div>
           </div>
           <div className="flex items-center gap-2 text-xs text-[#5C6B72]">
-            {/* CHANGED — reflects the real mfaEnabled flag from Firestore
-                instead of a hardcoded "MFA active". Note this flag still
-                doesn't mean a real MFA challenge ran at sign-in — see
-                authContext.jsx note 5 — this just stops the badge from
-                actively lying when the flag is false. */}
-            {doctor.mfaEnabled ? (
-              <>
-                <ShieldCheck
-                  size={14}
-                  strokeWidth={2}
-                  style={{ color: "#0095D9" }}
-                />
-                MFA active
-              </>
-            ) : (
-              <>
-                <ShieldCheck
-                  size={14}
-                  strokeWidth={2}
-                  style={{ color: "#5C6B72" }}
-                />
-                MFA not enabled
-              </>
-            )}
-            <span className="mx-1">·</span>
             {today.toLocaleDateString(undefined, {
+              timeZone: HOSPITAL_TIME_ZONE,
               weekday: "long",
               month: "long",
               day: "numeric",

@@ -2,21 +2,19 @@ import { useState } from "react";
 import { KeyRound, X, Loader2 } from "lucide-react";
 
 // Prompts the doctor for the consultation ID before a call is allowed to
-// start. `onVerify` does the actual comparison (and, on success, kicks off
-// the call) and returns/resolves to a boolean. Keeping the compare logic
-// in the parent means this component never needs to know the real ID.
+// start. `onVerify` sends it to the server and resolves { ok, message }.
 export default function VerifyConsultationIdModal({ onClose, onVerify }) {
   const [value, setValue] = useState("");
-  const [error, setError] = useState(false);
+  const [error, setError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
 
   async function handleSubmit(e) {
     e.preventDefault();
     if (!value.trim() || submitting) return;
     setSubmitting(true);
-    const ok = await onVerify(value.trim());
+    const result = await onVerify(value.trim());
     setSubmitting(false);
-    if (!ok) setError(true);
+    if (!result?.ok) setError(result?.message || "That ID doesn't match this session.");
   }
 
   return (
@@ -49,16 +47,15 @@ export default function VerifyConsultationIdModal({ onClose, onVerify }) {
             value={value}
             onChange={(e) => {
               setValue(e.target.value);
-              if (error) setError(false);
+              if (error) setError(null);
             }}
-            placeholder="e.g. CID-XXXXXXX"
+            placeholder="e.g. HFC-XXXXXXXXXX"
             className="w-full rounded-sm border px-3 py-2 text-sm font-mono uppercase tracking-wide outline-none"
             style={{ borderColor: error ? "#D64545" : "#DCE6EC" }}
           />
           {error && (
             <p className="mt-1.5 text-xs" style={{ color: "#D64545" }}>
-              That ID doesn't match this session. Confirm it with admin and try
-              again.
+              {error} Confirm it with admin and try again.
             </p>
           )}
           <div className="mt-4 flex justify-end gap-2">

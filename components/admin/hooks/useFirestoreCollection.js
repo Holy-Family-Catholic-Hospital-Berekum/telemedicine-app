@@ -7,38 +7,48 @@
 //
 // Returns { data, loading, error }. `data` is [] until the first
 // snapshot arrives (not necessarily "empty" — check `loading` before
-// showing an empty state).
+// showing an empty state). Top-level Firestore Timestamps are converted to
+// JS Dates so panels can format them directly. Pass null to skip loading.
 
 import { useEffect, useState } from "react";
 import { onSnapshot } from "firebase/firestore";
 
+function withDates(data) {
+  const out = {};
+  for (const [key, value] of Object.entries(data)) {
+    out[key] = value && typeof value.toDate === "function" ? value.toDate() : value;
+  }
+  return out;
+}
+
+const EMPTY = [];
+
 export function useFirestoreCollection(queryRef) {
-  const [data, setData] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  // `forQuery` records which query the result belongs to, so `loading` is
+  // derived (true until this query's first snapshot) instead of being set
+  // synchronously inside the effect.
+  const [result, setResult] = useState({ forQuery: null, data: EMPTY, error: null });
 
   useEffect(() => {
-    if (!queryRef) {
-      setLoading(false);
-      return undefined;
-    }
-    setLoading(true);
-    const unsubscribe = onSnapshot(
+    if (!queryRef) return undefined;
+    return onSnapshot(
       queryRef,
-      (snap) => {
-        setData(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-        setError(null);
-        setLoading(false);
-      },
-      (err) => {
-        // Rules-denied reads, offline, etc. Surface it — don't silently
-        // show stale/empty data as if it were current.
-        setError(err);
-        setLoading(false);
-      },
+      (snap) =>
+        setResult({
+          forQuery: queryRef,
+          data: snap.docs.map((d) => ({ id: d.id, ...withDates(d.data()) })),
+          error: null,
+        }),
+      // Rules-denied reads, offline, etc. Surface it — don't silently
+      // show stale/empty data as if it were current.
+      (error) => setResult({ forQuery: queryRef, data: EMPTY, error }),
     );
-    return unsubscribe;
   }, [queryRef]);
 
-  return { data, loading, error };
+  const current = queryRef && result.forQuery === queryRef;
+  return {
+    data: current ? result.data : EMPTY,
+    loading: Boolean(queryRef) && !current,
+    error: current ? result.error : null,
+  };
 }

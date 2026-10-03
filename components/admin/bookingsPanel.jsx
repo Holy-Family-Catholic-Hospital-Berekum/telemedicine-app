@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import SchedulingModal from "./schedulingModal.jsx";
 import CreateScheduleModal from "./createScheduleModal.jsx";
 import ConfirmDialog from "./confirmDialog.jsx";
+import { TYPE_LABELS, MODE_LABELS, OUTCOME_LABELS, formatDateTime } from "../../src/constants";
 import {
   IconPhone,
   IconCalendar,
@@ -154,13 +155,15 @@ export default function BookingsPanel({
   doctors,
   slots,
   onSchedule,
+  onReschedule,
   onMarkDone,
   onCreateSlot,
   onCancelSlot,
 }) {
   const [subtab, setSubtab] = useState("toSchedule");
   const [activeBooking, setActiveBooking] = useState(null);
-  const [closing, setClosing] = useState(null);
+  const [rescheduling, setRescheduling] = useState(null);
+  const [closing, setClosing] = useState(null); // { booking, outcome }
   const [creatingSlot, setCreatingSlot] = useState(false);
   const [cancellingSlot, setCancellingSlot] = useState(null);
 
@@ -183,16 +186,11 @@ export default function BookingsPanel({
     setTimeout(() => setCopiedId((cur) => (cur === id ? null : cur)), 1500);
   }
 
-  // Every booking that reaches this dashboard has already been paid —
-  // the server only writes a booking record after Flutterwave confirms
-  // the charge, so there's no "pending payment" state to filter on here
-  // any more. This just guards against a stray/failed record slipping
-  // through rather than doing any real gating.
-  const toSchedule = bookings.filter(
-    (b) => b.paymentStatus !== "failed" && !b.consultationId,
-  );
-  const scheduled = bookings.filter((b) => b.consultationId);
-  const reschedules = bookings.filter((b) => b.rescheduleRequested);
+  // admin.jsx only loads paid and scheduled bookings; unpaid drafts never
+  // appear here.
+  const toSchedule = bookings.filter((b) => b.status === "paid" && !b.consultationId);
+  const scheduled = bookings.filter((b) => b.status === "scheduled");
+  const reschedules = bookings.filter((b) => b.rescheduleRequest?.status === "requested");
   const openSlots = slots.filter((s) => s.status === "open");
 
   const doctorName = (id) => doctors.find((d) => d.id === id)?.name ?? "—";
@@ -218,7 +216,7 @@ export default function BookingsPanel({
         b.mode,
         b.bookingId,
         b.consultationId,
-        doctorName(b.doctorId),
+        b.doctorName,
       ]
         .filter(Boolean)
         .join(" ")
@@ -234,7 +232,7 @@ export default function BookingsPanel({
     return slots.filter((s) => {
       const haystack = [
         s.id,
-        doctorName(s.doctorId),
+        s.doctorName,
         s.type,
         s.mode,
         s.status,
@@ -341,13 +339,13 @@ export default function BookingsPanel({
                         />
                       </td>
                       <td className="admin-cell-name">
-                        {doctorName(s.doctorId)}
+                        {s.doctorName || doctorName(s.doctorUid)}
                       </td>
                       <td>
-                        <div>{s.type}</div>
-                        <div className="admin-cell-sub">{s.mode}</div>
+                        <div>{TYPE_LABELS[s.type] ?? s.type}</div>
+                        <div className="admin-cell-sub">{MODE_LABELS[s.mode] ?? s.mode}</div>
                       </td>
-                      <td>{new Date(s.date).toLocaleDateString()}</td>
+                      <td>{s.date}</td>
                       <td>
                         {s.startTime}–{s.endTime}
                       </td>
@@ -402,8 +400,21 @@ export default function BookingsPanel({
                       <div className="admin-cell-sub">{b.phone}</div>
                     </td>
                     <td>
-                      <div>{b.type}</div>
-                      <div className="admin-cell-sub">{b.mode}</div>
+                      <div>{TYPE_LABELS[b.type] ?? b.type}</div>
+                      <div className="admin-cell-sub">{MODE_LABELS[b.mode] ?? b.mode}</div>
+                      {subtab === "toSchedule" && (b.requestedDoctorName || b.preferredTime) && (
+                        <div className="admin-cell-sub">
+                          Asked for {b.requestedDoctorName || "any doctor"}
+                          {b.preferredTime ? ` · ${formatDateTime(b.preferredTime)}` : ""}
+                          {b.slotLost ? " (slot taken)" : ""}
+                        </div>
+                      )}
+                      {subtab === "reschedules" && (
+                        <div className="admin-cell-sub">
+                          Wants: {b.rescheduleRequest?.preferredTime || "any time"}
+                          {b.rescheduleRequest?.reason ? ` · ${b.rescheduleRequest.reason}` : ""}
+                        </div>
+                      )}
                     </td>
                     {subtab === "toSchedule" && (
                       <td>
@@ -427,10 +438,9 @@ export default function BookingsPanel({
                               className="admin-cell-sub"
                               style={{ marginTop: 4 }}
                             >
-                              {doctorName(b.doctorId)} ·{" "}
-                              {b.scheduledTime
-                                ? new Date(b.scheduledTime).toLocaleString()
-                                : "—"}
+                              {b.doctorName || "—"} ·{" "}
+                              {formatDateTime(b.scheduledTime)}
+                              {b.callStartedAt ? " · call started" : ""}
                             </div>
                           </>
                         ) : (
@@ -448,26 +458,30 @@ export default function BookingsPanel({
                             <IconCalendar size={14} /> Schedule
                           </button>
                         )}
-                        {subtab === "reschedules" && (
+                        {(subtab === "reschedules" ||
+                          (subtab === "scheduled" && !b.callStartedAt)) && (
                           <button
                             className="btn btn-outline"
-                            onClick={() => setActiveBooking(b)}
+                            onClick={() => setRescheduling(b)}
                           >
                             <IconPhone size={14} /> Reschedule
                           </button>
                         )}
-                        {subtab === "scheduled" && b.mode === "In person" && (
-                          <button
-                            className="btn btn-primary"
-                            onClick={() => setClosing(b)}
-                          >
-                            <IconCheck size={14} /> Mark done
-                          </button>
-                        )}
-                        {subtab === "scheduled" && b.mode === "Online" && (
-                          <span className="admin-cell-sub">
-                            Closed by the doctor
-                          </span>
+                        {subtab === "scheduled" && (
+                          <>
+                            <button
+                              className="btn btn-primary"
+                              onClick={() => setClosing({ booking: b, outcome: "completed" })}
+                            >
+                              <IconCheck size={14} /> Completed
+                            </button>
+                            <button
+                              className="btn btn-outline"
+                              onClick={() => setClosing({ booking: b, outcome: "no_show" })}
+                            >
+                              No-show
+                            </button>
+                          </>
                         )}
                       </div>
                     </td>
@@ -491,6 +505,27 @@ export default function BookingsPanel({
         />
       )}
 
+      {rescheduling && (
+        <SchedulingModal
+          booking={rescheduling}
+          doctors={doctors}
+          reschedule
+          onClose={() => setRescheduling(null)}
+          onConfirm={({ doctorUid, scheduledTime }) => {
+            onReschedule({ bookingId: rescheduling.bookingId, doctorUid, scheduledTime });
+            setRescheduling(null);
+          }}
+          onDecline={
+            rescheduling.rescheduleRequest?.status === "requested"
+              ? () => {
+                  onReschedule({ bookingId: rescheduling.bookingId, decline: true });
+                  setRescheduling(null);
+                }
+              : undefined
+          }
+        />
+      )}
+
       {creatingSlot && (
         <CreateScheduleModal
           doctors={doctors}
@@ -510,8 +545,7 @@ export default function BookingsPanel({
             <>
               This removes the {cancellingSlot.startTime}–
               {cancellingSlot.endTime} opening for{" "}
-              {doctorName(cancellingSlot.doctorId)} on{" "}
-              {new Date(cancellingSlot.date).toLocaleDateString()}. Patients
+              {cancellingSlot.doctorName} on {cancellingSlot.date}. Patients
               will no longer see it as bookable.
             </>
           }
@@ -527,20 +561,22 @@ export default function BookingsPanel({
 
       {closing && (
         <ConfirmDialog
-          title="Mark this consultation done?"
+          title={`Close as ${OUTCOME_LABELS[closing.outcome].toLowerCase()}?`}
           body={
             <>
-              This ends {closing.patientName}'s consultation, expires{" "}
-              {closing.consultationId} permanently, and{" "}
-              <strong>deletes their booking record</strong>. There are no
-              backups, so it cannot be undone. Only continue if{" "}
-              {doctorName(closing.doctorId)} has actually seen the patient.
+              This closes {closing.booking.patientName}'s consultation{" "}
+              {closing.booking.consultationId} and{" "}
+              <strong>permanently deletes their booking details</strong>{" "}
+              (date of birth, sex, location, phone). A short history record
+              (doctor, times, amount) is kept. It can't be undone.
+              {closing.outcome === "completed" &&
+                ` Only continue if ${closing.booking.doctorName || "the doctor"} has seen the patient.`}
             </>
           }
-          confirmLabel="Mark done"
+          confirmLabel={`Close as ${OUTCOME_LABELS[closing.outcome].toLowerCase()}`}
           tone="danger"
           onConfirm={() => {
-            onMarkDone(closing);
+            onMarkDone(closing.booking, closing.outcome);
             setClosing(null);
           }}
           onClose={() => setClosing(null)}

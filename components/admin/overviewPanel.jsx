@@ -6,28 +6,15 @@ import {
   IconShield,
   IconAlert,
   IconCheck,
-  IconX,
 } from "./icons.jsx";
 
-const activityIcon = {
-  confirmed: IconCheck,
-  rejected: IconX,
-  blocked_duplicate: IconAlert,
-};
-const activityTint = {
-  confirmed: { bg: "var(--color-success-bg)", fg: "var(--color-success)" },
-  rejected: { bg: "var(--color-danger-bg)", fg: "var(--color-danger)" },
-  blocked_duplicate: {
-    bg: "var(--color-warning-bg)",
-    fg: "var(--color-warning)",
-  },
-};
-const activityText = {
-  confirmed: (a) => `${a.account} confirmed payment for ${a.referenceCode}`,
-  rejected: (a) => `${a.account} rejected reference ${a.referenceCode}`,
-  blocked_duplicate: (a) =>
-    `Blocked reuse attempt on ${a.referenceCode} by ${a.account}`,
-};
+// Recent audit-log entries. Failed/denied ones (flagged payments, missing
+// recordings, bad webhook signatures) stand out.
+function tintFor(entry) {
+  return entry.result && entry.result !== "success"
+    ? { Icon: IconAlert, bg: "var(--color-warning-bg)", fg: "var(--color-warning)" }
+    : { Icon: IconCheck, bg: "var(--color-success-bg)", fg: "var(--color-success)" };
+}
 
 // Payments are confirmed automatically by Paystack — there is no manual
 // "awaiting verification" step for admin, so that stat card (and the
@@ -88,17 +75,15 @@ export default function OverviewPanel({
           <div className="admin-panel-head">
             <div>
               <h2>Recent activity</h2>
-              <p>Reference-ledger events</p>
+              <p>Latest entries from the audit log</p>
             </div>
           </div>
           <div className="activity-list">
             {recentActivity.length === 0 ? (
               <div className="admin-empty">No recent activity yet.</div>
             ) : (
-              recentActivity.slice(0, 4).map((a) => {
-                const Icon = activityIcon[a.type];
-                const tint = activityTint[a.type];
-                if (!Icon || !tint) return null; // unknown event type — skip rather than crash
+              recentActivity.slice(0, 6).map((a) => {
+                const { Icon, ...tint } = tintFor(a);
                 return (
                   <div className="activity-row" key={a.id}>
                     <div
@@ -109,10 +94,10 @@ export default function OverviewPanel({
                     </div>
                     <div>
                       <div className="activity-text">
-                        {activityText[a.type](a)}
+                        {a.action}
                       </div>
                       <div className="activity-meta">
-                        {new Date(a.timestamp).toLocaleString()}
+                        {a.timestamp ? new Date(a.timestamp).toLocaleString() : "Just now"}
                       </div>
                     </div>
                   </div>

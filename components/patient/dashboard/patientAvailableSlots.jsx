@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import { CalendarPlus } from "lucide-react";
-import { formatDateTime } from "./patientUtils";
+import { TYPE_LABELS, MODE_LABELS, formatDateTime } from "../../../src/constants";
 
 /**
  * AvailableSlots
@@ -37,7 +37,7 @@ export default function AvailableSlots({ slots }) {
             type: slot.type,
             mode: slot.mode,
           });
-          if (slot.doctorId) params.set("doctor", slot.doctorId);
+          if (slot.doctorUid) params.set("doctor", slot.doctorUid);
 
           return (
             <div
@@ -47,9 +47,9 @@ export default function AvailableSlots({ slots }) {
               <div className="text-sm">
                 <p className="font-medium text-[#12242C]">{slot.doctorName}</p>
                 <p className="text-xs text-[#5C6B72]">
-                  {slot.type} ·{" "}
-                  {slot.mode === "online" ? "Online" : "In person"} ·{" "}
-                  {formatDateTime(`${slot.date}T${slot.startTime}`)}
+                  {TYPE_LABELS[slot.type] ?? slot.type} ·{" "}
+                  {MODE_LABELS[slot.mode] ?? slot.mode} ·{" "}
+                  {formatDateTime(slot.startAt)}
                 </p>
               </div>
               <Link

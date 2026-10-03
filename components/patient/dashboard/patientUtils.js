@@ -13,7 +13,7 @@ export function getCallWindow(scheduledTime, now = new Date()) {
 }
 
 export function formatCurrency(amount) {
-  return `GHS ${amount.toFixed(2)}`;
+  return `GHS ${Number(amount ?? 0).toFixed(2)}`;
 }
 
 export function formatCountdown(expiresAt, now = new Date()) {
@@ -25,12 +25,4 @@ export function formatCountdown(expiresAt, now = new Date()) {
   return `${minutes}m left`;
 }
 
-export function formatDateTime(iso) {
-  return new Date(iso).toLocaleString(undefined, {
-    weekday: 'short',
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  });
-}
+export { formatDateTime } from "../../../src/constants";

@@ -10,18 +10,12 @@ import {
 import SensitiveDetails from "../sensitiveDetails";
 import { getCallWindow } from "../docUtils";
 import VerifyConsultationIdModal from "./verifyConsultationIdModal";
+import { TYPE_LABELS, formatTime } from "../../../src/constants";
 
 const MODE_STYLE = {
   online: { spine: "#0095D9", chipText: "#0095D9", label: "Online" },
-  "in person": { spine: "#F88535", chipText: "#F88535", label: "In person" },
+  in_person: { spine: "#F88535", chipText: "#F88535", label: "In person" },
 };
-
-function formatTime(iso) {
-  return new Date(iso).toLocaleTimeString(undefined, {
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
 
 export default function ConsultationCard({
   consultation,
@@ -30,29 +24,21 @@ export default function ConsultationCard({
 }) {
   const [expandedHistory, setExpandedHistory] = useState(false);
   const [verifyModalOpen, setVerifyModalOpen] = useState(false);
-  const mode = MODE_STYLE[consultation.mode];
+  const mode = MODE_STYLE[consultation.mode] ?? MODE_STYLE.in_person;
   const isOnline = consultation.mode === "online";
-  const callInProgress = isOnline && Boolean(consultation.callStartedAt);
+  const callInProgress = isOnline && consultation.status === "in_progress";
   const { unlocked, minutesUntilUnlock } = getCallWindow(
     consultation.scheduledTime,
   );
 
-  // Doctors never see the consultation ID on their dashboard — they must
-  // obtain it from admin/reception each time and enter it in
-  // VerifyConsultationIdModal before a call is allowed to start. This is
-  // an organisational control (forces the doctor into the hospital's
-  // telemedicine room to get the ID), not a substitute for the real
-  // security boundary: startVideoCall() on the server must independently
-  // verify the entered ID against consultations.consultationId before
-  // issuing a room, never trust that this client-side check ran.
+  // Doctors aren't shown the consultation ID; they get it from reception
+  // and type it in. startVideoCall checks it on the server (along with the
+  // assignment and time window). This is an organisational control, not
+  // the security boundary: rules and the function are.
   async function handleVerifyId(enteredId) {
-    const normalized = enteredId.trim().toUpperCase();
-    if (normalized !== consultation.consultationId.toUpperCase()) {
-      return false;
-    }
-    await onStartCall(consultation.consultationId);
-    setVerifyModalOpen(false);
-    return true;
+    const result = await onStartCall(consultation.consultationId, enteredId);
+    if (result.ok) setVerifyModalOpen(false);
+    return result;
   }
 
   return (
@@ -71,7 +57,7 @@ export default function ConsultationCard({
                 {formatTime(consultation.scheduledTime)}
               </span>
               <span>·</span>
-              <span>{consultation.type}</span>
+              <span>{TYPE_LABELS[consultation.type] ?? consultation.type}</span>
               <span
                 className="rounded-sm px-1.5 py-0.5 text-xs"
                 style={{

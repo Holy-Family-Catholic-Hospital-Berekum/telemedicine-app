@@ -6,15 +6,14 @@
 //
 // Security decisions made here, and why:
 //
-// 1. Role comes from Firestore, never from anything the client claims.
-//    On sign-in we look the uid up in `adminUsers` (staff) or `users`
-//    (patients), depending on which login page was used (see note 8).
-//    The client only ever *reads* these — writes to adminUsers must stay
-//    restricted to the hospital's own admin console / Cloud Functions,
-//    per Security Architecture 6.1. This context does not grant access
-//    by itself; your Firestore Security Rules and Cloud Functions are
-//    the real enforcement boundary. Treat `role` here as UI routing
-//    only, not a security control.
+// 1. Role comes from the signed `role` custom claim in the ID token,
+//    which only Cloud Functions set (registerPatient, createDoctorAccount,
+//    the staffAdmin script). The matching profile document (`adminUsers`
+//    for staff, `users` for patients) supplies display data and must be
+//    `active`. No claim, or an inactive profile, means no role at all:
+//    the app never defaults anyone to "patient". Firestore Security Rules
+//    and Cloud Functions read the same claim and are the real
+//    enforcement; `role` here is UI routing only.
 //
 // 2. Generic error messages. Firebase error codes like
 //    'auth/user-not-found' vs 'auth/wrong-password' are collapsed into
@@ -39,19 +38,12 @@
 //    expire and require re-authentication after a period of inactivity"
 //    (6.2) at the app level, on top of Firebase's own token refresh.
 //
-// 5. MFA is intentionally NOT implemented yet (per your instruction, to
-//    avoid friction while testing). Search this file for "MFA HOOK" for
-//    the one place it plugs in later — Firebase's multi-factor sign-in
-//    surfaces as an `auth/multi-factor-auth-required` error on
-//    signInWithEmailAndPassword, which you catch and resolve with
-//    getMultiFactorResolver() + TotpMultiFactorGenerator.
-//
-//    IMPORTANT for anything reading `profile.mfaEnabled` (e.g. the
-//    doctor dashboard header badge): this flag only reflects what's
-//    stored on the adminUsers doc — it is NOT proof that a real MFA
-//    challenge ran at sign-in, because none does yet. Don't present it
-//    to users as an active security guarantee until the MFA HOOK below
-//    is wired up for real.
+// 5. Staff MFA (TOTP) is planned but not implemented yet; it needs the
+//    Identity Platform upgrade. Search for "MFA HOOK" here, in
+//    functions/lib/core.js and in firestore.rules for where it plugs in.
+//    Firebase surfaces it as `auth/multi-factor-auth-required` on
+//    signInWithEmailAndPassword, resolved with getMultiFactorResolver()
+//    + TotpMultiFactorGenerator. Until then the UI must not claim MFA.
 //
 // 6. emailVerified is tracked as its own state, not read directly off
 //    firebaseUser.emailVerified. That field is a snapshot cached by the
@@ -79,6 +71,7 @@
 //      "staff"   (hidden route)    -> only accepts accounts that have an
 //                                     `adminUsers` doc with role
 //                                     "admin" or "doctor".
+//    (Checked against the role claim, then the profile document.)
 //    An account on the wrong page is signed straight back out and gets
 //    the same generic "Invalid email or password." error as a wrong
 //    password, so neither page reveals which kind of account exists.
@@ -112,8 +105,11 @@ import {
   browserLocalPersistence,
   browserSessionPersistence,
 } from "firebase/auth";
-import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
-import { auth, db } from "../firebase";
+import { doc, getDoc } from "firebase/firestore";
+import { httpsCallable } from "firebase/functions";
+import { auth, db, functions } from "../firebase";
+
+const callRegisterPatient = httpsCallable(functions, "registerPatient");
 
 const AuthContext = createContext(null);
 
@@ -147,6 +143,7 @@ function mapAuthError(err) {
     case "auth/user-not-found":
     case "auth/wrong-password":
     case "auth/invalid-credential":
+    case "auth/user-disabled":
       return "Invalid email or password.";
     case "auth/too-many-requests":
       return "Too many attempts. Please wait a moment and try again.";
@@ -164,17 +161,19 @@ function mapAuthError(err) {
   }
 }
 
-// Default profile used by the onAuthStateChanged listener (page load /
-// token refresh) when a role can't be determined. signIn() does NOT use
-// this — it fails closed instead, so a Firestore hiccup can never let a
-// staff account through the patient page.
-function fallbackProfile(fbUser) {
-  return { role: "patient", name: fbUser.displayName || "Patient" };
+/** The `role` claim, refreshing the token once if it isn't there yet. */
+async function roleClaim(fbUser) {
+  let result = await fbUser.getIdTokenResult();
+  if (!result.claims.role) {
+    // A just-registered account gets its claim moments after creation.
+    result = await fbUser.getIdTokenResult(true);
+  }
+  return typeof result.claims.role === "string" ? result.claims.role : null;
 }
 
 export function AuthProvider({ children }) {
   const [firebaseUser, setFirebaseUser] = useState(null);
-  const [profile, setProfile] = useState(null); // { role, name, department?, mfaEnabled?, emailVerified }
+  const [profile, setProfile] = useState(null); // { uid, role, name, department?, phone? }
   const [emailVerifiedFlag, setEmailVerifiedFlag] = useState(false);
   const [initializing, setInitializing] = useState(true);
   const idleTimer = useRef(null);
@@ -206,44 +205,41 @@ export function AuthProvider({ children }) {
     [clearIdleTimer],
   );
 
-  // Resolve role from Firestore. Reads are allowed by Security Rules
-  // only for the signed-in user's own uid — see 6.1 in the architecture doc.
+  // Role from the signed claim; display data from the matching profile,
+  // which Security Rules let each user read for their own uid only.
+  // Returns null (no access) when there's no claim, the claim doesn't
+  // suit this login page, or the profile is missing or not active.
   //
-  //   audience "staff"   -> adminUsers only; null if no doc there
-  //   audience "patient" -> users only; null if no doc there
-  //   audience undefined -> adminUsers first, then users, then a
-  //                         fallback profile (page refresh / listener)
+  //   audience "staff"   -> admin or doctor only
+  //   audience "patient" -> patient only
+  //   audience undefined -> any role (page refresh / listener)
   const loadProfile = useCallback(async (fbUser, audience) => {
-    if (audience !== "patient") {
-      const adminSnap = await getDoc(doc(db, "adminUsers", fbUser.uid));
-      if (adminSnap.exists()) {
-        const data = adminSnap.data();
-        return {
-          uid: fbUser.uid,
-          role: data.role || "admin",
-          mfaEnabled: !!data.mfaEnabled,
-          name: data.name || fbUser.displayName || "Staff",
-          // Doctor accounts live in adminUsers too (role: "doctor"),
-          // and the doctor dashboard header needs this. null rather
-          // than "" so the UI can tell "not set yet" from empty.
-          department: data.department || null,
-        };
-      }
-      if (audience === "staff") return null;
-    }
+    const role = await roleClaim(fbUser);
+    if (!role) return null;
+    const isStaff = STAFF_ROLES.includes(role);
+    if (audience === "staff" && !isStaff) return null;
+    if (audience === "patient" && role !== "patient") return null;
+    if (!isStaff && role !== "patient") return null;
 
-    const patientSnap = await getDoc(doc(db, "users", fbUser.uid));
-    if (patientSnap.exists()) {
-      const data = patientSnap.data();
-      return {
-        uid: fbUser.uid,
-        role: "patient",
-        name: data.name || fbUser.displayName || "Patient",
-        phone: data.phone,
-      };
-    }
-    if (audience === "patient") return null;
-    return { uid: fbUser.uid, ...fallbackProfile(fbUser) };
+    const snap = await getDoc(
+      doc(db, isStaff ? "adminUsers" : "users", fbUser.uid),
+    );
+    if (!snap.exists() || snap.data().status !== "active") return null;
+    const data = snap.data();
+    return isStaff
+      ? {
+          uid: fbUser.uid,
+          role,
+          name: data.name || fbUser.displayName || "Staff",
+          // null rather than "" so the UI can tell "not set" from empty.
+          department: data.department || null,
+        }
+      : {
+          uid: fbUser.uid,
+          role,
+          name: data.name || fbUser.displayName || "Patient",
+          phone: data.phone,
+        };
   }, []);
 
   useEffect(() => {
@@ -276,11 +272,18 @@ export function AuthProvider({ children }) {
       }
       try {
         const p = await loadProfile(fbUser);
+        if (!p) {
+          // No role, or the account was deactivated: fail closed.
+          await signOut(auth).catch(() => {});
+          return;
+        }
         loadedProfileUidRef.current = fbUser.uid;
         setProfile(p);
         scheduleIdleLogout(p.role);
       } catch {
-        setProfile(fallbackProfile(fbUser));
+        // Couldn't reach Firebase. Stay signed in but with no role, so
+        // protected pages refuse until a reload succeeds.
+        setProfile(null);
       } finally {
         setInitializing(false);
       }
@@ -300,28 +303,57 @@ export function AuthProvider({ children }) {
     };
   }, [firebaseUser, profile, scheduleIdleLogout, clearIdleTimer]);
 
+  // Creates the Auth account, then registerPatient writes the profile, the
+  // consent record and the role claim on the server. If that fails, the
+  // half-made Auth account is deleted so the email can be used again.
   const signUpPatient = useCallback(
-    async ({ name, phone, email, password }) => {
-      const cred = await createUserWithEmailAndPassword(
-        auth,
-        email.trim(),
-        password,
-      );
-      await updateProfile(cred.user, { displayName: name.trim() });
-      await setDoc(doc(db, "users", cred.user.uid), {
-        uid: cred.user.uid,
-        name: name.trim(),
-        phone: phone.trim(),
-        email: email.trim(),
-        role: "patient", // Users.jsx filters strictly on this
-        status: "active", // Users.jsx's status pill checks === "active"
-        emailVerified: false,
-        createdAt: serverTimestamp(),
-      });
-      await sendEmailVerification(cred.user);
-      return cred.user;
+    async ({ name, phone, email, password, acceptedTerms }) => {
+      signingInRef.current = true;
+      try {
+        let cred;
+        try {
+          cred = await createUserWithEmailAndPassword(
+            auth,
+            email.trim(),
+            password,
+          );
+        } catch (err) {
+          throw new Error(mapAuthError(err), { cause: err });
+        }
+        try {
+          await updateProfile(cred.user, { displayName: name.trim() });
+          await callRegisterPatient({
+            name: name.trim(),
+            phone: phone.trim(),
+            acceptedTerms: acceptedTerms === true,
+          });
+        } catch (err) {
+          await cred.user.delete().catch(() => signOut(auth).catch(() => {}));
+          throw new Error(
+            err?.code?.startsWith("functions/") && err.message
+              ? err.message
+              : "We couldn't create your account. Please try again.",
+            { cause: err },
+          );
+        }
+        await sendEmailVerification(cred.user);
+
+        const p = await loadProfile(cred.user, "patient");
+        if (!p) {
+          await signOut(auth).catch(() => {});
+          throw new Error("We couldn't finish setting up your account. Please sign in.");
+        }
+        setFirebaseUser(cred.user);
+        setEmailVerifiedFlag(cred.user.emailVerified ?? false);
+        loadedProfileUidRef.current = cred.user.uid;
+        setProfile(p);
+        scheduleIdleLogout(p.role);
+        return cred.user;
+      } finally {
+        signingInRef.current = false;
+      }
     },
-    [],
+    [loadProfile, scheduleIdleLogout],
   );
 
   const signIn = useCallback(
@@ -450,6 +482,9 @@ export function AuthProvider({ children }) {
     if (!auth.currentUser) return false;
     await auth.currentUser.reload();
     const verified = auth.currentUser.emailVerified;
+    // Rules and functions read email_verified from the ID token, so mint a
+    // fresh one now rather than waiting up to an hour for the next refresh.
+    if (verified) await auth.currentUser.getIdToken(true);
     setEmailVerifiedFlag(verified);
     // Keep firebaseUser in sync too, in case other consumers read
     // fields (displayName, etc.) directly off `user`.
