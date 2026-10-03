@@ -18,6 +18,7 @@ const { defineSecret } = require("firebase-functions/params");
 const logger = require("firebase-functions/logger");
 const {
   db,
+  FieldValue,
   Timestamp,
   serverTime,
   OUTCOMES,
@@ -108,28 +109,39 @@ exports.startVideoCall = onCall(async (request) => {
   const callRef = db.collection("calls").doc(consultationId);
   const recordingEnabled = await recordingSwitchOn();
 
-  // The doctor always makes the WebRTC offer, so a doctor (re)joining
-  // starts signalling from a clean shell. The patient answers whatever
-  // offer is there, creating the shell first if the doctor isn't in yet.
-  if (caller.role === "doctor") {
-    await deleteTree(callRef);
-  }
-  const shell = {
-    doctorUid: consultation.doctorUid,
-    patientUid: consultation.patientUid,
-    // Snapshot of the admin switch at call start. Turning it off mid-call
-    // doesn't stop a recording already running; turning it on applies to
-    // calls that start afterwards.
-    recordingEnabled,
-    recordingActive: false,
-    createdAt: serverTime(),
-    expiresAt: Timestamp.fromMillis(now + CALL_DOC_TTL_HOURS * 3600 * 1000),
-  };
+  // Signalling protocol (see components/video/useWebRTCCall.js):
+  // - The doctor always makes the WebRTC offer. A doctor (re)joining clears
+  //   offer + answer, and the patient answers the doctor's fresh offer.
+  // - Each patient (re)join bumps patientSeq and clears the answer. The
+  //   doctor's browser sees the bump and makes a new offer tagged with that
+  //   seq; the patient only answers an offer carrying its own seq, so it
+  //   never answers a stale one.
+  // ICE candidates are tagged with the offer/answer id they belong to, so
+  // old ones are simply ignored.
+  const expiresAt = Timestamp.fromMillis(now + CALL_DOC_TTL_HOURS * 3600 * 1000);
+  let patientSeq = null;
   await db.runTransaction(async (tx) => {
     const [callSnap, consultationSnap] = await Promise.all([tx.get(callRef), tx.get(ref)]);
     const current = consultationSnap.data();
-    if (!callSnap.exists || caller.role === "doctor") {
-      tx.set(callRef, shell);
+    if (!callSnap.exists) {
+      patientSeq = caller.role === "patient" ? 1 : 0;
+      tx.set(callRef, {
+        doctorUid: consultation.doctorUid,
+        patientUid: consultation.patientUid,
+        // Snapshot of the admin switch at call start. Turning it off
+        // mid-call doesn't stop a recording already running; turning it on
+        // applies to calls that start afterwards.
+        recordingEnabled,
+        recordingActive: false,
+        patientSeq,
+        createdAt: serverTime(),
+        expiresAt,
+      });
+    } else if (caller.role === "doctor") {
+      tx.update(callRef, { offer: FieldValue.delete(), answer: FieldValue.delete(), expiresAt });
+    } else {
+      patientSeq = (callSnap.data().patientSeq || 0) + 1;
+      tx.update(callRef, { patientSeq, answer: FieldValue.delete(), expiresAt });
     }
 
     const joinedField = caller.role === "doctor" ? "doctorFirstJoinedAt" : "patientFirstJoinedAt";
@@ -160,6 +172,8 @@ exports.startVideoCall = onCall(async (request) => {
     consultationId,
     callStartedAt: toDate(fresh.callStartedAt)?.toISOString() ?? null,
     recordingEnabled,
+    // The patient answers only offers carrying this number.
+    ...(caller.role === "patient" ? { patientSeq } : {}),
   };
 });
 

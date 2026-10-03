@@ -4,7 +4,9 @@ import { Clock3, Radio, LogOut, Home as HomeIcon } from "lucide-react";
 import { useAuth } from "../../../src/context/authContext.jsx";
 import HealthcarePreloader from "../../../src/components/common/healthcarePreloader.jsx";
 
+import { callableMessage } from "../../../src/constants";
 import {
+  joinVideoCall,
   fetchMyBookings,
   fetchAvailableSlots,
   fetchConsultationHistory,
@@ -29,7 +31,9 @@ export default function Dashboard() {
   const [bookings, setBookings] = useState(null);
   const [slots, setSlots] = useState([]);
   const [history, setHistory] = useState(null);
-  const [activeCallBookingId, setActiveCallBookingId] = useState(null);
+  // { bookingId, patientSeq } for the call that's open, if any.
+  const [activeCall, setActiveCall] = useState(null);
+  const [rejoinError, setRejoinError] = useState(null);
 
   useEffect(() => {
     if (!user) return;
@@ -60,12 +64,20 @@ export default function Dashboard() {
   }, [user]);
 
 
-  function handleRejoinCall(booking) {
-    if (!booking?.consultationId) {
-      console.error("Cannot rejoin call: consultation ID is missing.");
-      return;
+  // Rejoin goes through startVideoCall again: the server re-checks access
+  // and gives this attempt a new patientSeq so the doctor re-offers.
+  async function handleRejoinCall(booking) {
+    if (!booking?.consultationId) return;
+    setRejoinError(null);
+    try {
+      const result = await joinVideoCall({
+        booking,
+        enteredConsultationId: booking.consultationId,
+      });
+      handleJoined(booking.bookingId, result);
+    } catch (err) {
+      setRejoinError(callableMessage(err, "We couldn't reconnect you. Try again."));
     }
-    setActiveCallBookingId(booking.bookingId);
   }
 
   function reloadBookings() {
@@ -84,7 +96,7 @@ export default function Dashboard() {
 
   function handleJoined(bookingId, result) {
     updateBooking(bookingId, { callStartedAt: result.callStartedAt });
-    setActiveCallBookingId(bookingId);
+    setActiveCall({ bookingId, patientSeq: result.patientSeq ?? 0 });
   }
 
   async function handleSignOut() {
@@ -113,7 +125,7 @@ export default function Dashboard() {
   );
 
   const activeCallBooking = safeBookings.find(
-    (booking) => booking.bookingId === activeCallBookingId,
+    (booking) => booking.bookingId === activeCall?.bookingId,
   );
 
   const liveBookings = safeBookings.filter(
@@ -198,6 +210,7 @@ export default function Dashboard() {
           {liveBookings.length > 0 && (
             <section className="space-y-2.5">
               <h2 className="text-base font-medium">Live consultation</h2>
+              {rejoinError && <p className="text-xs text-[#B23A3A]">{rejoinError}</p>}
               {liveBookings.map((booking) => (
                 <div
                   key={booking.bookingId}
@@ -211,7 +224,7 @@ export default function Dashboard() {
                   </div>
                   <button
                     type="button"
-                    onClick={() => setActiveCallBookingId(booking.bookingId)}
+                    onClick={() => handleRejoinCall(booking)}
                     className="rounded-sm px-3 py-1.5 text-xs font-medium text-white shrink-0"
                     style={{ backgroundColor: "#0095D9" }}
                   >
@@ -277,9 +290,11 @@ export default function Dashboard() {
 
         {activeCallBooking && (
           <VideoCallModal
+            key={`${activeCall.bookingId}-${activeCall.patientSeq}`}
             consultationId={activeCallBooking.consultationId}
             role="patient"
-            onClose={() => setActiveCallBookingId(null)}
+            patientSeq={activeCall.patientSeq}
+            onClose={() => setActiveCall(null)}
           />
         )}
 

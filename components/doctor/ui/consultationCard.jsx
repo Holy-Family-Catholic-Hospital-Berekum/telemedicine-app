@@ -31,10 +31,22 @@ export default function ConsultationCard({
     consultation.scheduledTime,
   );
 
-  // Doctors aren't shown the consultation ID; they get it from reception
-  // and type it in. startVideoCall checks it on the server (along with the
-  // assignment and time window). This is an organisational control, not
-  // the security boundary: rules and the function are.
+  const [rejoinError, setRejoinError] = useState(null);
+  const [rejoining, setRejoining] = useState(false);
+
+  // Doctors get the consultation ID from reception and type it in to START
+  // a call (startVideoCall checks it, with the assignment and time window).
+  // Once the call has started, rejoining doesn't ask again. This is an
+  // organisational control, not the security boundary: rules and the
+  // function are.
+  async function handleRejoin() {
+    setRejoining(true);
+    setRejoinError(null);
+    const result = await onStartCall(consultation.consultationId, consultation.consultationId);
+    setRejoining(false);
+    if (!result.ok) setRejoinError(result.message);
+  }
+
   async function handleVerifyId(enteredId) {
     const result = await onStartCall(consultation.consultationId, enteredId);
     if (result.ok) setVerifyModalOpen(false);
@@ -119,12 +131,13 @@ export default function ConsultationCard({
             unlocked ? (
               <button
                 type="button"
-                onClick={() => setVerifyModalOpen(true)}
-                className="flex items-center gap-2 rounded-sm px-3.5 py-2 text-sm font-medium text-white transition"
+                onClick={() => (callInProgress ? handleRejoin() : setVerifyModalOpen(true))}
+                disabled={rejoining}
+                className="flex items-center gap-2 rounded-sm px-3.5 py-2 text-sm font-medium text-white transition disabled:opacity-60"
                 style={{ backgroundColor: "#0095D9" }}
               >
                 <Video size={15} strokeWidth={2} />
-                {callInProgress ? "Rejoin call" : "Start video call"}
+                {callInProgress ? (rejoining ? "Rejoining…" : "Rejoin call") : "Start video call"}
               </button>
             ) : (
               <span className="flex items-center gap-1.5 rounded-sm border border-[#DCE6EC] px-3 py-2 text-sm text-[#5C6B72]">
@@ -146,6 +159,12 @@ export default function ConsultationCard({
             <CheckSquare size={15} strokeWidth={1.75} />
             Mark done
           </button>
+
+          {rejoinError && (
+            <span className="text-xs" style={{ color: "#D64545" }}>
+              {rejoinError}
+            </span>
+          )}
 
           {!isOnline && (
             <span className="text-xs" style={{ color: "#F88535" }}>

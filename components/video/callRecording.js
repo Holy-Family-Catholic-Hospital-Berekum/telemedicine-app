@@ -3,13 +3,19 @@
 // Records a consultation from the doctor's browser. Calls are peer-to-peer
 // WebRTC with no media server, so recording both people means compositing
 // what is already on screen:
-//   - video: the remote and local <video> elements drawn onto a canvas
-//     (full-frame remote + small local picture-in-picture)
-//   - audio: both audio tracks mixed with the Web Audio API
+//   - video: the remote video, scaled to fit (letterboxed, never cropped or
+//     stretched), plus the doctor's own camera as a small picture-in-picture,
+//     drawn onto a canvas
+//   - audio: every live audio track from both sides, mixed with Web Audio
 //
 // Whether to record is decided by the server, never here: startRecording
 // returns { recording: false } unless an admin had call recording switched
 // on when the call started. Doctors and patients have no control over it.
+//
+// Performance: frames are drawn at DRAW_FPS from a Web Worker timer rather
+// than requestAnimationFrame. rAF runs at the screen rate (60+ Hz), which
+// was what made laptops freeze, and it stops entirely when the tab is in the
+// background, which froze the recording. Worker timers keep running.
 //
 // Upload is segmented: every SEGMENT_MS the recorder emits a chunk, which is
 // uploaded straight away to recordings/{recordingId}/parts/NNNNNN.webm
@@ -23,13 +29,13 @@ import { functions, storage } from "../../src/firebase";
 
 const CANVAS_WIDTH = 1280;
 const CANVAS_HEIGHT = 720;
-const PIP_WIDTH = 240;
-const PIP_HEIGHT = 180;
-const PIP_MARGIN = 24;
-const CANVAS_FPS = 24;
+const PIP_MAX_WIDTH = 280;
+const PIP_MAX_HEIGHT = 210;
+const PIP_MARGIN = 20;
+const DRAW_FPS = 15;
 const SEGMENT_MS = 30_000;
-// Caps storage at roughly 5 MB per minute.
-const VIDEO_BITS_PER_SECOND = 600_000;
+// About 5 MB per minute: clear faces and speech, modest storage.
+const VIDEO_BITS_PER_SECOND = 650_000;
 const AUDIO_BITS_PER_SECOND = 64_000;
 const UPLOAD_RETRIES = 4;
 
@@ -37,26 +43,46 @@ const callStartRecording = httpsCallable(functions, "startRecording");
 const callFinalizeRecording = httpsCallable(functions, "finalizeRecording");
 
 function pickSupportedMimeType() {
+  // VP8 first: far cheaper to encode than VP9 on ordinary laptops.
   const candidates = [
     "video/webm;codecs=vp8,opus",
     "video/webm;codecs=vp9,opus",
     "video/webm",
   ];
-  return (
-    candidates.find((type) => window.MediaRecorder?.isTypeSupported(type)) ||
-    ""
-  );
+  return candidates.find((type) => window.MediaRecorder?.isTypeSupported(type)) || "";
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+/** A timer that keeps ticking in background tabs (worker timers aren't paused). */
+function createTicker(fps, onTick) {
+  const source = `let t=setInterval(()=>postMessage(0),${Math.round(1000 / fps)});onmessage=()=>clearInterval(t);`;
+  const url = URL.createObjectURL(new Blob([source], { type: "text/javascript" }));
+  const worker = new Worker(url);
+  worker.onmessage = onTick;
+  return () => {
+    worker.postMessage("stop");
+    worker.terminate();
+    URL.revokeObjectURL(url);
+  };
+}
+
+/** Draws `video` inside the box, keeping its aspect ratio. */
+function drawContained(ctx, video, x, y, w, h) {
+  const vw = video.videoWidth;
+  const vh = video.videoHeight;
+  if (!vw || !vh) return;
+  const scale = Math.min(w / vw, h / vh);
+  const dw = vw * scale;
+  const dh = vh * scale;
+  ctx.drawImage(video, x + (w - dw) / 2, y + (h - dh) / 2, dw, dh);
+}
+
 /**
  * Usage: const recorder = createCompositeRecorder({...});
  *        const { recording } = await recorder.start();
- *        ... await recorder.stop();
- *
- * stop() resolves once every segment has been uploaded (or given up on)
- * and the server has been asked to finalise.
+ *        recorder.syncAudio();   // after the remote tracks change
+ *        await recorder.stop();
  */
 export function createCompositeRecorder({
   consultationId,
@@ -67,15 +93,12 @@ export function createCompositeRecorder({
   onError,
 }) {
   let canvas, ctx, canvasStream, audioCtx, audioDestination;
-  let localAudioSource = null;
-  let remoteAudioSource = null;
-  let remoteAudioAttachInterval = null;
+  const audioSources = new Map(); // trackId -> MediaStreamAudioSourceNode
   let mediaRecorder;
-  let drawHandle = null;
+  let stopTicker = null;
   let recordingId = null;
   let partIndex = 0;
   let stopped = false;
-  // Uploads run one after another so parts arrive in order.
   let uploadChain = Promise.resolve();
 
   function drawFrame() {
@@ -83,27 +106,46 @@ export function createCompositeRecorder({
     ctx.fillStyle = "#000";
     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
     if (remoteVideoEl && remoteVideoEl.readyState >= 2) {
-      ctx.drawImage(remoteVideoEl, 0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+      drawContained(ctx, remoteVideoEl, 0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
     }
-    if (localVideoEl && localVideoEl.readyState >= 2) {
+    if (localVideoEl && localVideoEl.readyState >= 2 && localVideoEl.videoWidth) {
+      const scale = Math.min(
+        PIP_MAX_WIDTH / localVideoEl.videoWidth,
+        PIP_MAX_HEIGHT / localVideoEl.videoHeight,
+      );
+      const w = localVideoEl.videoWidth * scale;
+      const h = localVideoEl.videoHeight * scale;
       ctx.drawImage(
         localVideoEl,
-        CANVAS_WIDTH - PIP_WIDTH - PIP_MARGIN,
-        CANVAS_HEIGHT - PIP_HEIGHT - PIP_MARGIN,
-        PIP_WIDTH,
-        PIP_HEIGHT,
+        CANVAS_WIDTH - w - PIP_MARGIN,
+        CANVAS_HEIGHT - h - PIP_MARGIN,
+        w,
+        h,
       );
     }
-    drawHandle = requestAnimationFrame(drawFrame);
   }
 
-  function tryAttachAudio(stream, existingSource) {
-    if (existingSource || !stream || !audioCtx) return existingSource;
-    const audioTracks = stream.getAudioTracks();
-    if (audioTracks.length === 0) return existingSource;
-    const source = audioCtx.createMediaStreamSource(new MediaStream(audioTracks));
-    source.connect(audioDestination);
-    return source;
+  /** Mixes in any live audio track not yet in the recording. */
+  function syncAudio() {
+    if (!audioCtx || stopped) return;
+    const live = new Set();
+    for (const stream of [localStream, remoteStream]) {
+      for (const track of stream?.getAudioTracks() || []) {
+        if (track.readyState !== "live") continue;
+        live.add(track.id);
+        if (!audioSources.has(track.id)) {
+          const source = audioCtx.createMediaStreamSource(new MediaStream([track]));
+          source.connect(audioDestination);
+          audioSources.set(track.id, source);
+        }
+      }
+    }
+    for (const [id, source] of audioSources) {
+      if (!live.has(id)) {
+        source.disconnect();
+        audioSources.delete(id);
+      }
+    }
   }
 
   async function uploadPart(blob, index) {
@@ -115,7 +157,7 @@ export function createCompositeRecorder({
         return;
       } catch (err) {
         if (attempt === UPLOAD_RETRIES) {
-          onError?.(new Error(`Recording segment ${name} failed to upload: ${err.message}`));
+          onError?.(new Error(`Recording segment ${name} failed to upload: ${err.code || err.message}`));
           return;
         }
         await sleep(1000 * 2 ** attempt);
@@ -138,21 +180,12 @@ export function createCompositeRecorder({
     canvas = document.createElement("canvas");
     canvas.width = CANVAS_WIDTH;
     canvas.height = CANVAS_HEIGHT;
-    ctx = canvas.getContext("2d");
-    canvasStream = canvas.captureStream(CANVAS_FPS);
+    ctx = canvas.getContext("2d", { alpha: false });
+    canvasStream = canvas.captureStream(DRAW_FPS);
 
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     audioDestination = audioCtx.createMediaStreamDestination();
-
-    localAudioSource = tryAttachAudio(localStream, localAudioSource);
-    remoteAudioSource = tryAttachAudio(remoteStream, remoteAudioSource);
-    // The remote audio track can arrive a moment after "connected".
-    let attempts = 0;
-    remoteAudioAttachInterval = setInterval(() => {
-      remoteAudioSource = tryAttachAudio(remoteStream, remoteAudioSource);
-      attempts += 1;
-      if (remoteAudioSource || attempts > 10) clearInterval(remoteAudioAttachInterval);
-    }, 500);
+    syncAudio();
 
     const combinedStream = new MediaStream([
       ...canvasStream.getVideoTracks(),
@@ -170,16 +203,16 @@ export function createCompositeRecorder({
     };
     mediaRecorder.onerror = (event) => onError?.(event.error || new Error("Recorder error"));
 
-    mediaRecorder.start(SEGMENT_MS);
     drawFrame();
+    stopTicker = createTicker(DRAW_FPS, drawFrame);
+    mediaRecorder.start(SEGMENT_MS);
     return { recording: true };
   }
 
   async function stop() {
     if (stopped) return;
     stopped = true;
-    if (drawHandle) cancelAnimationFrame(drawHandle);
-    if (remoteAudioAttachInterval) clearInterval(remoteAudioAttachInterval);
+    stopTicker?.();
 
     if (mediaRecorder && mediaRecorder.state !== "inactive") {
       await new Promise((resolve) => {
@@ -200,5 +233,5 @@ export function createCompositeRecorder({
     }
   }
 
-  return { start, stop, isActive: () => Boolean(recordingId) && !stopped };
+  return { start, stop, syncAudio };
 }

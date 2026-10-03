@@ -110,11 +110,14 @@ service cloud.firestore {
       function callData() {
         return get(/databases/$(database)/documents/calls/$(consultationId)).data;
       }
+      // Offer/answer: { type, sdp, id, seq (offer) | offerId (answer) },
+      // or null when that side leaves the call.
       function sdp(field) {
-        return request.resource.data[field] is map
-          && request.resource.data[field].keys().hasOnly(['type', 'sdp'])
-          && request.resource.data[field].sdp is string
-          && request.resource.data[field].sdp.size() < 100000;
+        return request.resource.data[field] == null
+          || (request.resource.data[field] is map
+              && request.resource.data[field].keys().hasOnly(['type', 'sdp', 'id', 'seq', 'offerId'])
+              && request.resource.data[field].sdp is string
+              && request.resource.data[field].sdp.size() < 100000);
       }
 
       allow read: if party(resource.data);
@@ -131,13 +134,13 @@ service cloud.firestore {
       match /offerCandidates/{candidateId} {
         allow read: if party(callData());
         allow create: if signedIn() && myUid() == callData().doctorUid
-                      && request.resource.data.size() <= 5;
+                      && request.resource.data.size() <= 6;
         allow update, delete: if false;
       }
       match /answerCandidates/{candidateId} {
         allow read: if party(callData());
         allow create: if signedIn() && myUid() == callData().patientUid
-                      && request.resource.data.size() <= 5;
+                      && request.resource.data.size() <= 6;
         allow update, delete: if false;
       }
     }
