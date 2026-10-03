@@ -509,7 +509,12 @@ export default function BookConsultation() {
   // the URL and never changes during the flow.
   const [slotId] = useState(() => searchParams.get("slotId") || null);
 
-  const selectedDoctor = doctors.find((d) => d.id === selectedDoctorId) || null;
+  // Admin switch. A slot claimed from the dashboard still carries its
+  // doctor (the admin chose that pairing when opening the slot).
+  const doctorChoiceAllowed = settings.doctorSelectionEnabled || Boolean(slotId);
+  const selectedDoctor = doctorChoiceAllowed
+    ? doctors.find((d) => d.id === selectedDoctorId) || null
+    : null;
 
   // If the consultation type changes to one the currently-selected doctor
   // doesn't take (e.g. an OPD-only GP after switching to Surgical), drop
@@ -946,7 +951,8 @@ export default function BookConsultation() {
                     </div>
                   </fieldset>
 
-                  {/* ---------- Doctor (optional) ---------- */}
+                  {/* ---------- Doctor (optional; admin can switch off) ---------- */}
+                  {doctorChoiceAllowed && (
                   <fieldset className="mt-8">
                     <legend className="text-[15px] font-medium mb-3">
                       Doctor
@@ -1057,6 +1063,7 @@ export default function BookConsultation() {
                       </div>
                     )}
                   </fieldset>
+                  )}
 
                   <fieldset className="mt-8">
                     <legend className="text-[15px] font-medium mb-3">

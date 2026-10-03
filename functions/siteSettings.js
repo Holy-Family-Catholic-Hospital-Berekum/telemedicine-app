@@ -236,5 +236,52 @@ exports.updateSiteImages = onCall({ region: REGION }, async (request) => {
   return { ok: true };
 });
 
+/* ------------------------------------------------------------------ */
+/* updateDoctorSelection                                               */
+/* ------------------------------------------------------------------ */
+
+/**
+ * data: { enabled: boolean }
+ * Whether patients may pick a specific doctor when booking. When off, the
+ * booking page hides the picker, the home page hides "Book this doctor",
+ * and createBookingDraft ignores any doctor sent (open slots still carry
+ * their doctor, since an admin created them).
+ */
+exports.updateDoctorSelection = onCall({ region: REGION }, async (request) => {
+  const uid = await requireAdmin(request);
+  const enabled = request.data?.enabled;
+  if (typeof enabled !== "boolean") {
+    throw new HttpsError("invalid-argument", "Choose on or off.");
+  }
+  const db = getDb();
+  const batch = db.batch();
+  batch.set(
+    settingsDoc(),
+    { doctorSelectionEnabled: enabled, updatedAt: SERVER_TIME(), updatedBy: uid },
+    { merge: true },
+  );
+  batch.set(db.collection("auditLog").doc(), {
+    actorId: uid,
+    actorRole: "admin",
+    action: enabled
+      ? "Allowed patients to choose their doctor"
+      : "Stopped patients choosing their doctor",
+    code: "settings.doctor_selection",
+    category: "account",
+    targetId: "Doctor selection",
+    result: "success",
+    timestamp: SERVER_TIME(),
+  });
+  await batch.commit();
+  return { enabled };
+});
+
+/** Missing setting = allowed (the original behaviour). */
+async function doctorSelectionEnabled() {
+  const snap = await settingsDoc().get();
+  return !(snap.exists && snap.data().doctorSelectionEnabled === false);
+}
+
+exports.doctorSelectionEnabled = doctorSelectionEnabled;
 exports.loadPrices = loadPrices;
 exports.DEFAULT_FEES = DEFAULT_FEES;

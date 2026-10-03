@@ -75,6 +75,8 @@ export function normaliseSettings(data) {
     sliderImages: Array.isArray(d.sliderImages)
       ? d.sliderImages.map(goodUrl).filter(Boolean)
       : [],
+    // Admin switch; missing = allowed. The server enforces it too.
+    doctorSelectionEnabled: d.doctorSelectionEnabled !== false,
   };
 }
 
@@ -97,6 +99,7 @@ function writeCache(data) {
         heroImage: data?.heroImage ? { url: data.heroImage.url } : null,
         authImage: data?.authImage ? { url: data.authImage.url } : null,
         sliderImages: (data?.sliderImages || []).map((i) => ({ url: i.url })),
+        doctorSelectionEnabled: data?.doctorSelectionEnabled !== false,
       }),
     );
   } catch {
@@ -153,7 +156,8 @@ const getSnapshot = () => state;
 /**
  * @returns {{ ready: boolean, settings: {
  *   prices: { OPD: number, SURGICAL: number },
- *   heroImage: string|null, authImage: string|null, sliderImages: string[]
+ *   heroImage: string|null, authImage: string|null, sliderImages: string[],
+ *   doctorSelectionEnabled: boolean
  * }}}
  */
 export function useSiteSettings() {

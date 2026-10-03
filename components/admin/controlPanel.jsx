@@ -35,6 +35,7 @@ import ConfirmDialog from "./confirmDialog.jsx";
 import "./controlPanel.css";
 import LegalDocsCard from "./legalDocsCard.jsx";
 import RecordingSwitchCard from "./recordingSwitchCard.jsx";
+import DoctorSelectionCard from "./doctorSelectionCard.jsx";
 
 const callUpdatePrices = httpsCallable(functions, "updateConsultationPrices");
 const callUpdateImages = httpsCallable(functions, "updateSiteImages");
@@ -913,6 +914,8 @@ export default function ControlPanel({ onAudit }) {
   return (
     <div className="cp-stack">
       <RecordingSwitchCard />
+
+      <DoctorSelectionCard enabled={raw?.doctorSelectionEnabled !== false} />
 
       <SingleImageCard
         slot="hero"

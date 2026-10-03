@@ -502,6 +502,7 @@ function DoctorPortrait({ doctor }) {
  */
 function DoctorsSlider() {
   const { doctors, loading } = useListedDoctors();
+  const { doctorSelectionEnabled } = useSiteSettings().settings;
   const [perView, setPerView] = useState(1);
   const [index, setIndex] = useState(0);
   const [paused, setPaused] = useState(false);
@@ -619,8 +620,9 @@ function DoctorsSlider() {
                       {doctor.focus}
                     </p>
                     {/* Sends the patient straight into the booking flow with
-                        this doctor pre-selected — bookConsultation.jsx reads
-                        the `doctor` query param on arrival. */}
+                        this doctor pre-selected. Hidden when the admin has
+                        switched doctor choice off. */}
+                    {doctorSelectionEnabled && (
                     <Link
                       to={`/book?doctor=${doctor.id}`}
                       className="mt-4 inline-flex items-center gap-1.5 rounded-full border border-[var(--forest)]/20 px-3.5 py-2 text-[12.5px] font-medium text-[var(--forest-2)]
@@ -630,6 +632,7 @@ function DoctorsSlider() {
                       <BookingGlyph className="shrink-0" />
                       Book this doctor
                     </Link>
+                    )}
                   </div>
                 </article>
               </div>

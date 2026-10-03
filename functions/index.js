@@ -63,6 +63,7 @@ exports.recoverStaleRecordings = recordings.recoverStaleRecordings;
 // Site content (admin Control Panel)
 exports.updateConsultationPrices = siteSettings.updateConsultationPrices;
 exports.updateSiteImages = siteSettings.updateSiteImages;
+exports.updateDoctorSelection = siteSettings.updateDoctorSelection;
 exports.updateLegalDocument = legalDocs.updateLegalDocument;
 
 // Scheduled housekeeping

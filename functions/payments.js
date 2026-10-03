@@ -48,7 +48,7 @@ const {
   audit,
   rateLimit,
 } = require("./lib/core");
-const { loadPrices } = require("./siteSettings");
+const { loadPrices, doctorSelectionEnabled } = require("./siteSettings");
 const {
   BOOKING_CONSENT_TEXT,
   CURRENT_BOOKING_CONSENT,
@@ -365,6 +365,12 @@ exports.createBookingDraft = onCall({ secrets: [PAYSTACK_SECRET_KEY] }, async (r
       "resource-exhausted",
       "You already have unpaid bookings. Finish or wait for those to expire first.",
     );
+  }
+
+  // Admin switch: when doctor choice is off, ignore any doctor sent
+  // (an admin-created slot still decides its own doctor below).
+  if (doctorUid && !slotId && !(await doctorSelectionEnabled())) {
+    doctorUid = null;
   }
 
   const prices = await loadPrices();

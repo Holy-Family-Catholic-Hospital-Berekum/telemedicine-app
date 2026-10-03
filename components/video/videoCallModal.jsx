@@ -24,7 +24,12 @@ import hospitalLogo from "../../src/assets/logo.png";
  * Props: consultationId, role ("doctor" | "patient"),
  *        patientSeq (patient only, from startVideoCall), onClose
  */
-export default function VideoCallModal({ consultationId, role, patientSeq, onClose }) {
+export default function VideoCallModal({
+  consultationId,
+  role,
+  patientSeq,
+  onClose,
+}) {
   const {
     localVideoRef,
     remoteVideoRef,
@@ -73,7 +78,12 @@ export default function VideoCallModal({ consultationId, role, patientSeq, onClo
               className="ml-1 flex shrink-0 items-center gap-1 rounded-full bg-black/25 px-2 py-0.5 text-[11px] font-medium text-white lg:text-sm"
               title="This consultation is being recorded (video and audio). Only authorised hospital administrators can open recordings."
             >
-              <Circle size={8} strokeWidth={0} fill="#E4483C" className="animate-pulse" />
+              <Circle
+                size={8}
+                strokeWidth={0}
+                fill="#E4483C"
+                className="animate-pulse"
+              />
               REC
             </span>
           )}
@@ -115,7 +125,7 @@ export default function VideoCallModal({ consultationId, role, patientSeq, onClo
       )}
 
       {/* Video area: takes the remaining height; never pushes the controls off screen */}
-      <div className="relative min-h-0 flex-1 overflow-hidden bg-black">
+      <div className="relative min-h-0 flex-1 overflow-hidden bg-[#0095D9]">
         {status === "error" ? (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-6 text-center text-sm text-white">
             <p>Couldn't connect to the call.</p>
