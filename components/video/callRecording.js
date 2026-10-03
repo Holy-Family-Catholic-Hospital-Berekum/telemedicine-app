@@ -8,9 +8,11 @@
 //     drawn onto a canvas
 //   - audio: every live audio track from both sides, mixed with Web Audio
 //
-// Whether to record is decided by the server, never here: startRecording
-// returns { recording: false } unless an admin had call recording switched
-// on when the call started. Doctors and patients have no control over it.
+// Whether and how to record is decided by the server, never here:
+// startRecording returns { recording: false } unless an admin had recording
+// on when the call started, and otherwise the mode: "video" (composited
+// picture plus both voices) or "audio" (both voices only, no canvas at
+// all). Doctors and patients have no control over it.
 //
 // Performance: frames are drawn at DRAW_FPS from a Web Worker timer rather
 // than requestAnimationFrame. rAF runs at the screen rate (60+ Hz), which
@@ -42,13 +44,12 @@ const UPLOAD_RETRIES = 4;
 const callStartRecording = httpsCallable(functions, "startRecording");
 const callFinalizeRecording = httpsCallable(functions, "finalizeRecording");
 
-function pickSupportedMimeType() {
+function pickSupportedMimeType(mode) {
   // VP8 first: far cheaper to encode than VP9 on ordinary laptops.
-  const candidates = [
-    "video/webm;codecs=vp8,opus",
-    "video/webm;codecs=vp9,opus",
-    "video/webm",
-  ];
+  const candidates =
+    mode === "audio"
+      ? ["audio/webm;codecs=opus", "audio/webm"]
+      : ["video/webm;codecs=vp8,opus", "video/webm;codecs=vp9,opus", "video/webm"];
   return candidates.find((type) => window.MediaRecorder?.isTypeSupported(type)) || "";
 }
 
@@ -97,6 +98,7 @@ export function createCompositeRecorder({
   let mediaRecorder;
   let stopTicker = null;
   let recordingId = null;
+  let mode = "video";
   let partIndex = 0;
   let stopped = false;
   let uploadChain = Promise.resolve();
@@ -153,7 +155,9 @@ export function createCompositeRecorder({
     const fileRef = storageRef(storage, `recordings/${recordingId}/parts/${name}.webm`);
     for (let attempt = 0; attempt <= UPLOAD_RETRIES; attempt++) {
       try {
-        await uploadBytes(fileRef, blob, { contentType: "video/webm" });
+        await uploadBytes(fileRef, blob, {
+          contentType: mode === "audio" ? "audio/webm" : "video/webm",
+        });
         return;
       } catch (err) {
         if (attempt === UPLOAD_RETRIES) {
@@ -171,31 +175,31 @@ export function createCompositeRecorder({
     uploadChain = uploadChain.then(() => uploadPart(blob, index));
   }
 
-  /** Resolves { recording: boolean }. */
+  /** Resolves { recording: boolean, mode }. */
   async function start() {
     const { data } = await callStartRecording({ consultationId });
     if (!data?.recording) return { recording: false };
     recordingId = data.recordingId;
-
-    canvas = document.createElement("canvas");
-    canvas.width = CANVAS_WIDTH;
-    canvas.height = CANVAS_HEIGHT;
-    ctx = canvas.getContext("2d", { alpha: false });
-    canvasStream = canvas.captureStream(DRAW_FPS);
+    mode = data.mode === "audio" ? "audio" : "video";
 
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     audioDestination = audioCtx.createMediaStreamDestination();
     syncAudio();
 
-    const combinedStream = new MediaStream([
-      ...canvasStream.getVideoTracks(),
-      ...audioDestination.stream.getAudioTracks(),
-    ]);
+    const tracks = [...audioDestination.stream.getAudioTracks()];
+    if (mode === "video") {
+      canvas = document.createElement("canvas");
+      canvas.width = CANVAS_WIDTH;
+      canvas.height = CANVAS_HEIGHT;
+      ctx = canvas.getContext("2d", { alpha: false });
+      canvasStream = canvas.captureStream(DRAW_FPS);
+      tracks.unshift(...canvasStream.getVideoTracks());
+    }
 
-    const mimeType = pickSupportedMimeType();
-    mediaRecorder = new MediaRecorder(combinedStream, {
+    const mimeType = pickSupportedMimeType(mode);
+    mediaRecorder = new MediaRecorder(new MediaStream(tracks), {
       ...(mimeType ? { mimeType } : {}),
-      videoBitsPerSecond: VIDEO_BITS_PER_SECOND,
+      ...(mode === "video" ? { videoBitsPerSecond: VIDEO_BITS_PER_SECOND } : {}),
       audioBitsPerSecond: AUDIO_BITS_PER_SECOND,
     });
     mediaRecorder.ondataavailable = (event) => {
@@ -203,10 +207,12 @@ export function createCompositeRecorder({
     };
     mediaRecorder.onerror = (event) => onError?.(event.error || new Error("Recorder error"));
 
-    drawFrame();
-    stopTicker = createTicker(DRAW_FPS, drawFrame);
+    if (mode === "video") {
+      drawFrame();
+      stopTicker = createTicker(DRAW_FPS, drawFrame);
+    }
     mediaRecorder.start(SEGMENT_MS);
-    return { recording: true };
+    return { recording: true, mode };
   }
 
   async function stop() {

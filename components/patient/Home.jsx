@@ -10,6 +10,7 @@ import HealthcarePreloader from "../../src/components/common/healthcarePreloader
 // Live public doctor directory (doctorProfiles), shared with the booking
 // page's doctor picker.
 import { useListedDoctors } from "../../src/doctorDirectory";
+import { DoctorCardSummary, DoctorProfileDialog } from "./doctorProfileDetails";
 import heroDefault from "../../src/assets/hero-consult.jpg";
 import { useSiteSettings } from "../../src/siteSettings";
 /**
@@ -100,7 +101,7 @@ const consultTypes = [
 
 const steps = [
   {
-    title: "Create my account",
+    title: "Create your account",
     detail:
       "Sign up with your name, phone number and email, then verify your email before booking.",
   },
@@ -110,12 +111,12 @@ const steps = [
       "Choose General OPD or Surgical, online or in person, and pay securely by mobile money. You may select a doctor of your choice.",
   },
   {
-    title: "Get scheduled",
+    title: "We schedule you",
     detail:
       "Our team receives your booking, then assigns you a doctor and a time.",
   },
   {
-    title: "Join my consultation",
+    title: "Join your consultation",
     detail:
       "We call or WhatsApp you with your time and consultation ID. Join by video, or visit us in person.",
   },
@@ -503,6 +504,7 @@ function DoctorPortrait({ doctor }) {
 function DoctorsSlider() {
   const { doctors, loading } = useListedDoctors();
   const { doctorSelectionEnabled } = useSiteSettings().settings;
+  const [profileDoctor, setProfileDoctor] = useState(null);
   const [perView, setPerView] = useState(1);
   const [index, setIndex] = useState(0);
   const [paused, setPaused] = useState(false);
@@ -616,22 +618,27 @@ function DoctorsSlider() {
                     <p className="mt-1 text-[13px] font-medium text-[var(--forest-2)]">
                       {doctor.role}
                     </p>
-                    <p className="mt-2 text-[13.5px] leading-relaxed text-[#142138b3]">
-                      {doctor.focus}
-                    </p>
+                    <DoctorCardSummary doctor={doctor} />
+                    <button
+                      type="button"
+                      onClick={() => setProfileDoctor(doctor)}
+                      className="mt-3 block text-[12.5px] font-medium text-[#0095D9] underline-offset-2 hover:underline"
+                    >
+                      View full profile
+                    </button>
                     {/* Sends the patient straight into the booking flow with
                         this doctor pre-selected. Hidden when the admin has
                         switched doctor choice off. */}
                     {doctorSelectionEnabled && (
-                    <Link
-                      to={`/book?doctor=${doctor.id}`}
-                      className="mt-4 inline-flex items-center gap-1.5 rounded-full border border-[var(--forest)]/20 px-3.5 py-2 text-[12.5px] font-medium text-[var(--forest-2)]
+                      <Link
+                        to={`/book?doctor=${doctor.id}`}
+                        className="mt-4 inline-flex items-center gap-1.5 rounded-full border border-[var(--forest)]/20 px-3.5 py-2 text-[12.5px] font-medium text-[var(--forest-2)]
                                  transition hover:border-[var(--forest)] hover:bg-[var(--forest)] hover:text-white
                                  focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--forest)]"
-                    >
-                      <BookingGlyph className="shrink-0" />
-                      Book this doctor
-                    </Link>
+                      >
+                        <BookingGlyph className="shrink-0" />
+                        Book this doctor
+                      </Link>
                     )}
                   </div>
                 </article>
@@ -640,6 +647,16 @@ function DoctorsSlider() {
           })}
         </div>
       </div>
+
+      {profileDoctor && (
+        <DoctorProfileDialog
+          doctor={profileDoctor}
+          canBook={doctorSelectionEnabled}
+          onClose={() => setProfileDoctor(null)}
+          Portrait={DoctorPortrait}
+          BookingGlyph={BookingGlyph}
+        />
+      )}
 
       <div className="mt-7 flex items-center justify-center gap-5">
         <button
@@ -1286,11 +1303,9 @@ function HomeContent({ isLoggedIn }) {
         >
           <div className="mx-auto max-w-3xl px-5 sm:px-8">
             <h2 className="font-display text-[26px] sm:text-[30px] font-medium text-[var(--ink2)]">
-              How I get care
+              How you get care
             </h2>
-            <h2 className="font-display text-[14px] sm:text-[18px] font-medium text-[#F88535]">
-              I will:
-            </h2>
+
             <ol className="mt-10 sm:mt-14 relative border-l-2 border-dashed border-[var(--forest)]/25 pl-6 sm:pl-8 space-y-9 sm:space-y-10">
               {steps.map((item, i) => (
                 <li key={item.title} className="relative">
@@ -1465,14 +1480,13 @@ function HomeContent({ isLoggedIn }) {
                 How We Handle Your data
               </h2>
               <p className="mt-4 text-[15px] sm:text-[16px] leading-relaxed text-[var(--parchment)]/75">
-                When your consultation closes, the details you gave when
-                booking (date of birth, sex, location and phone) are
-                permanently deleted. We keep a short record of each visit
-                (doctor, date, times and amount paid). Online consultations
-                may be recorded (video and audio) when the hospital has
-                recording switched on; you'll see a REC sign whenever a call
-                is recorded, and only authorised administrators can open
-                recordings.
+                When your consultation closes, the details you gave when booking
+                (date of birth, sex, location and phone) are permanently
+                deleted. We keep a short record of each visit (doctor, date,
+                times and amount paid). Online consultations may be recorded
+                (video with sound, or sound only) when the hospital has recording switched on;
+                you'll see a REC sign whenever a call is recorded, and only
+                authorised administrators can open recordings.
               </p>{" "}
               Read our{" "}
               <Link

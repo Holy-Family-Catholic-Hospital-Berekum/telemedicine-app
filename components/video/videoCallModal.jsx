@@ -38,6 +38,7 @@ export default function VideoCallModal({
     micOn,
     cameraOn,
     isRecording,
+    recordingMode,
     recordingWarning,
     toggleMic,
     toggleCamera,
@@ -76,7 +77,7 @@ export default function VideoCallModal({
           {isRecording && (
             <span
               className="ml-1 flex shrink-0 items-center gap-1 rounded-full bg-black/25 px-2 py-0.5 text-[11px] font-medium text-white lg:text-sm"
-              title="This consultation is being recorded (video and audio). Only authorised hospital administrators can open recordings."
+              title={`This consultation is being recorded (${recordingMode === "audio" ? "audio only" : "video and audio"}). Only authorised hospital administrators can open recordings.`}
             >
               <Circle
                 size={8}
@@ -84,7 +85,7 @@ export default function VideoCallModal({
                 fill="#E4483C"
                 className="animate-pulse"
               />
-              REC
+              {recordingMode === "audio" ? "REC · audio" : "REC"}
             </span>
           )}
         </div>
@@ -107,7 +108,9 @@ export default function VideoCallModal({
             />
             {status === "connected"
               ? isRecording
-                ? "Live · being recorded"
+                ? recordingMode === "audio"
+                  ? "Live · audio being recorded"
+                  : "Live · being recorded"
                 : "Live"
               : status === "error"
                 ? "Connection problem"

@@ -1,11 +1,12 @@
 // functions/recordings.js
 //
-// Call recording. Only an admin can switch it on or off
-// (systemSettings/features.callRecordingEnabled). While it is on, every
-// online call that starts records automatically; doctors and patients
-// have no control over it.
+// Call recording. Only an admin chooses the mode
+// (systemSettings/features.callRecordingMode): "off", "video" (picture and
+// sound) or "audio" (sound only). While it isn't off, every online call
+// that starts records automatically in that mode; doctors and patients
+// have no control over it. The mode is snapshotted per call.
 //
-//   setCallRecordingEnabled  admin flips the switch (audited)
+//   setCallRecordingMode     admin chooses the mode (audited)
 //   startRecording           doctor's browser asks to record; server decides
 //   finalizeRecording        doctor's browser has uploaded every segment
 //   getRecordingUrl          admin plays or downloads (reason required, audited)
@@ -36,6 +37,7 @@ const {
   Timestamp,
   serverTime,
   HttpsError,
+  RECORDING_MODES,
   requireRole,
   requestMeta,
   str,
@@ -61,31 +63,39 @@ const finalPath = (id) => `recordings/${id}/recording.webm`;
 /* the admin switch                                                    */
 /* ------------------------------------------------------------------ */
 
-/** data: { enabled: boolean } */
-exports.setCallRecordingEnabled = onCall(async (request) => {
+const MODE_LABEL = { off: "off", video: "video (picture and sound)", audio: "audio only" };
+
+/** data: { mode: "off" | "video" | "audio" } */
+exports.setCallRecordingMode = onCall(async (request) => {
   const caller = await requireRole(request, ["admin"]);
-  const enabled = request.data?.enabled;
-  if (typeof enabled !== "boolean") {
-    throw new HttpsError("invalid-argument", "Choose on or off.");
+  const mode = request.data?.mode;
+  if (!RECORDING_MODES.includes(mode)) {
+    throw new HttpsError("invalid-argument", "Choose off, video or audio.");
   }
   const batch = db.batch();
   batch.set(
     featuresRef(),
-    { callRecordingEnabled: enabled, updatedAt: serverTime(), updatedByUid: caller.uid },
+    {
+      callRecordingMode: mode,
+      // Kept for older readers; true whenever recording is on.
+      callRecordingEnabled: mode !== "off",
+      updatedAt: serverTime(),
+      updatedByUid: caller.uid,
+    },
     { merge: true },
   );
   audit(batch, {
     actorId: caller.uid,
     actorRole: "admin",
-    action: enabled ? "Switched call recording on" : "Switched call recording off",
-    code: enabled ? "recording.switch_on" : "recording.switch_off",
+    action: `Set call recording to ${MODE_LABEL[mode]}`,
+    code: `recording.mode_${mode}`,
     category: "recording",
     targetType: "setting",
     targetId: "Call recording",
     meta: requestMeta(request),
   });
   await batch.commit();
-  return { enabled };
+  return { mode };
 });
 
 /* ------------------------------------------------------------------ */
@@ -116,9 +126,12 @@ exports.startRecording = onCall(async (request) => {
     if (c.status !== "in_progress" || !callSnap.exists) {
       throw new HttpsError("failed-precondition", "The call hasn't started.");
     }
-    if (callSnap.data().recordingEnabled !== true) {
+    const call = callSnap.data();
+    if (call.recordingEnabled !== true) {
       return { recording: false };
     }
+    // Calls started before modes existed were video.
+    const mode = call.recordingMode === "audio" ? "audio" : "video";
 
     tx.set(ref, {
       consultationId,
@@ -135,7 +148,8 @@ exports.startRecording = onCall(async (request) => {
       partCount: 0,
       storagePath: null,
       sizeBytes: null,
-      mimeType: "video/webm",
+      mode,
+      mimeType: mode === "audio" ? "audio/webm" : "video/webm",
       integrity: null,
       client: { userAgent: meta.userAgent },
       createdAt: serverTime(),
@@ -153,7 +167,7 @@ exports.startRecording = onCall(async (request) => {
       patientUid: c.patientUid,
       meta,
     });
-    return { recording: true, recordingId: ref.id };
+    return { recording: true, recordingId: ref.id, mode };
   });
 
   return result;
@@ -218,7 +232,7 @@ async function composeRecording(recordingId, finalStatus) {
     await bucket().combine([dest, ...parts.slice(i, i + 31)], dest);
   }
   await dest.setMetadata({
-    contentType: "video/webm",
+    contentType: rec.mimeType || "video/webm",
     // Lets the file be re-attached to its record even without Firestore.
     metadata: {
       recordingId,
@@ -363,7 +377,7 @@ exports.getRecordingUrl = onCall(async (request) => {
       version: "v4",
       action: "read",
       expires: Date.now() + URL_TTL_MS,
-      responseType: "video/webm",
+      responseType: rec.mimeType || "video/webm",
       responseDisposition:
         purpose === "download" ? `attachment; filename="${filename}"` : "inline",
     });

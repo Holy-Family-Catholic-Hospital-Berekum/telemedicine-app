@@ -44,6 +44,15 @@ const MODES = ["online", "in_person"];
 const SEXES = ["female", "male"];
 const OUTCOMES = ["completed", "no_show"];
 const STAFF_ROLES = ["admin", "doctor"];
+// Call recording: off, video (picture + sound) or audio only.
+const RECORDING_MODES = ["off", "video", "audio"];
+
+/** Recording mode from systemSettings/features (older docs had a boolean). */
+function recordingModeOf(features) {
+  const mode = features?.callRecordingMode;
+  if (RECORDING_MODES.includes(mode)) return mode;
+  return features?.callRecordingEnabled === true ? "video" : "off";
+}
 
 /* ------------------------------------------------------------------ */
 /* identity                                                            */
@@ -315,6 +324,8 @@ module.exports = {
   SEXES,
   OUTCOMES,
   STAFF_ROLES,
+  RECORDING_MODES,
+  recordingModeOf,
   HttpsError,
   requireRole,
   requireVerifiedEmail,

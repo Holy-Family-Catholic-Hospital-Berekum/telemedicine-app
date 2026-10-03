@@ -29,7 +29,7 @@ export const DEFAULT_LEGAL = {
 - Account details: your name, phone number and email address, and a password that is handled by our sign-in provider (we never see or store it in readable form).
 - Booking details: consultation type, online or in-person mode, your date of birth, sex, town or city, area or nearest landmark, phone number, and the doctor you choose, if any.
 - Payment details: the amount, the payment reference and whether the payment succeeded. Payment is made by mobile money through Paystack. We never see or store your mobile money PIN.
-- Consultation information: what you share with your doctor during the consultation and, when the hospital has call recording switched on, a video and audio recording of online consultations (see "Consultation recording" below).
+- Consultation information: what you share with your doctor during the consultation and, when the hospital has call recording switched on, a recording of online consultations (video with sound, or sound only) (see "Consultation recording" below).
 - Basic technical data needed to keep the service working and secure, such as sign-in activity.`,
       },
       {
@@ -58,7 +58,7 @@ We do not sell your information and we do not use it for advertising.`,
       {
         id: "recording",
         title: "Consultation recording",
-        body: `When the hospital has call recording switched on, online video consultations are recorded (video and audio) for legal and security purposes. A REC sign shows on screen for both you and your doctor whenever a call is being recorded. Recordings are stored securely, can only be opened by authorised hospital administrators, and every time one is played, downloaded or deleted it is logged with the reason. They are never used for marketing or for any purpose unrelated to the consultation. In-person consultations are not recorded.`,
+        body: `When the hospital has call recording switched on, online video consultations are recorded (video with sound, or sound only, as the hospital chooses) for legal and security purposes. A REC sign shows on screen for both you and your doctor whenever a call is being recorded. Recordings are stored securely, can only be opened by authorised hospital administrators, and every time one is played, downloaded or deleted it is logged with the reason. They are never used for marketing or for any purpose unrelated to the consultation. In-person consultations are not recorded.`,
       },
       {
         id: "retention",
@@ -176,7 +176,7 @@ If you are not happy with how we handle your information, you can complain to Gh
       {
         id: "privacy",
         title: "Your information and recordings",
-        body: `How we collect, use, store and delete your information is explained in our [privacy policy](/privacy). That includes the video and audio recordings of online consultations made when the hospital has call recording switched on. By booking, you agree to the way we handle your information as described there.`,
+        body: `How we collect, use, store and delete your information is explained in our [privacy policy](/privacy). That includes the recordings (video or sound only) of online consultations made when the hospital has call recording switched on. By booking, you agree to the way we handle your information as described there.`,
       },
       {
         id: "availability",

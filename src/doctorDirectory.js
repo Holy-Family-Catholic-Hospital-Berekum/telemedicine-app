@@ -6,8 +6,8 @@
 // own photo, bio, specialties and languages from the doctor portal.
 //
 // Shape returned for each doctor:
-//   { id, name, role, availableFor, specialties, languages, focus,
-//     bio, image, initials, isAvailable, availability }
+//   { id, name, role, title, yearsExperience, availableFor, specialties,
+//     languages, focus, bio, image, initials, isAvailable, availability }
 
 import { useEffect, useState } from "react";
 import { collection, onSnapshot, query, where } from "firebase/firestore";
@@ -34,6 +34,8 @@ function toDoctor(id, data) {
     languages: Array.isArray(data.languages) ? data.languages : [],
     focus: data.focus || "",
     bio: data.bio || "",
+    title: typeof data.title === "string" ? data.title : "",
+    yearsExperience: Number(data.yearsExperience) || 0,
     // Only our own Storage URLs (rules enforce this on write as well).
     image:
       typeof data.photoURL === "string" &&

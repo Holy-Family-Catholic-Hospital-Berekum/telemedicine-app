@@ -32,7 +32,7 @@ service firebase.storage {
         && part.matches('^[0-9]{6}[.]webm$')
         && rec().doctorUid == request.auth.uid
         && rec().status == 'recording'
-        && request.resource.contentType.matches('video/webm.*')
+        && request.resource.contentType.matches('(video|audio)/webm.*')
         && request.resource.size > 0
         && request.resource.size < 50 * 1024 * 1024;
       allow read, update, delete: if false;

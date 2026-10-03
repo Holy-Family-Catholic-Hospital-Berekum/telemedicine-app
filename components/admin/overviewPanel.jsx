@@ -45,7 +45,7 @@ export default function OverviewPanel({
           icon={IconShield}
           tint="warning"
           value={stats.doctorsOnDuty}
-          label="Doctors on duty"
+          label="Doctors on duty today"
           delay={120}
         />
       </div>

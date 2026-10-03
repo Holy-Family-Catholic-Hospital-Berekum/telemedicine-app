@@ -273,7 +273,9 @@ export default function RecordingsPanel({ callAdmin }) {
                       </td>
                       <td>
                         {duration(r.durationSec)}
-                        <div className="admin-cell-sub">{size(r.sizeBytes)}</div>
+                        <div className="admin-cell-sub">
+                          {r.mode === "audio" ? "Audio" : "Video"} · {size(r.sizeBytes)}
+                        </div>
                       </td>
                       <td>
                         <span className={`status-pill ${ready ? "confirmed" : busyStatus ? "" : "rejected"}`}>
@@ -386,14 +388,25 @@ export default function RecordingsPanel({ callAdmin }) {
             </p>
             {/* No download button on the player: downloads go through the
                 separate, separately audited Download action. */}
-            <video
-              src={player.url}
-              controls
-              controlsList="nodownload"
-              autoPlay
-              style={{ width: "100%", background: "#000", borderRadius: 8 }}
-              onContextMenu={(e) => e.preventDefault()}
-            />
+            {player.recording.mode === "audio" ? (
+              <audio
+                src={player.url}
+                controls
+                controlsList="nodownload"
+                autoPlay
+                style={{ width: "100%" }}
+                onContextMenu={(e) => e.preventDefault()}
+              />
+            ) : (
+              <video
+                src={player.url}
+                controls
+                controlsList="nodownload"
+                autoPlay
+                style={{ width: "100%", background: "#000", borderRadius: 8 }}
+                onContextMenu={(e) => e.preventDefault()}
+              />
+            )}
             <div className="admin-modal-actions">
               <button className="btn btn-outline" onClick={() => setPlayer(null)}>
                 Close

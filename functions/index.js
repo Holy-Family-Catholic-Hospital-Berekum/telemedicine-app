@@ -52,7 +52,7 @@ exports.getTurnCredentials = consultations.getTurnCredentials;
 exports.markConsultationDone = consultations.markConsultationDone;
 
 // Call recording
-exports.setCallRecordingEnabled = recordings.setCallRecordingEnabled;
+exports.setCallRecordingMode = recordings.setCallRecordingMode;
 exports.startRecording = recordings.startRecording;
 exports.finalizeRecording = recordings.finalizeRecording;
 exports.getRecordingUrl = recordings.getRecordingUrl;

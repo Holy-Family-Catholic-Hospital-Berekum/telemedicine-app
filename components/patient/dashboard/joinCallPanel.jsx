@@ -90,8 +90,8 @@ export default function JoinCallPanel({ booking, onJoined }) {
         </button>
       </div>
       <p className="mt-2 text-[11px] text-[#5C6B72]">
-        Calls may be recorded (video and audio) when the hospital has
-        recording switched on. You'll see a REC sign on screen if this call
+        Calls may be recorded (video with sound, or sound only) when the
+        hospital has recording switched on. You'll see a REC sign on screen if this call
         is recorded.
       </p>
       {error && (

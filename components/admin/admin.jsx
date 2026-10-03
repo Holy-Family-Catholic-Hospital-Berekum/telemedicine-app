@@ -122,6 +122,12 @@ export default function Admin() {
       ),
     [],
   );
+  // Today's slots of any status (open, held or booked) for "on duty".
+  const todayDate = useMemo(() => hospitalDay(new Date()), []);
+  const todaySlotsQuery = useMemo(
+    () => query(collection(db, "availableSlots"), where("date", "==", todayDate)),
+    [todayDate],
+  );
   const auditQuery = useMemo(
     () =>
       query(
@@ -147,6 +153,7 @@ export default function Admin() {
   const { data: payments } = useFirestoreCollection(paymentsQuery);
   const { data: history } = useFirestoreCollection(historyQuery);
   const { data: slots } = useFirestoreCollection(slotsQuery);
+  const { data: todaySlots } = useFirestoreCollection(todaySlotsQuery);
   const { data: audit } = useFirestoreCollection(auditQuery);
 
   const users = useMemo(
@@ -242,12 +249,29 @@ export default function Admin() {
     const activeConsultations = bookings.filter(
       (b) => b.status === "scheduled" && b.callStartedAt,
     ).length;
+    // On duty = has something scheduled today (hospital time): a scheduled
+    // consultation, a paid booking for a slot today, or an admin-created
+    // slot today that isn't cancelled.
+    const onDuty = new Set();
+    for (const b of bookings) {
+      if (b.status === "scheduled" && b.scheduledTime && hospitalDay(b.scheduledTime) === todayDate) {
+        onDuty.add(b.doctorUid);
+      }
+      if (b.status === "paid" && b.preferredTime && hospitalDay(b.preferredTime) === todayDate) {
+        onDuty.add(b.requestedDoctorUid);
+      }
+    }
+    for (const s of todaySlots) {
+      if (s.status !== "cancelled") onDuty.add(s.doctorUid);
+    }
+    onDuty.delete(undefined);
+    onDuty.delete(null);
     return {
       todaysBookings,
       activeConsultations,
-      doctorsOnDuty: doctors.filter((d) => d.available).length,
+      doctorsOnDuty: onDuty.size,
     };
-  }, [bookings, doctors]);
+  }, [bookings, todaySlots, todayDate]);
 
   const heading = TAB_TITLES[tab] ?? TAB_TITLES.overview;
 
@@ -361,6 +385,11 @@ export default function Admin() {
       </main>
     </div>
   );
+}
+
+/** YYYY-MM-DD in hospital time (Africa/Accra). */
+function hospitalDay(value) {
+  return new Date(value).toLocaleDateString("en-CA", { timeZone: "Africa/Accra" });
 }
 
 function initialsOf(name) {

@@ -110,6 +110,7 @@ export function useWebRTCCall({ consultationId, role, patientSeq, onEnded }) {
   const [micOn, setMicOn] = useState(true);
   const [cameraOn, setCameraOn] = useState(true);
   const [isRecording, setIsRecording] = useState(false);
+  const [recordingMode, setRecordingMode] = useState("video");
   const [recordingWarning, setRecordingWarning] = useState("");
 
   const localVideoRef = useRef(null);
@@ -390,6 +391,7 @@ export function useWebRTCCall({ consultationId, role, patientSeq, onEnded }) {
             consultationId,
             (call) => {
               setIsRecording(call?.recordingActive === true);
+              setRecordingMode(call?.recordingMode === "audio" ? "audio" : "video");
               process(call);
             },
             () => setIsRecording(false),
@@ -477,6 +479,7 @@ export function useWebRTCCall({ consultationId, role, patientSeq, onEnded }) {
     micOn,
     cameraOn,
     isRecording,
+    recordingMode,
     recordingWarning,
     toggleMic,
     toggleCamera,

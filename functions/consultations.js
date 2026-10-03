@@ -22,6 +22,7 @@ const {
   Timestamp,
   serverTime,
   OUTCOMES,
+  recordingModeOf,
   HttpsError,
   requireRole,
   requireVerifiedEmail,
@@ -44,9 +45,9 @@ const CALL_DOC_TTL_HOURS = 6;
 // Share of the fee kept when the patient doesn't attend.
 const NO_SHOW_FORFEIT = 0.2;
 
-async function recordingSwitchOn() {
+async function currentRecordingMode() {
   const snap = await db.collection("systemSettings").doc("features").get();
-  return snap.exists && snap.data().callRecordingEnabled === true;
+  return recordingModeOf(snap.exists ? snap.data() : null);
 }
 
 /** Loads a consultation and checks the caller takes part in it. */
@@ -107,7 +108,8 @@ exports.startVideoCall = onCall(async (request) => {
   }
 
   const callRef = db.collection("calls").doc(consultationId);
-  const recordingEnabled = await recordingSwitchOn();
+  const recordingMode = await currentRecordingMode();
+  const recordingEnabled = recordingMode !== "off";
 
   // Signalling protocol (see components/video/useWebRTCCall.js):
   // - The doctor always makes the WebRTC offer. A doctor (re)joining clears
@@ -132,6 +134,7 @@ exports.startVideoCall = onCall(async (request) => {
         // mid-call doesn't stop a recording already running; turning it on
         // applies to calls that start afterwards.
         recordingEnabled,
+        recordingMode,
         recordingActive: false,
         patientSeq,
         createdAt: serverTime(),
