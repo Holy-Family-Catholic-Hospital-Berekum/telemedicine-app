@@ -4,10 +4,11 @@ import {
   formatDate,
   formatTime,
 } from "../../../src/constants";
+import RefundRequest from "./refundRequest";
 
 // Closed consultations. Shows only what's kept after a consultation
 // closes: doctor, date, start and end time, mode, outcome and amount paid.
-export default function ConsultationHistory({ consultations = [] }) {
+export default function ConsultationHistory({ consultations = [], refunds = {}, defaultPhone, onRefundRequested }) {
   if (!consultations.length) {
     return <p className="text-sm text-black/60">No past consultations yet.</p>;
   }
@@ -54,6 +55,17 @@ export default function ConsultationHistory({ consultations = [] }) {
                 {Number(consultation.amountPaid).toFixed(2)}
               </span>
             )}
+          </div>
+          <div className="mt-2">
+            <RefundRequest
+              source="history"
+              id={consultation.id}
+              scheduledTime={consultation.scheduledTime || consultation.startedAt}
+              amountPaid={consultation.amountPaid}
+              existing={refunds[consultation.id]}
+              defaultPhone={defaultPhone}
+              onRequested={onRefundRequested}
+            />
           </div>
         </div>
       ))}

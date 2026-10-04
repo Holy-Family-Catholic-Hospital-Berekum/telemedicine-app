@@ -34,12 +34,14 @@ const {
   audit,
   rateLimit,
   deleteTree,
+  sha256,
 } = require("./lib/core");
+const { CALL_CONSENT_TEXT, CURRENT_CALL_CONSENT } = require("./lib/consentText");
 
 const CLOUDFLARE_TURN_KEY_ID = defineSecret("CLOUDFLARE_TURN_KEY_ID");
 const CLOUDFLARE_TURN_API_TOKEN = defineSecret("CLOUDFLARE_TURN_API_TOKEN");
 
-const JOIN_OPENS_MINUTES_BEFORE = 5;
+const JOIN_OPENS_MINUTES_BEFORE = 30;
 const JOIN_CLOSES_HOURS_AFTER = 4;
 const CALL_DOC_TTL_HOURS = 6;
 // Share of the fee kept when the patient doesn't attend.
@@ -70,7 +72,12 @@ async function loadForParticipant(caller, consultationId) {
 /* startVideoCall                                                      */
 /* ------------------------------------------------------------------ */
 
-/** data: { consultationId, enteredConsultationId } */
+/**
+ * data: { consultationId, enteredConsultationId, callConsentVersion? }
+ * A patient's first join of each consultation must carry the current
+ * video-consultation consent version; it's stored as a consent record and
+ * later joins don't ask again.
+ */
 exports.startVideoCall = onCall(async (request) => {
   const caller = await requireRole(request, ["patient", "doctor"]);
   if (caller.role === "patient") requireVerifiedEmail(caller);
@@ -125,6 +132,38 @@ exports.startVideoCall = onCall(async (request) => {
   await db.runTransaction(async (tx) => {
     const [callSnap, consultationSnap] = await Promise.all([tx.get(callRef), tx.get(ref)]);
     const current = consultationSnap.data();
+
+    // Video-consultation consent: once per consultation, before the
+    // patient's first join.
+    if (caller.role === "patient" && !current.callConsentId) {
+      if (d.callConsentVersion !== CURRENT_CALL_CONSENT) {
+        throw new HttpsError(
+          "failed-precondition",
+          "Please read and accept the video consultation consent before joining.",
+          { reason: "call_consent_required", version: CURRENT_CALL_CONSENT },
+        );
+      }
+      const meta = requestMeta(request);
+      const consentRef = db.collection("consents").doc();
+      tx.set(consentRef, {
+        subjectUid: caller.uid,
+        consentType: "video_consultation",
+        action: "granted",
+        context: "call_join",
+        version: CURRENT_CALL_CONSENT,
+        textSha256: sha256(CALL_CONSENT_TEXT[CURRENT_CALL_CONSENT]),
+        consultationId,
+        bookingId: current.bookingId,
+        at: serverTime(),
+        ip: meta.ip,
+        userAgent: meta.userAgent,
+      });
+      tx.update(ref, { callConsentId: consentRef.id });
+      tx.update(db.collection("bookings").doc(current.bookingId), {
+        callConsentId: consentRef.id,
+      });
+    }
+
     if (!callSnap.exists) {
       patientSeq = caller.role === "patient" ? 1 : 0;
       tx.set(callRef, {

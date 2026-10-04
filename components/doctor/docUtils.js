@@ -1,8 +1,8 @@
-// A consultation ID (and the video call it unlocks) only becomes visible to
-// the doctor 5 minutes before the scheduled time — this is a display rule
-// on top of whatever the Cloud Function enforces server-side, not a
-// replacement for that check (see firestoreService.js).
-const UNLOCK_WINDOW_MS = 5 * 60 * 1000;
+// The video room opens 30 minutes before the scheduled time. This is a
+// display rule; startVideoCall enforces the same window on the server.
+import { CALL_UNLOCK_MINUTES } from "../../src/constants";
+
+const UNLOCK_WINDOW_MS = CALL_UNLOCK_MINUTES * 60 * 1000;
 
 export function getCallWindow(scheduledTime, now = new Date()) {
   const scheduledMs = new Date(scheduledTime).getTime();

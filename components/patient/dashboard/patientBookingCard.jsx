@@ -7,6 +7,7 @@ import RescheduleForm from "./rescheduleForm";
 import RevealId from "./revealId";
 import JoinCallPanel from "./joinCallPanel";
 import CheckPaymentPanel from "./checkPaymentPanel";
+import RefundRequest from "./refundRequest";
 
 const STATE_META = {
   awaiting_payment: {
@@ -37,6 +38,9 @@ export default function BookingCard({
   onJoined,
   onRejoinCall,
   onPaymentConfirmed,
+  refund,
+  defaultPhone,
+  onRefundRequested,
 }) {
   const [expanded, setExpanded] = useState(
     booking.state === "pending_assignment" || booking.state === "awaiting_payment",
@@ -126,8 +130,8 @@ export default function BookingCard({
             <p className="flex items-center gap-2 text-sm text-[#5C6B72]">
               <ShieldCheck size={15} strokeWidth={1.75} />
               Paid {formatCurrency(booking.amountPaid ?? booking.amount)} · we're assigning your
-              doctor and appointment time. You'll hear from us by phone or
-              WhatsApp shortly.
+              doctor and appointment time. We'll email you the time and your
+              consultation ID shortly.
             </p>
           )}
 
@@ -154,10 +158,20 @@ export default function BookingCard({
                 </p>
               )}
 
+              <RefundRequest
+                source="booking"
+                id={booking.bookingId}
+                scheduledTime={booking.scheduledTime}
+                amountPaid={booking.amountPaid}
+                existing={refund}
+                defaultPhone={defaultPhone}
+                onRequested={onRefundRequested}
+              />
+
               {booking.state === "scheduled" &&
                 (booking.rescheduleRequest?.status === "requested" ? (
                   <p className="text-xs text-[#5C6B72]">
-                    Reschedule requested — we'll confirm by phone or WhatsApp.
+                    Reschedule requested — we'll email you the new time.
                   </p>
                 ) : (
                   <RescheduleForm booking={booking} onRequested={onRescheduled} />

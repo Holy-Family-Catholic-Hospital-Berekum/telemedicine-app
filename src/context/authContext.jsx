@@ -115,7 +115,8 @@ const AuthContext = createContext(null);
 
 // Idle-timeout windows, in minutes. Staff sessions are tighter since
 // they can see patient bookings and payment data.
-const IDLE_TIMEOUT_MINUTES = { admin: 15, doctor: 15, patient: 30 };
+// Hospital decision: one hour of inactivity signs out every role.
+const IDLE_TIMEOUT_MINUTES = { admin: 60, doctor: 60, patient: 60 };
 
 // Roles allowed to sign in through the staff page.
 const STAFF_ROLES = ["admin", "doctor"];
@@ -194,7 +195,7 @@ export function AuthProvider({ children }) {
   const scheduleIdleLogout = useCallback(
     (role) => {
       clearIdleTimer();
-      const minutes = IDLE_TIMEOUT_MINUTES[role] ?? 20;
+      const minutes = IDLE_TIMEOUT_MINUTES[role] ?? 60;
       idleTimer.current = setTimeout(
         () => {
           signOut(auth).catch(() => {});

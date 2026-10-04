@@ -35,7 +35,7 @@ export default function RescheduleForm({ booking, onRequested }) {
   if (done) {
     return (
       <p className="text-xs text-[#5C6B72]">
-        Reschedule request sent — we'll confirm by phone or WhatsApp.
+        Reschedule request sent — we'll email you the new time.
       </p>
     );
   }

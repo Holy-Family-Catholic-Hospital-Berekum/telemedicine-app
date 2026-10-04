@@ -22,6 +22,21 @@ import { toDate } from "../../../src/constants";
 const callRequestReschedule = httpsCallable(functions, "requestReschedule");
 const callStartVideoCall = httpsCallable(functions, "startVideoCall");
 const callGetBookingStatus = httpsCallable(functions, "getBookingStatus");
+const callRequestRefund = httpsCallable(functions, "requestRefund");
+
+/** The patient's refund requests, keyed by consultationId. */
+export async function fetchMyRefundRequests(patientUid) {
+  const snap = await getDocs(
+    query(collection(db, "refundRequests"), where("patientUid", "==", patientUid)),
+  );
+  return Object.fromEntries(snap.docs.map((d) => [d.id, d.data()]));
+}
+
+/** source: "history" | "booking"; id: consultationId | bookingId */
+export async function requestRefund({ source, id, reason, refundPhone }) {
+  const { data } = await callRequestRefund({ source, id, reason, refundPhone });
+  return data;
+}
 
 /** Re-checks every payment attempt on a booking with Paystack. */
 export async function checkPaymentStatus(bookingId) {
@@ -100,6 +115,7 @@ export async function fetchConsultationHistory(patientUid) {
       type: h.type,
       mode: h.mode,
       outcome: h.outcome,
+      scheduledTime: toDate(h.scheduledTime),
       startedAt: toDate(h.startedAt),
       endedAt: toDate(h.endedAt),
       amountPaid: h.amountPaid,
@@ -123,10 +139,11 @@ export async function requestReschedule({ booking, consultationId, preferredTime
 }
 
 /** Server checks the typed ID, ownership, time window and opens the call. */
-export async function joinVideoCall({ booking, enteredConsultationId }) {
+export async function joinVideoCall({ booking, enteredConsultationId, callConsentVersion }) {
   const { data } = await callStartVideoCall({
     consultationId: booking.consultationId,
     enteredConsultationId: enteredConsultationId.trim().toUpperCase(),
+    ...(callConsentVersion ? { callConsentVersion } : {}),
   });
   return data;
 }

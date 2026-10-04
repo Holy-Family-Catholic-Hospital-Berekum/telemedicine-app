@@ -148,7 +148,7 @@ async function recordPaymentIssue(paystackData, { reason, bookingId = null, pati
  *   "failed"    the latest attempt failed or was abandoned
  *   "none"      no attempt has started
  */
-async function checkAttempts(bookingRef, booking) {
+async function checkAttempts(bookingRef, booking, { strict = false } = {}) {
   const refs = Array.isArray(booking.txRefs) ? [...booking.txRefs].reverse() : [];
   if (booking.status !== "awaiting_payment") return "paid";
   if (refs.length === 0) return "none";
@@ -191,6 +191,10 @@ async function checkAttempts(bookingRef, booking) {
       Number.isFinite(createdAt) &&
       Date.now() - createdAt < IN_FLIGHT_WINDOW_MINUTES * 60 * 1000;
     if (IN_FLIGHT.has(tx?.status) && recent) inFlight = true;
+    // Strict (used before a NEW booking): a recently closed checkout may
+    // still have a mobile-money prompt waiting on the phone, so anything
+    // short of a definite failure counts as unconfirmed.
+    if (strict && recent && tx?.status !== "failed" && tx?.status !== "reversed") inFlight = true;
   }
   if (inFlight) return "in_flight";
   if (unknown) return "unknown";
@@ -346,7 +350,7 @@ exports.createBookingDraft = onCall({ secrets: [PAYSTACK_SECRET_KEY] }, async (r
     .where("status", "==", "awaiting_payment")
     .get();
   for (const draft of drafts.docs) {
-    const state = await checkAttempts(draft.ref, draft.data());
+    const state = await checkAttempts(draft.ref, draft.data(), { strict: true });
     if (state === "paid") {
       throw new HttpsError(
         "failed-precondition",
@@ -356,7 +360,7 @@ exports.createBookingDraft = onCall({ secrets: [PAYSTACK_SECRET_KEY] }, async (r
     if (state === "in_flight" || state === "unknown") {
       throw new HttpsError(
         "failed-precondition",
-        "You have a payment that is still being processed. Approve or decline the prompt on your phone, then check your dashboard before booking again.",
+        "You have a payment that hasn't been confirmed yet. You can't start another booking until it is confirmed or has clearly failed. Approve or decline the prompt on your phone, then use \"Check payment\" on your dashboard.",
       );
     }
   }

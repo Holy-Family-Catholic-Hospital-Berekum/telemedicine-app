@@ -15,6 +15,9 @@ import { STAFF_LOGIN_PATH } from "./staffRoute";
 import Privacy from "./pages/privacy";
 import Terms from "./pages/terms";
 
+// Where signed-out staff are sent: the hidden staff sign-in page.
+const STAFF_HOME = STAFF_LOGIN_PATH || "/";
+
 export default function App() {
   return (
     <AuthProvider>
@@ -45,11 +48,11 @@ export default function App() {
           <Route path="/book" element={<BookConsultation />} />
         </Route>
 
-        <Route element={<ProtectedRoute allowedRoles={["admin"]} />}>
+        <Route element={<ProtectedRoute allowedRoles={["admin"]} redirectTo={STAFF_HOME} />}>
           <Route path="/admin" element={<Admin />} />
         </Route>
 
-        <Route element={<ProtectedRoute allowedRoles={["doctor"]} />}>
+        <Route element={<ProtectedRoute allowedRoles={["doctor"]} redirectTo={STAFF_HOME} />}>
           <Route path="/doctor" element={<DoctorDashboard />} />
         </Route>
       </Routes>

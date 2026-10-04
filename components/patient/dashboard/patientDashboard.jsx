@@ -5,11 +5,14 @@ import { useAuth } from "../../../src/context/authContext.jsx";
 import HealthcarePreloader from "../../../src/components/common/healthcarePreloader.jsx";
 
 import { callableMessage } from "../../../src/constants";
+import { CURRENT_CALL_CONSENT } from "../../../src/consentText";
+import CallConsentDialog from "./callConsentDialog";
 import {
   joinVideoCall,
   fetchMyBookings,
   fetchAvailableSlots,
   fetchConsultationHistory,
+  fetchMyRefundRequests,
 } from "./patientFirestoreService";
 
 import StatTile from "./patientStatTile";
@@ -31,9 +34,12 @@ export default function Dashboard() {
   const [bookings, setBookings] = useState(null);
   const [slots, setSlots] = useState([]);
   const [history, setHistory] = useState(null);
+  const [refunds, setRefunds] = useState({}); // consultationId -> request
   // { bookingId, patientSeq } for the call that's open, if any.
   const [activeCall, setActiveCall] = useState(null);
   const [rejoinError, setRejoinError] = useState(null);
+  const [consentFor, setConsentFor] = useState(null); // booking awaiting call consent
+  const [consentBusy, setConsentBusy] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -43,9 +49,11 @@ export default function Dashboard() {
       fetchMyBookings(user.uid),
       fetchAvailableSlots(),
       fetchConsultationHistory(user.uid),
+      fetchMyRefundRequests(user.uid).catch(() => ({})),
     ])
-      .then(([bookingData, slotData, historyData]) => {
+      .then(([bookingData, slotData, historyData, refundData]) => {
         if (cancelled) return;
+        setRefunds(refundData ?? {});
         setBookings(bookingData ?? []);
         setSlots(slotData ?? []);
         setHistory(historyData ?? []);
@@ -66,18 +74,34 @@ export default function Dashboard() {
 
   // Rejoin goes through startVideoCall again: the server re-checks access
   // and gives this attempt a new patientSeq so the doctor re-offers.
-  async function handleRejoinCall(booking) {
+  async function handleRejoinCall(booking, callConsentVersion) {
     if (!booking?.consultationId) return;
     setRejoinError(null);
+    setConsentBusy(true);
     try {
       const result = await joinVideoCall({
         booking,
         enteredConsultationId: booking.consultationId,
+        callConsentVersion,
       });
+      setConsentFor(null);
       handleJoined(booking.bookingId, result);
     } catch (err) {
-      setRejoinError(callableMessage(err, "We couldn't reconnect you. Try again."));
+      if (err?.details?.reason === "call_consent_required") {
+        setConsentFor(booking); // consent wasn't recorded yet: ask now
+      } else {
+        setConsentFor(null);
+        setRejoinError(callableMessage(err, "We couldn't reconnect you. Try again."));
+      }
+    } finally {
+      setConsentBusy(false);
     }
+  }
+
+  function reloadRefunds() {
+    fetchMyRefundRequests(user.uid)
+      .then((data) => setRefunds(data ?? {}))
+      .catch(() => {});
   }
 
   function reloadBookings() {
@@ -95,7 +119,10 @@ export default function Dashboard() {
   }
 
   function handleJoined(bookingId, result) {
-    updateBooking(bookingId, { callStartedAt: result.callStartedAt });
+    updateBooking(bookingId, {
+      callStartedAt: result.callStartedAt,
+      callConsentId: "recorded",
+    });
     setActiveCall({ bookingId, patientSeq: result.patientSeq ?? 0 });
   }
 
@@ -258,6 +285,9 @@ export default function Dashboard() {
                 <BookingCard
                   key={booking.bookingId}
                   booking={booking}
+                  refund={refunds[booking.consultationId]}
+                  defaultPhone={profile?.phone}
+                  onRefundRequested={reloadRefunds}
                   onRescheduled={() => {}}
                   onJoined={handleJoined}
                   onRejoinCall={handleRejoinCall}
@@ -282,11 +312,24 @@ export default function Dashboard() {
               {history === null ? (
                 <p className="text-sm text-black/60">Loading history…</p>
               ) : (
-                <ConsultationHistory consultations={history} />
+                <ConsultationHistory
+                  consultations={history}
+                  refunds={refunds}
+                  defaultPhone={profile?.phone}
+                  onRefundRequested={reloadRefunds}
+                />
               )}
             </div>
           </section>
         </main>
+
+        {consentFor && (
+          <CallConsentDialog
+            busy={consentBusy}
+            onAgree={() => handleRejoinCall(consentFor, CURRENT_CALL_CONSENT)}
+            onCancel={() => setConsentFor(null)}
+          />
+        )}
 
         {activeCallBooking && (
           <VideoCallModal

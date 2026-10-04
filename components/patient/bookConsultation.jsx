@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { httpsCallable } from "firebase/functions";
+import { collection, getDocs, query, where } from "firebase/firestore";
 
-import { functions } from "../../src/firebase";
+import { db, functions } from "../../src/firebase";
+import { useAuth } from "../../src/context/authContext.jsx";
 import Header from "../shared/header";
 import Footer from "../shared/footer";
 // Fixed, auto-slideshow brand panel — see BrandAside.jsx.
@@ -107,7 +109,7 @@ import {
  * keep or quote it, because Paystack verifies the payment for us. The
  * consultation ID isn't shown here either: it's issued when staff assign
  * a doctor and a time, which happens after this flow ends, so the
- * patient receives it by phone/WhatsApp rather than on this page.
+ * patient receives it by email (and on their dashboard) once scheduled.
  *
  * Back navigation: step 1 shows a "Back" arrow to step 0. Form values
  * already entered stay in state, so going back and forward doesn't lose
@@ -428,6 +430,35 @@ export default function BookConsultation() {
   const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(false);
   const { settings } = useSiteSettings();
+  const { user } = useAuth();
+
+  // Heads-up only: an earlier booking with a payment attempt that isn't
+  // confirmed yet. createBookingDraft refuses a new booking in that case;
+  // this just tells the patient before they fill in the form.
+  const [unconfirmedPayment, setUnconfirmedPayment] = useState(false);
+  useEffect(() => {
+    if (!user) return undefined;
+    let active = true;
+    getDocs(
+      query(
+        collection(db, "bookings"),
+        where("patientUid", "==", user.uid),
+        where("status", "==", "awaiting_payment"),
+      ),
+    )
+      .then((snap) => {
+        const cutoff = Date.now() - 30 * 60 * 1000;
+        const pending = snap.docs.some((d) => {
+          const b = d.data();
+          return (b.txRefs || []).length > 0 && (b.lastAttemptAt?.toMillis?.() ?? 0) > cutoff;
+        });
+        if (active) setUnconfirmedPayment(pending);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [user]);
   const prices = settings.prices; // { OPD, SURGICAL } — live, admin-editable
 
   // { message, id } — the id makes repeated identical errors re-announce.
@@ -763,7 +794,7 @@ export default function BookConsultation() {
         points={[
           "General OPD or surgical consultation",
           "Pay by MoMo in a few taps, confirmed instantly",
-          "Appointment shared by phone or WhatsApp",
+          "Appointment details sent to your email",
         ]}
       />
 
@@ -863,6 +894,20 @@ export default function BookConsultation() {
               {/* ---------- Step 0: consultation details ---------- */}
               {step === 0 && (
                 <section>
+                  {unconfirmedPayment && (
+                    <div
+                      role="status"
+                      className="mb-6 rounded-2xl border border-[#F88535]/50 bg-[#F88535]/10 px-5 py-4 text-[15px] text-black/80"
+                    >
+                      You have a payment that hasn't been confirmed yet. To
+                      avoid paying twice, you can't start another booking
+                      until it is confirmed or has clearly failed.{" "}
+                      <Link to="/dashboard" className="font-medium text-[#0095D9] underline">
+                        Check it on your dashboard
+                      </Link>
+                      .
+                    </div>
+                  )}
                   <h2 className="font-display text-[22px] sm:text-[24px] font-medium">
                     What kind of consultation do you need?
                   </h2>
@@ -1412,8 +1457,8 @@ export default function BookConsultation() {
                   </div>
 
                   <p className="mt-6 text-[16px] text-black/60 max-w-md mx-auto sm:mx-0">
-                    Your consultation ID comes through with your appointment
-                    details once{" "}
+                    We'll email you your appointment time and consultation ID
+                    once{" "}
                     {selectedDoctor ? "a time is" : "a doctor and time are"}{" "}
                     assigned. You can see this booking any time from your
                     Dashboard.

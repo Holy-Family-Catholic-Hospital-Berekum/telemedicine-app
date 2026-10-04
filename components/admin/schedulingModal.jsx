@@ -85,8 +85,8 @@ export default function SchedulingModal({
 
         <p className="sub" style={{ margin: 0 }}>
           {reschedule
-            ? "Let the patient know the new time by call or WhatsApp — the app doesn't send it."
-            : "A consultation ID is generated when you confirm. Contact the patient by call or WhatsApp with the time and ID — the app never sends them automatically."}
+            ? "The patient is emailed the new time automatically. Check the Scheduled list to see that the email went out."
+            : "A consultation ID is generated when you confirm, and the patient is emailed the time and ID automatically. Check the Scheduled list to see that the email went out."}
         </p>
 
         <div className="admin-modal-actions">

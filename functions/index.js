@@ -26,6 +26,7 @@ const recordings = require("./recordings");
 const maintenance = require("./maintenance");
 const siteSettings = require("./siteSettings");
 const legalDocs = require("./legalDocs");
+const refunds = require("./refunds");
 
 // Accounts
 exports.registerPatient = accounts.registerPatient;
@@ -38,6 +39,8 @@ exports.initializePayment = payments.initializePayment;
 exports.paystackWebhook = payments.paystackWebhook;
 exports.getBookingStatus = payments.getBookingStatus;
 exports.resolvePaymentIssue = payments.resolvePaymentIssue;
+exports.requestRefund = refunds.requestRefund;
+exports.resolveRefundRequest = refunds.resolveRefundRequest;
 
 // Scheduling
 exports.scheduleConsultation = scheduling.scheduleConsultation;
@@ -71,3 +74,11 @@ exports.cleanupExpiredBookings = maintenance.cleanupExpiredBookings;
 exports.releaseSlotHolds = maintenance.releaseSlotHolds;
 exports.cleanupSignalling = maintenance.cleanupSignalling;
 exports.cleanupRateLimits = maintenance.cleanupRateLimits;
+
+// Patient emails. They need the RESEND_API_KEY secret, so they're only
+// deployed once lib/mailConfig.js FROM uses the hospital's verified domain.
+if (require("./lib/mailConfig").EMAIL_CONFIGURED) {
+  const email = require("./email");
+  exports.sendQueuedEmail = email.sendQueuedEmail;
+  exports.retryQueuedEmails = email.retryQueuedEmails;
+}

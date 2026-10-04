@@ -118,7 +118,7 @@ const steps = [
   {
     title: "Join your consultation",
     detail:
-      "We call or WhatsApp you with your time and consultation ID. Join by video, or visit us in person.",
+      "We email you your appointment time and consultation ID. Join by video, or visit us in person.",
   },
 ];
 

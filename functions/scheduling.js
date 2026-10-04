@@ -30,6 +30,7 @@ const {
   audit,
   rateLimit,
 } = require("./lib/core");
+const { queueAppointmentEmail } = require("./lib/mailQueue");
 
 // A doctor can't have two consultations closer together than this.
 const MIN_GAP_MINUTES = 30;
@@ -163,6 +164,20 @@ exports.scheduleConsultation = onCall(async (request) => {
       doctorDepartment: doctor.department,
       scheduledTime,
       updatedAt: serverTime(),
+    });
+    // Tell the patient by email (sent by functions/email.js).
+    queueAppointmentEmail(tx, {
+      bookingId,
+      to: booking.email,
+      kind: "appointment_scheduled",
+      data: {
+        patientName: booking.patientName || "",
+        doctorName: doctor.name,
+        type: booking.type,
+        mode: booking.mode,
+        scheduledAt: when.getTime(),
+        consultationId: id,
+      },
     });
     audit(tx, {
       actorId: caller.uid,
@@ -423,6 +438,19 @@ exports.rescheduleConsultation = onCall(async (request) => {
       doctorDepartment: doctor.department,
       ...(booking.rescheduleRequest ? { "rescheduleRequest.status": "applied" } : {}),
       updatedAt: serverTime(),
+    });
+    queueAppointmentEmail(tx, {
+      bookingId,
+      to: booking.email,
+      kind: "appointment_rescheduled",
+      data: {
+        patientName: booking.patientName || "",
+        doctorName: doctor.name,
+        type: booking.type,
+        mode: booking.mode,
+        scheduledAt: when.getTime(),
+        consultationId: booking.consultationId,
+      },
     });
     audit(tx, {
       actorId: caller.uid,

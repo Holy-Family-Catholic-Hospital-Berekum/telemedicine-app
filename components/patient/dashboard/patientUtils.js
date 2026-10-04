@@ -1,8 +1,9 @@
-const UNLOCK_WINDOW_MS = 5 * 60 * 1000;
+import { CALL_UNLOCK_MINUTES } from "../../../src/constants";
 
-// Same rule as the doctor dashboard's getCallWindow — a video consultation
-// only opens 5 minutes before its scheduled time. Kept in sync deliberately;
-// if you change one, change the other.
+const UNLOCK_WINDOW_MS = CALL_UNLOCK_MINUTES * 60 * 1000;
+
+// Same rule as the doctor dashboard: the video room opens
+// CALL_UNLOCK_MINUTES before the scheduled time (server enforces it too).
 export function getCallWindow(scheduledTime, now = new Date()) {
   const scheduledMs = new Date(scheduledTime).getTime();
   const unlockAtMs = scheduledMs - UNLOCK_WINDOW_MS;

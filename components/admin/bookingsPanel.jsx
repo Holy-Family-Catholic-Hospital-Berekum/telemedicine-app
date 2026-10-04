@@ -150,6 +150,14 @@ function SearchInput({ value, onChange, placeholder }) {
   );
 }
 
+// Appointment email status, written by functions/email.js.
+const EMAIL_STATUS = {
+  pending: "Email to patient: sending…",
+  sent: "Email sent to patient",
+  failed: "Email failed — phone the patient",
+  not_configured: "Email not set up — phone the patient",
+};
+
 export default function BookingsPanel({
   bookings,
   doctors,
@@ -442,6 +450,22 @@ export default function BookingsPanel({
                               {formatDateTime(b.scheduledTime)}
                               {b.callStartedAt ? " · call started" : ""}
                             </div>
+                            {b.lastEmail && (
+                              <div
+                                className="admin-cell-sub"
+                                style={{
+                                  marginTop: 2,
+                                  color:
+                                    b.lastEmail.status === "sent"
+                                      ? "var(--color-success)"
+                                      : b.lastEmail.status === "pending"
+                                        ? undefined
+                                        : "var(--color-danger)",
+                                }}
+                              >
+                                {EMAIL_STATUS[b.lastEmail.status] ?? b.lastEmail.status}
+                              </div>
+                            )}
                           </>
                         ) : (
                           "—"

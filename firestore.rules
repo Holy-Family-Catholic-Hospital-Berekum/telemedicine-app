@@ -155,6 +155,12 @@ service cloud.firestore {
       allow read: if isAdmin();
       allow write: if false;
     }
+    // Patient refund requests: the patient sees their own; written by functions.
+    match /refundRequests/{consultationId} {
+      allow read: if isAdmin()
+                  || (isPatient() && resource.data.patientUid == myUid());
+      allow write: if false; // requestRefund, resolveRefundRequest
+    }
     // Payments to refund (duplicates, late or mismatched); written by functions.
     match /paymentIssues/{reference} {
       allow read: if isAdmin();

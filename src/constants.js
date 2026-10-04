@@ -7,8 +7,9 @@ export const TYPE_LABELS = { OPD: "General OPD", SURGICAL: "Surgical" };
 export const MODE_LABELS = { online: "Online", in_person: "In person" };
 export const OUTCOME_LABELS = { completed: "Completed", no_show: "No-show" };
 
-// Video room opens this long before the scheduled time (server enforces).
-export const CALL_UNLOCK_MINUTES = 5;
+// Video room opens this long before the scheduled time. Keep in step with
+// JOIN_OPENS_MINUTES_BEFORE in functions/consultations.js (server enforces).
+export const CALL_UNLOCK_MINUTES = 30;
 
 /** Firestore Timestamp / Date / ISO string -> Date (or null). */
 export function toDate(value) {
