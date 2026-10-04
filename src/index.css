@@ -1,4 +1,17 @@
 @import "tailwindcss";
+
+/* Patient-facing pages (wrapped in .patient-ui in App.jsx) are read by
+   patients of every age, so the small Tailwind text sizes are raised here:
+   the text-xs / text-sm / text-base utilities read these variables. Staff
+   pages keep the defaults. */
+.patient-ui {
+  --text-xs: 0.875rem; /* 14px */
+  --text-xs--line-height: 1.5;
+  --text-sm: 1rem; /* 16px */
+  --text-sm--line-height: 1.55;
+  --text-base: 1.0625rem; /* 17px */
+  --text-base--line-height: 1.6;
+}
   /* admin.css
    Design tokens + layout for the Holy Family Catholic Hospital admin
    dashboard. Palette is fixed to the hospital's orange (#F88535) and

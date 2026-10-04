@@ -31,7 +31,7 @@ export default function RefundRequest({ source, id, scheduledTime, amountPaid, e
 
   if (existing) {
     return (
-      <p className="text-xs text-[#5C6B72]">
+      <p className="text-xs text-[#3E4E56]">
         {STATUS_TEXT[existing.status] ?? "Refund requested"}
         {existing.status === "declined" && existing.note ? `: ${existing.note}` : ""}
       </p>
@@ -59,7 +59,7 @@ export default function RefundRequest({ source, id, scheduledTime, amountPaid, e
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="text-xs text-[#5C6B72] underline underline-offset-2 hover:text-[#12242C]"
+        className="text-xs text-[#3E4E56] underline underline-offset-2 hover:text-[#12242C]"
       >
         Request a refund instead
       </button>
@@ -82,10 +82,10 @@ export default function RefundRequest({ source, id, scheduledTime, amountPaid, e
                 Request a refund
               </h2>
               <button type="button" onClick={() => setOpen(false)} disabled={busy} aria-label="Close">
-                <X size={18} className="text-[#5C6B72]" />
+                <X size={18} className="text-[#3E4E56]" />
               </button>
             </div>
-            <p className="mt-2 text-sm text-[#5C6B72]">
+            <p className="mt-2 text-sm text-[#3E4E56]">
               Tell us why you're asking for a refund. The hospital reviews each
               request and refunds approved ones to your mobile money number.
             </p>

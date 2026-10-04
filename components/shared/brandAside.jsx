@@ -120,10 +120,10 @@ export default function BrandAside({
           />
         </span>
         <span className="leading-tight">
-          <strong className="block font-display text-[15px] font-medium">
+          <strong className="block font-display text-[16px] font-medium">
             Holy Family Catholic Hospital
           </strong>
-          <small className="block text-[12px] text-white/70">
+          <small className="block text-[14px] text-white/90">
             Telemedicine Platform
           </small>
         </span>
@@ -133,7 +133,7 @@ export default function BrandAside({
         <h2 className="font-display text-[26px] xl:text-[28px] font-medium leading-[1.15]">
           {heading}
         </h2>
-        <p className="mt-3 text-[14.5px] leading-relaxed text-white/80 max-w-[30ch]">
+        <p className="mt-3 text-[16px] leading-relaxed text-white/80 max-w-[30ch]">
           {body}
         </p>
 
@@ -142,9 +142,9 @@ export default function BrandAside({
             {points.map((pt) => (
               <div
                 key={pt}
-                className="flex items-start gap-2.5 text-[13.5px] text-white/90"
+                className="flex items-start gap-2.5 text-[15px] text-white/90"
               >
-                <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-white/15 text-[11px]">
+                <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-white/15 text-[14px]">
                   ✓
                 </span>
                 <span>{pt}</span>
@@ -168,7 +168,7 @@ export default function BrandAside({
         />
       </svg>
 
-      <p className="relative z-10 mt-4 text-[11.5px] leading-relaxed text-white/55">
+      <p className="relative z-10 mt-4 text-[14px] leading-relaxed text-white/90">
         Data is encrypted in transit. Booking details are deleted when your consultation closes.
       </p>
     </aside>

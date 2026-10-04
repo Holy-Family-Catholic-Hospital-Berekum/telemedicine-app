@@ -39,3 +39,25 @@ export const CALL_CONSENT_TEXT =
   "limits: the doctor may ask you to come to the hospital if they " +
   "cannot assess you properly by video. By joining you agree to be seen " +
   "by video on these terms.";
+
+// Sign-up age declaration. MUST match AGE_DECLARATION_TEXT[CURRENT_AGE_DECLARATION]
+// in functions/lib/consentText.js.
+export const CURRENT_AGE_DECLARATION = "2026-10-age-v1";
+
+export const AGE_DECLARATION_TEXT =
+  "I confirm that I am 18 years of age or older. I understand that a " +
+  "person under 18 cannot have their own account, and that a parent " +
+  "or legal guardian books for a child from their own account.";
+
+// Booking for a patient under 18. MUST match
+// GUARDIAN_CONSENT_TEXT[CURRENT_GUARDIAN_CONSENT] in functions/lib/consentText.js.
+export const CURRENT_GUARDIAN_CONSENT = "2026-10-guardian-v1";
+
+export const GUARDIAN_CONSENT_TEXT =
+  "I am the parent or legal guardian of the child this consultation " +
+  "is for, who is under 18. On the child's behalf, I consent to the " +
+  "hospital collecting and using the child's name, date of birth, " +
+  "sex, location and phone number given in this booking to set up and " +
+  "carry out the consultation, as described above and in the privacy " +
+  "policy. I am responsible for this booking, and I or another " +
+  "responsible adult will be with the child during the consultation.";

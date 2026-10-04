@@ -32,7 +32,7 @@ export default function RescheduleForm({ booking, onRequested }) {
 
   if (done) {
     return (
-      <p className="text-xs text-[#5C6B72]">
+      <p className="text-xs text-[#3E4E56]">
         Reschedule request sent — we'll email you the new time.
       </p>
     );
@@ -59,7 +59,7 @@ export default function RescheduleForm({ booking, onRequested }) {
       onSubmit={handleSubmit}
       className="rounded-md border border-[#DCE6EC] p-3.5 space-y-2.5"
     >
-      <p className="text-xs text-[#5C6B72]">
+      <p className="text-xs text-[#3E4E56]">
         Tell us when suits you and we'll email you the new time.
       </p>
       <input
@@ -94,7 +94,7 @@ export default function RescheduleForm({ booking, onRequested }) {
         <button
           type="button"
           onClick={() => setOpen(false)}
-          className="text-xs text-[#5C6B72] hover:text-[#12242C]"
+          className="text-xs text-[#3E4E56] hover:text-[#12242C]"
         >
           Cancel
         </button>

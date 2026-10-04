@@ -1,6 +1,15 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Clock3, Radio, LogOut, Home as HomeIcon } from "lucide-react";
+import {
+  LogOut,
+  Home as HomeIcon,
+  CalendarCheck,
+  Hourglass,
+  CreditCard,
+  CalendarDays,
+  Settings as SettingsIcon,
+  CalendarPlus,
+} from "lucide-react";
 import { useAuth } from "../../../src/context/authContext.jsx";
 import HealthcarePreloader from "../../../src/components/common/healthcarePreloader.jsx";
 
@@ -16,10 +25,10 @@ import {
 } from "./patientFirestoreService";
 
 import { getCallWindow } from "./patientUtils";
-import StatTile from "./patientStatTile";
 import BookingCard from "./patientBookingCard";
 import AvailableSlots from "./patientAvailableSlots";
 import ConsultationHistory from "./consultationHistory";
+import PatientSettings from "./patientSettings";
 
 import VideoCallModal from "../../video/videoCallModal";
 import BrandAside from "../../shared/brandAside";
@@ -32,6 +41,7 @@ export default function Dashboard() {
   // `user` is always a signed-in patient here.
   const { user, profile, signOutUser } = useAuth();
 
+  const [tab, setTab] = useState("appointments"); // "appointments" | "settings"
   const [bookings, setBookings] = useState(null);
   const [slots, setSlots] = useState([]);
   const [history, setHistory] = useState(null);
@@ -145,14 +155,34 @@ export default function Dashboard() {
 
   const safeBookings = bookings ?? [];
 
-  const awaitingAssignment = safeBookings.filter(
-    (booking) => booking.state === "pending_assignment",
-  ).length;
-
-  const liveNow = safeBookings.some(
-    (booking) =>
-      Boolean(booking.patientJoinedAt) && !getCallWindow(booking.scheduledTime).closed,
-  );
+  // Bookings grouped by where they are, most important first.
+  const sortByTime = (a, b) =>
+    (a.scheduledTime?.getTime?.() ?? 0) - (b.scheduledTime?.getTime?.() ?? 0);
+  const groups = [
+    {
+      key: "scheduled",
+      title: "Scheduled appointments",
+      help: "Your appointments with a doctor and a time. Join video calls from here.",
+      icon: CalendarCheck,
+      items: safeBookings
+        .filter((b) => b.state === "scheduled" || b.state === "in_progress")
+        .sort(sortByTime),
+    },
+    {
+      key: "waiting",
+      title: "Waiting to be scheduled",
+      help: "Paid. We're choosing your doctor and time, and will email you when it's set.",
+      icon: Hourglass,
+      items: safeBookings.filter((b) => b.state === "pending_assignment"),
+    },
+    {
+      key: "unconfirmed",
+      title: "Payment not confirmed",
+      help: "We haven't received confirmation of these payments yet. Open one to check it. Unpaid bookings are removed after 24 hours.",
+      icon: CreditCard,
+      items: safeBookings.filter((b) => b.state === "awaiting_payment"),
+    },
+  ].filter((g) => g.items.length > 0);
 
   const activeCallBooking = safeBookings.find(
     (booking) => booking.bookingId === activeCall?.bookingId,
@@ -194,13 +224,13 @@ export default function Dashboard() {
                 className="h-10 w-10 rounded-full shrink-0 ring-2 ring-white/40"
               />
               <span className="min-w-0 leading-tight">
-                <span className="block text-[11px] uppercase tracking-wide text-white/70 sm:hidden">
+                <span className="block text-[15px] uppercase tracking-wide text-white/85 sm:hidden">
                   Holy Family Catholic Hospital
                 </span>
-                <span className="hidden sm:block text-[12px] text-white/70">
+                <span className="hidden sm:block text-[16px] text-white/85">
                   Holy Family Catholic Hospital
                 </span>
-                <span className="block text-[15px] font-medium truncate">
+                <span className="block text-[17px] font-semibold truncate">
                   Hi, {firstName}
                 </span>
               </span>
@@ -226,108 +256,152 @@ export default function Dashboard() {
           </div>
         </header>
 
-        <main className="mx-auto max-w-4xl px-5 sm:px-8 py-6 sm:py-8 space-y-8 min-h-[calc(100dvh-68px+5rem)] w-full">
-          <div className="grid grid-cols-2 rounded-md border border-black/10 overflow-hidden">
-            <StatTile
-              label="Awaiting assignment"
-              value={awaitingAssignment}
-              icon={Clock3}
-            />
-            <StatTile
-              label="Live now"
-              value={liveNow ? "Yes" : "—"}
-              icon={Radio}
-              tone={liveNow ? "live" : "default"}
-            />
-          </div>
+        <main className="mx-auto max-w-4xl px-5 sm:px-8 py-6 sm:py-8 min-h-[calc(100dvh-68px+5rem)] w-full">
+          {/* Two big, plain tabs. */}
+          <nav className="grid grid-cols-2 gap-2 rounded-xl bg-[#F1F5F8] p-1.5" aria-label="Dashboard">
+            {[
+              { id: "appointments", label: "My appointments", icon: CalendarDays },
+              { id: "settings", label: "Settings", icon: SettingsIcon },
+            ].map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => setTab(t.id)}
+                aria-current={tab === t.id ? "page" : undefined}
+                className={`flex items-center justify-center gap-2 rounded-lg px-3 py-3 text-base font-semibold transition ${
+                  tab === t.id
+                    ? "bg-white text-[#12242C] shadow-sm"
+                    : "text-[#3E4E56] hover:text-[#12242C]"
+                }`}
+              >
+                <t.icon size={18} strokeWidth={2} />
+                {t.label}
+              </button>
+            ))}
+          </nav>
 
-          {liveBookings.length > 0 && (
-            <section className="space-y-2.5">
-              <h2 className="text-base font-medium">Live consultation</h2>
-              {rejoinError && <p className="text-xs text-[#B23A3A]">{rejoinError}</p>}
-              {liveBookings.map((booking) => (
-                <div
-                  key={booking.bookingId}
-                  className="flex items-center justify-between gap-3 rounded-md border border-black/10 bg-[#F88535]/5 px-4 py-3.5"
-                >
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className="h-2 w-2 shrink-0 rounded-full bg-[#F88535]" />
-                    <span className="text-sm text-black truncate">
-                      {booking.type ?? "Consultation"} · in progress
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => handleRejoinCall(booking)}
-                    className="rounded-sm px-3 py-1.5 text-xs font-medium text-white shrink-0"
+          {tab === "settings" ? (
+            <div className="mt-8">
+              <PatientSettings />
+            </div>
+          ) : (
+            <div className="mt-8 space-y-10">
+              {liveBookings.length > 0 && (
+                <section className="space-y-3">
+                  <h2 className="text-xl font-semibold">Your consultation is live</h2>
+                  {rejoinError && <p className="text-sm text-[#B23A3A]">{rejoinError}</p>}
+                  {liveBookings.map((booking) => (
+                    <div
+                      key={booking.bookingId}
+                      className="flex flex-wrap items-center justify-between gap-3 rounded-xl border-2 border-[#1E8E5A]/40 bg-[#1E8E5A]/5 px-4 py-4"
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <span className="h-2.5 w-2.5 shrink-0 animate-pulse rounded-full bg-[#1E8E5A]" />
+                        <span className="text-base text-black">
+                          {booking.doctorName || "Your doctor"} · in progress
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleRejoinCall(booking)}
+                        className="rounded-lg px-5 py-3 text-base font-semibold text-white"
+                        style={{ backgroundColor: "#1E8E5A" }}
+                      >
+                        Rejoin call
+                      </button>
+                    </div>
+                  ))}
+                </section>
+              )}
+
+              {groups.length === 0 ? (
+                <section className="rounded-xl border border-dashed border-black/20 px-5 py-10 text-center">
+                  <p className="text-lg font-medium">You don't have any appointments yet.</p>
+                  <p className="mt-1 text-base text-black/70">
+                    Book a consultation and it will appear here.
+                  </p>
+                  <a
+                    href="/book"
+                    className="mt-5 inline-flex items-center gap-2 rounded-lg px-5 py-3 text-base font-semibold text-white"
                     style={{ backgroundColor: "#0095D9" }}
                   >
-                    Rejoin call
-                  </button>
-                </div>
-              ))}
-            </section>
-          )}
-
-          <section>
-            <div className="flex items-center justify-between gap-3">
-              <h2 className="text-base font-medium">Your bookings</h2>
-
-              <a
-                href="/book"
-                className="rounded-sm px-3 py-1.5 text-xs font-medium text-white shrink-0"
-                style={{ backgroundColor: "#0095D9" }}
-              >
-                Book a consultation
-              </a>
-            </div>
-
-            <div className="mt-3 space-y-2.5">
-              {safeBookings.length === 0 && (
-                <p className="text-sm text-black/60">
-                  You don't have any bookings yet.
-                </p>
-              )}
-              {safeBookings.map((booking) => (
-                <BookingCard
-                  key={booking.bookingId}
-                  booking={booking}
-                  refund={refunds[booking.consultationId]}
-                  defaultPhone={profile?.phone}
-                  onRefundRequested={reloadRefunds}
-                  onRescheduled={() => {}}
-                  onJoined={handleJoined}
-                  onRejoinCall={handleRejoinCall}
-                  onPaymentConfirmed={reloadBookings}
-                />
-              ))}
-            </div>
-          </section>
-
-          <section>
-            <AvailableSlots slots={slots} />
-          </section>
-
-          <section>
-            <h2 className="text-base font-medium">Consultation history</h2>
-            <p className="mt-1 text-xs text-black/60">
-              Past, closed consultations: doctor, times and amount paid. The
-              personal details you gave when booking are deleted once a
-              consultation closes.
-            </p>
-            <div className="mt-3">
-              {history === null ? (
-                <p className="text-sm text-black/60">Loading history…</p>
+                    <CalendarPlus size={18} strokeWidth={2} />
+                    Book a consultation
+                  </a>
+                </section>
               ) : (
-                <ConsultationHistory
-                  consultations={history}
-                  refunds={refunds}
-                  defaultPhone={profile?.phone}
-                  onRefundRequested={reloadRefunds}
-                />
+                <>
+                  <div className="flex justify-end">
+                    <a
+                      href="/book"
+                      className="inline-flex items-center gap-2 rounded-lg px-4 py-2.5 text-base font-semibold text-white"
+                      style={{ backgroundColor: "#0095D9" }}
+                    >
+                      <CalendarPlus size={18} strokeWidth={2} />
+                      Book a consultation
+                    </a>
+                  </div>
+                  {groups.map((group) => (
+                    <section key={group.key} aria-labelledby={`group-${group.key}`}>
+                      <h2
+                        id={`group-${group.key}`}
+                        className="flex items-center gap-2.5 text-xl font-semibold text-[#12242C]"
+                      >
+                        <group.icon size={22} strokeWidth={1.75} className="text-[#0095D9]" />
+                        {group.title}
+                        <span className="rounded-full bg-[#0095D9]/10 px-2.5 py-0.5 text-sm font-semibold text-[#0B6BA0]">
+                          {group.items.length}
+                        </span>
+                      </h2>
+                      <p className="mt-1 text-base text-black/70">{group.help}</p>
+                      <div className="mt-4 space-y-3">
+                        {group.items.map((booking) => (
+                          <BookingCard
+                            key={booking.bookingId}
+                            booking={booking}
+                            refund={refunds[booking.consultationId]}
+                            defaultPhone={profile?.phone}
+                            onRefundRequested={reloadRefunds}
+                            onRescheduled={() => {}}
+                            onJoined={handleJoined}
+                            onRejoinCall={handleRejoinCall}
+                            onPaymentConfirmed={reloadBookings}
+                          />
+                        ))}
+                      </div>
+                    </section>
+                  ))}
+                </>
               )}
+
+              {slots.length > 0 && (
+                <section>
+                  <AvailableSlots slots={slots} />
+                </section>
+              )}
+
+              <section>
+                <h2 className="text-xl font-semibold">Past consultations</h2>
+                <p className="mt-1 text-base text-black/70">
+                  Closed consultations: doctor, times and amount paid. The
+                  personal details you gave when booking are deleted once a
+                  consultation closes.
+                </p>
+                <div className="mt-4">
+                  {history === null ? (
+                    <p className="text-base text-black/70">Loading…</p>
+                  ) : (
+                    <ConsultationHistory
+                      consultations={history}
+                      refunds={refunds}
+                      defaultPhone={profile?.phone}
+                      onRefundRequested={reloadRefunds}
+                    />
+                  )}
+                </div>
+              </section>
             </div>
-          </section>
+          )}
         </main>
 
         {consentFor && (
@@ -344,6 +418,7 @@ export default function Dashboard() {
             consultationId={activeCallBooking.consultationId}
             role="patient"
             patientSeq={activeCall.patientSeq}
+            viewerName={profile?.name}
             onClose={() => setActiveCall(null)}
           />
         )}

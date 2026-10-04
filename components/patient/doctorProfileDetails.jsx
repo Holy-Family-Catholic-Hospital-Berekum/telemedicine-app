@@ -22,13 +22,13 @@ function Chips({ items, max }) {
       {shown.map((s) => (
         <li
           key={s}
-          className="rounded-full bg-[var(--forest)]/[0.07] px-2.5 py-1 text-[11.5px] font-medium text-[var(--forest-2)]"
+          className="rounded-full bg-[var(--forest)]/[0.07] px-2.5 py-1 text-[14px] font-medium text-[var(--forest-2)]"
         >
           {s}
         </li>
       ))}
       {extra > 0 && (
-        <li className="rounded-full px-2 py-1 text-[11.5px] text-[#142138a6]">+{extra} more</li>
+        <li className="rounded-full px-2 py-1 text-[14px] text-[#142138a6]">+{extra} more</li>
       )}
     </ul>
   );
@@ -41,19 +41,19 @@ export function DoctorCardSummary({ doctor }) {
   return (
     <>
       {facts.length > 0 && (
-        <p className="mt-1 text-[12.5px] text-[#142138b3]">{facts.join(" · ")}</p>
+        <p className="mt-1 text-[15px] text-[#142138b3]">{facts.join(" · ")}</p>
       )}
       {types.length > 0 && (
-        <p className="mt-1.5 text-[12px] text-[#142138a6]">Sees patients for: {types.join(", ")}</p>
+        <p className="mt-1.5 text-[14px] text-[#142138a6]">Sees patients for: {types.join(", ")}</p>
       )}
       <Chips items={doctor.specialties} max={3} />
       {(doctor.bio || doctor.focus) && (
-        <p className="mt-2.5 line-clamp-3 text-[13.5px] leading-relaxed text-[#142138b3]">
+        <p className="mt-2.5 line-clamp-3 text-[15px] leading-relaxed text-[#142138b3]">
           {doctor.bio || doctor.focus}
         </p>
       )}
       {doctor.languages.length > 0 && (
-        <p className="mt-2 text-[12px] text-[#142138a6]">Speaks {doctor.languages.join(", ")}</p>
+        <p className="mt-2 text-[14px] text-[#142138a6]">Speaks {doctor.languages.join(", ")}</p>
       )}
     </>
   );
@@ -103,24 +103,24 @@ export function DoctorProfileDialog({ doctor, canBook, onClose, Portrait, Bookin
                 {doctor.name}
               </h3>
               {doctor.role && (
-                <p className="mt-1 text-[14px] font-medium text-[var(--forest-2)]">{doctor.role}</p>
+                <p className="mt-1 text-[16px] font-medium text-[var(--forest-2)]">{doctor.role}</p>
               )}
               {facts.length > 0 && (
-                <p className="mt-1 text-[13.5px] text-[#142138b3]">{facts.join(" · ")}</p>
+                <p className="mt-1 text-[15px] text-[#142138b3]">{facts.join(" · ")}</p>
               )}
-              <p className="mt-2 text-[13px] text-[#142138a6]">{doctor.availability}</p>
+              <p className="mt-2 text-[15px] text-[#142138a6]">{doctor.availability}</p>
 
               {types.length > 0 && (
                 <div className="mt-4">
-                  <h4 className="text-[12px] font-semibold uppercase tracking-wide text-[#142138a6]">
+                  <h4 className="text-[14px] font-semibold uppercase tracking-wide text-[#142138a6]">
                     Consultations
                   </h4>
-                  <p className="mt-1 text-[14px] text-[var(--ink2)]">{types.join(", ")}</p>
+                  <p className="mt-1 text-[16px] text-[var(--ink2)]">{types.join(", ")}</p>
                 </div>
               )}
               {doctor.specialties.length > 0 && (
                 <div className="mt-4">
-                  <h4 className="text-[12px] font-semibold uppercase tracking-wide text-[#142138a6]">
+                  <h4 className="text-[14px] font-semibold uppercase tracking-wide text-[#142138a6]">
                     Specialties
                   </h4>
                   <Chips items={doctor.specialties} />
@@ -128,10 +128,10 @@ export function DoctorProfileDialog({ doctor, canBook, onClose, Portrait, Bookin
               )}
               {doctor.languages.length > 0 && (
                 <div className="mt-4">
-                  <h4 className="text-[12px] font-semibold uppercase tracking-wide text-[#142138a6]">
+                  <h4 className="text-[14px] font-semibold uppercase tracking-wide text-[#142138a6]">
                     Languages
                   </h4>
-                  <p className="mt-1 text-[14px] text-[var(--ink2)]">{doctor.languages.join(", ")}</p>
+                  <p className="mt-1 text-[16px] text-[var(--ink2)]">{doctor.languages.join(", ")}</p>
                 </div>
               )}
             </div>
@@ -151,11 +151,11 @@ export function DoctorProfileDialog({ doctor, canBook, onClose, Portrait, Bookin
 
         {(doctor.bio || doctor.focus) && (
           <div className="mt-6">
-            <h4 className="text-[12px] font-semibold uppercase tracking-wide text-[#142138a6]">About</h4>
+            <h4 className="text-[14px] font-semibold uppercase tracking-wide text-[#142138a6]">About</h4>
             {doctor.focus && doctor.bio && (
-              <p className="mt-1 text-[14px] font-medium text-[var(--ink2)]">{doctor.focus}</p>
+              <p className="mt-1 text-[16px] font-medium text-[var(--ink2)]">{doctor.focus}</p>
             )}
-            <p className="mt-1.5 whitespace-pre-line text-[14.5px] leading-relaxed text-[#142138cc]">
+            <p className="mt-1.5 whitespace-pre-line text-[16px] leading-relaxed text-[#142138cc]">
               {doctor.bio || doctor.focus}
             </p>
           </div>
@@ -164,7 +164,7 @@ export function DoctorProfileDialog({ doctor, canBook, onClose, Portrait, Bookin
         {canBook && (
           <Link
             to={`/book?doctor=${doctor.id}`}
-            className="mt-6 inline-flex items-center gap-2 rounded-full bg-[#F88535] px-5 py-2.5 text-[14px] font-medium text-white transition hover:brightness-95"
+            className="mt-6 inline-flex items-center gap-2 rounded-full bg-[#F88535] px-5 py-2.5 text-[16px] font-medium text-white transition hover:brightness-95"
           >
             <BookingGlyph className="shrink-0" />
             Book this doctor

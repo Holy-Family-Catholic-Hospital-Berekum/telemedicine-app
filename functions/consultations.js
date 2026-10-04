@@ -289,6 +289,40 @@ exports.getTurnCredentials = onCall(
 );
 
 /* ------------------------------------------------------------------ */
+/* reportCaptureAttempt                                                */
+/* ------------------------------------------------------------------ */
+
+/**
+ * data: { consultationId, method }. The call screen reports a screenshot
+ * or screen-recording shortcut pressed during a consultation. Browsers
+ * can't block capture outright, so these are logged for the hospital to
+ * follow up (audit tab), alongside the on-screen watermark and warning.
+ */
+exports.reportCaptureAttempt = onCall(async (request) => {
+  const caller = await requireRole(request, ["patient", "doctor"]);
+  const consultationId = docId(request.data?.consultationId, "Consultation");
+  const method = oneOf(request.data?.method, ["print_screen", "screenshot_shortcut", "record_shortcut"], "method");
+  await rateLimit(caller.uid, "reportCaptureAttempt", { max: 20, windowSeconds: 3600 });
+  const { consultation } = await loadForParticipant(caller, consultationId);
+  await audit(null, {
+    actorId: caller.uid,
+    actorRole: caller.role,
+    action: caller.role === "doctor"
+      ? "Doctor tried to capture a video consultation"
+      : "Patient tried to capture a video consultation",
+    code: "consultation.capture_attempt",
+    category: "security",
+    result: "failed",
+    targetType: "consultation",
+    targetId: consultationId,
+    patientUid: consultation.patientUid,
+    details: { method },
+    meta: requestMeta(request),
+  });
+  return { ok: true };
+});
+
+/* ------------------------------------------------------------------ */
 /* markConsultationDone                                                */
 /* ------------------------------------------------------------------ */
 

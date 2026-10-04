@@ -46,7 +46,7 @@ export default function AvailableSlots({ slots }) {
             >
               <div className="text-sm">
                 <p className="font-medium text-[#12242C]">{slot.doctorName}</p>
-                <p className="text-xs text-[#5C6B72]">
+                <p className="text-xs text-[#3E4E56]">
                   {TYPE_LABELS[slot.type] ?? slot.type} ·{" "}
                   {MODE_LABELS[slot.mode] ?? slot.mode} ·{" "}
                   {formatDateTime(slot.startAt)}

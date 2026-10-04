@@ -66,11 +66,9 @@ export default function BookingCard({
   const callInProgress =
     booking.mode === "online" && booking.state === "in_progress" && !closed;
 
-  const [expanded, setExpanded] = useState(
-    booking.state === "pending_assignment" ||
-      booking.state === "awaiting_payment" ||
-      (didNotHappen && !refund),
-  );
+  // Open by default so the main action (join, reschedule, check payment)
+  // is on screen without hunting for it.
+  const [expanded, setExpanded] = useState(true);
 
   const meta =
     didNotHappen && !refund && !rescheduleRequested
@@ -91,7 +89,7 @@ export default function BookingCard({
             </span>
 
             <span
-              className="rounded-full px-2 py-0.5 text-[11px] font-medium shrink-0"
+              className="rounded-full px-2 py-0.5 text-[14px] font-medium shrink-0"
               style={{
                 backgroundColor: meta.bg,
                 color: meta.color,
@@ -101,7 +99,7 @@ export default function BookingCard({
             </span>
           </div>
 
-          <p className="mt-0.5 text-xs text-[#5C6B72] truncate">
+          <p className="mt-0.5 text-xs text-[#3E4E56] truncate">
             {MODE_LABELS[booking.mode] ?? booking.mode}
 
             {booking.scheduledTime && (
@@ -133,7 +131,7 @@ export default function BookingCard({
             type="button"
             onClick={() => setExpanded((value) => !value)}
             aria-label={expanded ? "Collapse" : "Expand"}
-            className="text-[#5C6B72]"
+            className="text-[#3E4E56]"
           >
             {expanded ? (
               <ChevronUp size={16} strokeWidth={1.75} />
@@ -151,7 +149,7 @@ export default function BookingCard({
           )}
 
           {booking.state === "pending_assignment" && (
-            <p className="flex items-center gap-2 text-sm text-[#5C6B72]">
+            <p className="flex items-center gap-2 text-sm text-[#3E4E56]">
               <ShieldCheck size={15} strokeWidth={1.75} />
               Paid {formatCurrency(booking.amountPaid ?? booking.amount)} · we're assigning your
               doctor and appointment time. We'll email you the time and your
@@ -165,7 +163,7 @@ export default function BookingCard({
                 <div className="text-sm text-[#12242C]">
                   <p className="font-medium">{booking.doctorName}</p>
 
-                  <p className="text-xs text-[#5C6B72]">{booking.doctorDepartment}</p>
+                  <p className="text-xs text-[#3E4E56]">{booking.doctorDepartment}</p>
                 </div>
 
                 <RevealId id={booking.consultationId} />
@@ -175,7 +173,7 @@ export default function BookingCard({
                 // A refund request ends the booking's options.
                 <RefundRequest existing={refund} />
               ) : rescheduleRequested ? (
-                <p className="text-sm text-[#5C6B72]">
+                <p className="text-sm text-[#3E4E56]">
                   Reschedule requested — we'll email you the new time.
                 </p>
               ) : didNotHappen ? (
@@ -186,7 +184,7 @@ export default function BookingCard({
                       ? "Your doctor couldn't join this consultation"
                       : "You missed this appointment"}
                   </p>
-                  <p className="mt-1 text-sm text-[#5C6B72]">
+                  <p className="mt-1 text-sm text-[#3E4E56]">
                     {patientJoined
                       ? "Sorry about that. Choose a new time and we'll book you in again at no extra cost."
                       : "No problem. Choose a new time and we'll book you in again at no extra cost."}
@@ -208,7 +206,7 @@ export default function BookingCard({
                   )}
                 </div>
               ) : bothJoined && closed ? (
-                <p className="text-sm text-[#5C6B72]">
+                <p className="text-sm text-[#3E4E56]">
                   Your consultation has taken place. It will move to your
                   history once the doctor closes it.
                 </p>
@@ -220,14 +218,14 @@ export default function BookingCard({
                       onJoined={(bookingId, result) => onJoined?.(bookingId, result)}
                     />
                   ) : (
-                    <p className="text-sm text-[#5C6B72]">
+                    <p className="text-sm text-[#3E4E56]">
                       Please come to the hospital at your appointment time.
                     </p>
                   )}
 
                   {!bothJoined && (
                     <div className="border-t border-[#DCE6EC] pt-4">
-                      <p className="mb-2 text-xs text-[#5C6B72]">
+                      <p className="mb-2 text-xs text-[#3E4E56]">
                         Can't make this time?
                       </p>
                       <RescheduleForm booking={booking} onRequested={onRescheduled} />

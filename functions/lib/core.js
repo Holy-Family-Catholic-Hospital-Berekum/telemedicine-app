@@ -187,6 +187,14 @@ function dateOfBirth(value) {
   return s;
 }
 
+/** Whole years between a YYYY-MM-DD date of birth and `now`. */
+function ageInYears(dob, now = new Date()) {
+  const [y, m, d] = dob.split("-").map(Number);
+  let age = now.getUTCFullYear() - y;
+  if (now.getUTCMonth() + 1 < m || (now.getUTCMonth() + 1 === m && now.getUTCDate() < d)) age--;
+  return age;
+}
+
 /** Ghana numbers to E.164 (+233XXXXXXXXX); other countries kept as dialled. */
 function phoneE164(raw) {
   const s = str(raw, { field: "Phone number", max: 20 });
@@ -335,6 +343,7 @@ module.exports = {
   docId,
   isoDateTime,
   dateOfBirth,
+  ageInYears,
   phoneE164,
   toDate,
   newConsultationId,

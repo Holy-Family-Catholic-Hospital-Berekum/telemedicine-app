@@ -11,7 +11,7 @@
 
 export const DEFAULT_LEGAL = {
   privacy: {
-    lastUpdated: "30 September 2026",
+    lastUpdated: "4 October 2026",
     contactEmail: "info@hfhberekum.org",
     intro:
       "This policy explains what personal information the hospital's telemedicine platform collects, why, who sees it, and how long we keep it. We have tried to keep it short and plain.",
@@ -27,10 +27,16 @@ export const DEFAULT_LEGAL = {
         body: `We only collect what we need to run your consultation.
 
 - Account details: your name, phone number and email address, and a password that is handled by our sign-in provider (we never see or store it in readable form).
-- Booking details: consultation type, online or in-person mode, your date of birth, sex, town or city, area or nearest landmark, phone number, and the doctor you choose, if any.
+- Booking details: consultation type, online or in-person mode, your date of birth, sex, town or city, area or nearest landmark, phone number, and the doctor you choose, if any. When you book for your child, these are your child's details, plus your child's name.
+- Your confirmation that you are 18 or older, given when you create an account, and, when you book for a child, your consent as their parent or guardian.
 - Payment details: the amount, the payment reference and whether the payment succeeded. Payment is made by mobile money through Paystack. We never see or store your mobile money PIN.
 - Consultation information: what you share with your doctor during the consultation and, when the hospital has call recording switched on, a recording of online consultations (video with sound, or sound only) (see "Consultation recording" below).
-- Basic technical data needed to keep the service working and secure, such as sign-in activity.`,
+- Basic technical data needed to keep the service working and secure, such as sign-in activity, and any attempt the call screen detects to take a screenshot of or record a video consultation.`,
+      },
+      {
+        id: "children",
+        title: "Children",
+        body: `Accounts are for adults: when you sign up, you confirm that you are 18 or older. A child under 18 is booked by their parent or legal guardian, from the parent's or guardian's own account. In line with Ghana's Data Protection Act, 2012 (Act 843), we only use a child's information with that parent's or guardian's consent, which they give on the booking form and which we record (with the date and time). The child's details are handled exactly like an adult's: they are deleted when the consultation is closed. The parent or guardian can use the rights described below on the child's behalf.`,
       },
       {
         id: "why-we-use-it",
@@ -74,7 +80,9 @@ We do not sell your information and we do not use it for advertising.`,
         title: "How we protect it",
         body: `- Role-based access, so patients, doctors and administrators only see what they are allowed to.
 - Email verification before you can book.
-- Automatic sign-out after a period of inactivity, shorter for hospital staff than for patients.
+- Automatic sign-out after an hour of inactivity.
+- Doctors hold online consultations only from the hospital's telemedicine room.
+- During a video consultation, your name and the time are shown faintly across the other person's video, so any screenshot or recording shows who made it, and screenshot attempts the call screen detects are logged.
 - Payments handled entirely by Paystack, not on our servers.
 
 No online service can promise perfect security, but we work to keep your information protected and limit who can see it.`,
@@ -115,7 +123,8 @@ If you are not happy with how we handle your information, you can complain to Gh
         title: "What the service is",
         body: `The platform lets you book and pay for General OPD and surgical consultations with the hospital's doctors, online by video or in person at the hospital.
 
-- You must be 18 or older to create an account. A parent or legal guardian may book on behalf of a child, and is responsible for the booking.
+- You must be 18 or older to create an account, and you confirm this when you sign up.
+- A parent or legal guardian may book for a child under 18 from their own account. When booking, they confirm they are the child's parent or guardian and give consent for the child's information to be used for the consultation. They are responsible for the booking, and they or another responsible adult should be with the child during the consultation.
 - You can choose a doctor when you book, but we cannot guarantee a particular doctor or time. Our team assigns the final doctor and time based on availability.
 - Doctors hold online consultations from the hospital's dedicated telemedicine room.
 - Your booking is confirmed only after your payment is confirmed. Booking does not by itself create a doctor and patient relationship for treatment beyond the consultation itself.`,
@@ -137,6 +146,7 @@ If you are not happy with how we handle your information, you can complain to Gh
         title: "Your account",
         body: `- Provide accurate details when you sign up and when you book, and keep them up to date.
 - Verify your email address before booking.
+- You can change your name and email address in Settings on your dashboard. A new email address takes effect once you confirm it from the link we send to it.
 - Keep your password private. You are responsible for activity on your account, so tell us straight away if you think someone else has used it.
 - We may sign you out automatically after a period of inactivity to protect your information.`,
       },
@@ -174,7 +184,7 @@ If you are not happy with how we handle your information, you can complain to Gh
 - Give false information or pretend to be someone else.
 - Book or pay using an account, phone number or mobile money account that is not yours or that you are not allowed to use.
 - Be abusive, threatening or disrespectful to doctors or staff.
-- Record, share or publish a consultation without the permission of everyone in it.
+- Take screenshots of, record, share or publish a consultation. Only the hospital's own recording, described in the privacy policy, is allowed. The call screen shows your name and the time across the video, and screenshot attempts it detects are logged and may lead to your account being suspended.
 - Try to break, overload or gain unauthorised access to the platform or to other people's information.`,
       },
       {

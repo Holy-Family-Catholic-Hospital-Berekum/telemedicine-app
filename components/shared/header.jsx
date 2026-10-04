@@ -71,7 +71,7 @@ function SignOutButton({ onSignOut, className = "" }) {
       type="button"
       onClick={onSignOut}
       className={`inline-flex items-center justify-center gap-1.5 rounded-full border border-[#14213822]
-                  px-3.5 py-2 text-[13px] sm:text-[14px] font-medium text-[#142138b8]
+                  px-3.5 py-2 text-[15px] sm:text-[16px] font-medium text-[#142138b8]
                   hover:border-[#c0392b55] hover:text-[#c0392b]
                   transition-colors focus-visible:outline focus-visible:outline-2
                   focus-visible:outline-offset-2 focus-visible:outline-[var(--ink)]
@@ -193,11 +193,11 @@ export default function Header({
               />
 
               <span className="min-w-0 leading-tight">
-                <span className="block font-display font-medium truncate text-[14px] sm:text-[17px]">
+                <span className="block font-display font-medium truncate text-[16px] sm:text-[17px]">
                   Holy Family Catholic Hospital
                 </span>
 
-                <span className="hidden sm:block text-[12px] text-[#142138a0]">
+                <span className="hidden sm:block text-[14px] text-[#142138a0]">
                   Telemedicine · Berekum, Ghana
                 </span>
               </span>
@@ -209,7 +209,7 @@ export default function Header({
                 <>
                   <Link
                     to="/dashboard"
-                    className={`rounded-full px-3.5 py-2 text-[13px] sm:text-[14px] font-semibold transition ${
+                    className={`rounded-full px-3.5 py-2 text-[15px] sm:text-[16px] font-semibold transition ${
                       isDashboard
                         ? "bg-[#E7F4EF] text-[var(--teal)]"
                         : "text-[var(--ink)] hover:bg-[#F2F7F5] hover:text-[var(--teal)]"
@@ -224,7 +224,7 @@ export default function Header({
                 <>
                   <Link
                     to="/signin"
-                    className="rounded-full px-3.5 py-2 text-[13px] sm:text-[14px] font-medium text-[var(--ink)]
+                    className="rounded-full px-3.5 py-2 text-[15px] sm:text-[16px] font-medium text-[var(--ink)]
                                hover:text-[var(--brand-orange)] transition-colors"
                   >
                     Sign in
@@ -232,7 +232,7 @@ export default function Header({
 
                   <Link
                     to="/signup"
-                    className="rounded-full border border-[#14213822] px-3.5 py-2 text-[13px] sm:text-[14px]
+                    className="rounded-full border border-[#14213822] px-3.5 py-2 text-[15px] sm:text-[16px]
                                font-medium text-[var(--ink)] hover:border-[var(--teal)]
                                hover:text-[var(--teal)] transition-colors"
                   >
@@ -243,7 +243,7 @@ export default function Header({
 
               <Link
                 to={cancelHref}
-                className="inline-flex items-center gap-1 rounded-full px-3.5 py-2 text-[13px] sm:text-[14px]
+                className="inline-flex items-center gap-1 rounded-full px-3.5 py-2 text-[15px] sm:text-[16px]
                            font-medium text-[#14213899] hover:bg-[#F7F8F8]
                            hover:text-[var(--ink)] transition-colors"
               >
@@ -266,7 +266,7 @@ export default function Header({
               {isLoggedIn && (
                 <Link
                   to="/dashboard"
-                  className="rounded-full bg-[#E7F4EF] px-3 py-2 text-[12px] font-semibold text-[var(--teal)]"
+                  className="rounded-full bg-[#E7F4EF] px-3 py-2 text-[14px] font-semibold text-[var(--teal)]"
                 >
                   Dashboard
                 </Link>
@@ -301,7 +301,7 @@ export default function Header({
                   <>
                     <Link
                       to="/dashboard"
-                      className="rounded-xl px-4 py-3 text-[14px] font-medium text-[var(--ink)]
+                      className="rounded-xl px-4 py-3 text-[16px] font-medium text-[var(--ink)]
                                  hover:bg-[#F3F7F6] hover:text-[var(--teal)]"
                     >
                       Dashboard
@@ -310,7 +310,7 @@ export default function Header({
                     <button
                       type="button"
                       onClick={handleSignOut}
-                      className="text-left rounded-xl px-4 py-3 text-[14px] font-medium text-[#c0392b]
+                      className="text-left rounded-xl px-4 py-3 text-[16px] font-medium text-[#c0392b]
                                  hover:bg-[#c0392b0d]"
                     >
                       Sign out
@@ -320,7 +320,7 @@ export default function Header({
                   <>
                     <Link
                       to="/signin"
-                      className="rounded-xl px-4 py-3 text-[14px] font-medium text-[var(--ink)]
+                      className="rounded-xl px-4 py-3 text-[16px] font-medium text-[var(--ink)]
                                  hover:bg-[#F3F7F6]"
                     >
                       Sign in
@@ -328,7 +328,7 @@ export default function Header({
 
                     <Link
                       to="/signup"
-                      className="rounded-xl px-4 py-3 text-[14px] font-medium text-[var(--ink)]
+                      className="rounded-xl px-4 py-3 text-[16px] font-medium text-[var(--ink)]
                                  hover:bg-[#F3F7F6]"
                     >
                       Sign up
@@ -338,7 +338,7 @@ export default function Header({
 
                 <Link
                   to={cancelHref}
-                  className="rounded-xl px-4 py-3 text-[14px] font-medium text-[#14213899]
+                  className="rounded-xl px-4 py-3 text-[16px] font-medium text-[#14213899]
                              hover:bg-[#F7F8F8] hover:text-[var(--ink)]"
                 >
                   ← {cancelLabel}
@@ -363,7 +363,7 @@ export default function Header({
 
       <header className="fixed top-0 inset-x-0 z-40">
         {/* Mobile utility strip */}
-        <div className="sm:hidden flex min-h-8 items-center justify-between gap-2 bg-[#F48732] px-4 text-[11px] text-white/90">
+        <div className="sm:hidden flex min-h-8 items-center justify-between gap-2 bg-[#F48732] px-4 text-[14px] text-white/90">
           <a
             href={HOSPITAL_PHONE_TEL}
             className="inline-flex items-center gap-1 min-w-0"
@@ -432,10 +432,10 @@ export default function Header({
               />
 
               <span className="leading-tight min-w-0">
-                <span className="block font-display font-medium truncate text-[15px] sm:text-[17px]">
+                <span className="block font-display font-medium truncate text-[16px] sm:text-[17px]">
                   Holy Family Catholic Hospital
                 </span>
-                <span className="hidden sm:block text-[13px] text-[#14213899]">
+                <span className="hidden sm:block text-[15px] text-[#14213899]">
                   Berekum, Ghana
                 </span>
               </span>
@@ -445,7 +445,7 @@ export default function Header({
             <nav className="hidden md:flex items-center gap-1.5 lg:gap-2 shrink-0">
               <Link
                 to="/"
-                className={`rounded-full px-3.5 py-2 text-[14px] font-medium transition ${
+                className={`rounded-full px-3.5 py-2 text-[16px] font-medium transition ${
                   isHome
                     ? "bg-[#F3F7F6] text-[var(--teal)]"
                     : "text-[var(--ink)] hover:bg-[#F7F8F8] hover:text-[var(--teal)]"
@@ -457,7 +457,7 @@ export default function Header({
               {isLoggedIn && (
                 <Link
                   to="/dashboard"
-                  className={`rounded-full px-3.5 py-2 text-[14px] font-semibold transition ${
+                  className={`rounded-full px-3.5 py-2 text-[16px] font-semibold transition ${
                     isDashboard
                       ? "bg-[#E7F4EF] text-[var(--teal)]"
                       : "text-[var(--ink)] hover:bg-[#F3F7F6] hover:text-[var(--teal)]"
@@ -470,7 +470,7 @@ export default function Header({
               <a
                 href={HOSPITAL_PHONE_TEL}
                 className="hidden lg:inline-flex items-center gap-2 rounded-full border border-[#14213822]
-                           px-4 py-2 text-[14px] font-medium text-[var(--ink)]
+                           px-4 py-2 text-[16px] font-medium text-[var(--ink)]
                            hover:border-[var(--teal)] hover:text-[var(--teal)] transition-colors"
               >
                 <svg
@@ -489,7 +489,7 @@ export default function Header({
                 <>
                   <Link
                     to="/signin"
-                    className="px-2 text-[14px] font-medium text-[var(--ink)]
+                    className="px-2 text-[16px] font-medium text-[var(--ink)]
                                hover:text-[var(--brand-orange)] transition-colors"
                   >
                     Sign in
@@ -497,7 +497,7 @@ export default function Header({
 
                   <Link
                     to="/signup"
-                    className="rounded-full border border-[#14213822] px-4 py-2 text-[14px]
+                    className="rounded-full border border-[#14213822] px-4 py-2 text-[16px]
                                font-medium text-[var(--ink)] hover:border-[var(--teal)]
                                hover:text-[var(--teal)] transition-colors"
                   >
@@ -511,7 +511,7 @@ export default function Header({
               <Link
                 to="/book"
                 className={`inline-flex items-center gap-1.5 rounded-full px-5 py-2.5
-                            text-[14px] font-semibold transition ${
+                            text-[16px] font-semibold transition ${
                               isBooking
                                 ? "bg-[var(--teal)] text-white shadow-[0_8px_20px_-8px_rgba(31,122,108,0.55)]"
                                 : "bg-[var(--brand-orange)] text-white shadow-[0_8px_20px_-6px_rgba(248,133,53,0.55)] hover:brightness-95 active:brightness-90"
@@ -549,7 +549,7 @@ export default function Header({
               <nav className="flex flex-col gap-1">
                 <Link
                   to="/"
-                  className={`rounded-xl px-4 py-3 text-[14px] font-medium ${
+                  className={`rounded-xl px-4 py-3 text-[16px] font-medium ${
                     isHome
                       ? "bg-[#F3F7F6] text-[var(--teal)]"
                       : "text-[var(--ink)] hover:bg-[#F7F8F8]"
@@ -561,7 +561,7 @@ export default function Header({
                 {isLoggedIn && (
                   <Link
                     to="/dashboard"
-                    className={`rounded-xl px-4 py-3 text-[14px] font-semibold ${
+                    className={`rounded-xl px-4 py-3 text-[16px] font-semibold ${
                       isDashboard
                         ? "bg-[#E7F4EF] text-[var(--teal)]"
                         : "text-[var(--ink)] hover:bg-[#F7F8F8]"
@@ -573,7 +573,7 @@ export default function Header({
 
                 <Link
                   to="/book"
-                  className="rounded-xl bg-[var(--brand-orange)] px-4 py-3 text-[14px]
+                  className="rounded-xl bg-[var(--brand-orange)] px-4 py-3 text-[16px]
                              font-semibold text-white"
                 >
                   Get Care Now
@@ -581,7 +581,7 @@ export default function Header({
 
                 <a
                   href={HOSPITAL_PHONE_TEL}
-                  className="rounded-xl px-4 py-3 text-[14px] font-medium text-[var(--ink)]
+                  className="rounded-xl px-4 py-3 text-[16px] font-medium text-[var(--ink)]
                              hover:bg-[#F7F8F8]"
                 >
                   Call the hospital
@@ -591,14 +591,14 @@ export default function Header({
                   <>
                     <Link
                       to="/signin"
-                      className="rounded-xl px-4 py-3 text-[14px] font-medium text-[var(--ink)]
+                      className="rounded-xl px-4 py-3 text-[16px] font-medium text-[var(--ink)]
                                  hover:bg-[#F7F8F8]"
                     >
                       Sign in
                     </Link>
                     <Link
                       to="/signup"
-                      className="rounded-xl px-4 py-3 text-[14px] font-medium text-[var(--ink)]
+                      className="rounded-xl px-4 py-3 text-[16px] font-medium text-[var(--ink)]
                                  hover:bg-[#F7F8F8]"
                     >
                       Sign up
@@ -608,7 +608,7 @@ export default function Header({
                   <button
                     type="button"
                     onClick={handleSignOut}
-                    className="text-left rounded-xl px-4 py-3 text-[14px] font-medium text-[#c0392b]
+                    className="text-left rounded-xl px-4 py-3 text-[16px] font-medium text-[#c0392b]
                                hover:bg-[#c0392b0d]"
                   >
                     Sign out

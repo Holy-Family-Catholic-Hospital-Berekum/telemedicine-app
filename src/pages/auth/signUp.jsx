@@ -8,10 +8,19 @@
 // /verify-email; per 6.2, a patient can't create a booking until that
 // email is verified. ProtectedRoute enforces that server-side-checked
 // gate on booking routes (see protectedRoutes.jsx).
+//
+// Accounts are for adults. Following Ghana's Data Protection Act, 2012
+// (Act 843), a child's data is processed only with a parent's or guardian's
+// consent, so the sign-up asks for a separate, specific declaration that
+// the person is 18 or older (versioned text in src/consentText.js, stored
+// by registerPatient). Children are booked by a parent or guardian, who
+// consents for them on the booking form. We don't ask for a date of birth
+// here: the declaration is all an account needs (data minimisation).
 
 import { useState, useMemo } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "../../context/authContext.jsx";
+import { AGE_DECLARATION_TEXT } from "../../consentText.js";
 import HealthcarePreloader from "../../components/common/healthcarePreloader.jsx";
 import AuthAside from "../../components/auth/authAside.jsx";
 import {
@@ -56,6 +65,7 @@ export default function SignUp() {
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [consentChecked, setConsentChecked] = useState(false);
+  const [adultChecked, setAdultChecked] = useState(false);
 
   const update = (key) => (e) =>
     setForm((f) => ({ ...f, [key]: e.target.value }));
@@ -78,6 +88,9 @@ export default function SignUp() {
     if (pwIssues.length > 0)
       errs.password = "Password doesn't meet the requirements below.";
     if (form.confirm !== form.password) errs.confirm = "Passwords don't match.";
+    if (!adultChecked)
+      errs.adult =
+        "You must be 18 or older to create an account. A parent or guardian can book for a child from their own account.";
     if (!consentChecked)
       errs.consent =
         "Please agree to the Terms of Service and Privacy Policy to continue.";
@@ -98,6 +111,7 @@ export default function SignUp() {
         email: form.email,
         password: form.password,
         acceptedTerms: consentChecked,
+        confirmedAdult: adultChecked,
       });
       navigate("/verify-email", { replace: true });
     } catch (err) {
@@ -286,6 +300,27 @@ export default function SignUp() {
                 <div className="auth-field-error">{fieldErrors.confirm}</div>
               )}
             </div>
+
+            <label
+              className="auth-remember"
+              style={{ alignItems: "flex-start", marginBottom: 12 }}
+            >
+              <input
+                type="checkbox"
+                checked={adultChecked}
+                onChange={(e) => setAdultChecked(e.target.checked)}
+                style={{ marginTop: 3 }}
+              />
+              <span>{AGE_DECLARATION_TEXT}</span>
+            </label>
+            {fieldErrors.adult && (
+              <div
+                className="auth-field-error"
+                style={{ marginTop: -6, marginBottom: 14 }}
+              >
+                {fieldErrors.adult}
+              </div>
+            )}
 
             <label
               className="auth-remember"

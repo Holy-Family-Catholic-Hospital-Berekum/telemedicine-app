@@ -15,7 +15,18 @@ import { callableMessage } from "../../src/constants";
 import {
   BOOKING_CONSENT_TEXT,
   CURRENT_BOOKING_CONSENT,
+  GUARDIAN_CONSENT_TEXT,
+  CURRENT_GUARDIAN_CONSENT,
 } from "../../src/consentText";
+
+/** Whole years from a YYYY-MM-DD date of birth to today. */
+function ageFrom(dob) {
+  const [y, m, d] = dob.split("-").map(Number);
+  const now = new Date();
+  let age = now.getFullYear() - y;
+  if (now.getMonth() + 1 < m || (now.getMonth() + 1 === m && now.getDate() < d)) age--;
+  return age;
+}
 
 /**
  * bookConsultation.jsx
@@ -306,7 +317,7 @@ function BackButton({ onClick, children = "Back" }) {
     <button
       type="button"
       onClick={onClick}
-      className="inline-flex items-center gap-1.5 mb-6 text-[15px] font-medium text-black/60
+      className="inline-flex items-center gap-1.5 mb-6 text-[16px] font-medium text-black/75
                  hover:text-[#0095D9] transition-colors
                  focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0095D9] rounded"
     >
@@ -344,7 +355,7 @@ function ErrorMessage({ error, innerRef }) {
       role="alert"
       aria-live="assertive"
       tabIndex={-1}
-      className="mb-5 flex items-start gap-3 rounded-xl bg-[#F88535]/10 border border-[#F88535]/40 text-[#A85420] text-[15px] px-4 py-3
+      className="mb-5 flex items-start gap-3 rounded-xl bg-[#F88535]/10 border border-[#F88535]/40 text-[#A85420] text-[16px] px-4 py-3
                  scroll-mt-24 focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F88535]"
     >
       <svg
@@ -510,6 +521,12 @@ export default function BookConsultation() {
     const m = searchParams.get("mode");
     return m === "online" || m === "in_person" ? m : "online";
   }); // "online" | "in_person"
+  // Who the consultation is for. Accounts belong to adults; a parent or
+  // guardian books for a child under 18 and consents for them (Ghana Data
+  // Protection Act, 2012 (Act 843)). The server enforces the same rules.
+  const [forChild, setForChild] = useState(false);
+  const [childName, setChildName] = useState("");
+  const [guardianConsent, setGuardianConsent] = useState(false);
   const [dateOfBirth, setDateOfBirth] = useState("");
   const [sex, setSex] = useState("");
   const [town, setTown] = useState("");
@@ -600,8 +617,29 @@ export default function BookConsultation() {
       showError("Choose a consultation type and a mode to continue.");
       return;
     }
+    if (forChild && childName.trim().length < 2) {
+      showError("Enter your child's full name to continue.");
+      return;
+    }
     if (!dateOfBirth) {
-      showError("Enter your date of birth to continue.");
+      showError(
+        forChild
+          ? "Enter your child's date of birth to continue."
+          : "Enter your date of birth to continue.",
+      );
+      return;
+    }
+    const age = ageFrom(dateOfBirth);
+    if (!forChild && age < 18) {
+      showError(
+        "You must be 18 or older to book for yourself. If this consultation is for your child, choose \"My child (under 18)\" above.",
+      );
+      return;
+    }
+    if (forChild && age >= 18) {
+      showError(
+        "This date of birth is 18 or over. Adults need to book from their own account.",
+      );
       return;
     }
     if (!sex) {
@@ -626,6 +664,12 @@ export default function BookConsultation() {
       );
       return;
     }
+    if (forChild && !guardianConsent) {
+      showError(
+        "Please confirm you are the child's parent or guardian and give consent for them.",
+      );
+      return;
+    }
     clearError();
     setLoading(true);
     try {
@@ -640,6 +684,13 @@ export default function BookConsultation() {
         doctorUid: selectedDoctor?.id || null,
         slotId: slotId || null,
         consentVersion: CURRENT_BOOKING_CONSENT,
+        ...(forChild
+          ? {
+              forChild: true,
+              childName: childName.trim(),
+              guardianConsentVersion: CURRENT_GUARDIAN_CONSENT,
+            }
+          : {}),
       };
       const result = await createBookingDraft(payload);
       setBooking(result);
@@ -818,7 +869,7 @@ export default function BookConsultation() {
             }}
           >
             <div className="mx-auto max-w-3xl px-5 sm:px-8 py-6 sm:py-8">
-              <p className="text-[12.5px] font-medium uppercase tracking-wide text-white/70">
+              <p className="text-[15px] font-medium uppercase tracking-wide text-white/90">
                 Book a consultation
               </p>
               <h1 className="mt-1 font-display text-[24px] sm:text-[28px] font-medium">
@@ -838,12 +889,12 @@ export default function BookConsultation() {
                   <div className="flex items-center gap-2 sm:gap-2.5">
                     <span
                       className={
-                        "flex items-center justify-center h-7 w-7 sm:h-8 sm:w-8 rounded-full text-[14px] font-medium shrink-0 " +
+                        "flex items-center justify-center h-7 w-7 sm:h-8 sm:w-8 rounded-full text-[16px] font-medium shrink-0 " +
                         (i < step
                           ? "bg-[#0095D9] text-white"
                           : i === step
                             ? "bg-[#F88535] text-white"
-                            : "bg-black/10 text-black/60")
+                            : "bg-black/10 text-black/75")
                       }
                     >
                       {i < step ? (
@@ -867,10 +918,10 @@ export default function BookConsultation() {
                     </span>
                     <span
                       className={
-                        "hidden sm:inline text-[14px] " +
+                        "hidden sm:inline text-[16px] " +
                         (i === step
                           ? "text-black font-medium"
-                          : "text-black/60")
+                          : "text-black/75")
                       }
                     >
                       {label}
@@ -883,7 +934,7 @@ export default function BookConsultation() {
               ))}
             </ol>
             {/* Mobile equivalent of the desktop step labels. */}
-            <p className="sm:hidden mb-9 text-[14px] text-black/60">
+            <p className="sm:hidden mb-9 text-[16px] text-black/75">
               Step {step + 1} of {STEP_LABELS.length} — {STEP_LABELS[step]}
             </p>
 
@@ -897,7 +948,7 @@ export default function BookConsultation() {
                   {unconfirmedPayment && (
                     <div
                       role="status"
-                      className="mb-6 rounded-2xl border border-[#F88535]/50 bg-[#F88535]/10 px-5 py-4 text-[15px] text-black/80"
+                      className="mb-6 rounded-2xl border border-[#F88535]/50 bg-[#F88535]/10 px-5 py-4 text-[16px] text-black/80"
                     >
                       You have a payment that hasn't been confirmed yet. To
                       avoid paying twice, you can't start another booking
@@ -917,7 +968,7 @@ export default function BookConsultation() {
                   </p>
 
                   <fieldset className="mt-8">
-                    <legend className="text-[15px] font-medium mb-3">
+                    <legend className="text-[16px] font-medium mb-3">
                       Consultation type
                     </legend>
                     <div className="grid sm:grid-cols-2 gap-3">
@@ -948,7 +999,7 @@ export default function BookConsultation() {
                           <span className="block font-medium text-[16px]">
                             {opt.title}
                           </span>
-                          <span className="block mt-1 text-[14px] text-black/80">
+                          <span className="block mt-1 text-[16px] text-black/80">
                             {opt.desc}
                           </span>
                         </button>
@@ -957,7 +1008,7 @@ export default function BookConsultation() {
                   </fieldset>
 
                   <fieldset className="mt-8">
-                    <legend className="text-[15px] font-medium mb-3">
+                    <legend className="text-[16px] font-medium mb-3">
                       Mode
                     </legend>
                     <div className="grid sm:grid-cols-2 gap-3">
@@ -988,7 +1039,7 @@ export default function BookConsultation() {
                           <span className="block font-medium text-[16px]">
                             {opt.title}
                           </span>
-                          <span className="block mt-1 text-[14px] text-black/80">
+                          <span className="block mt-1 text-[16px] text-black/80">
                             {opt.desc}
                           </span>
                         </button>
@@ -999,7 +1050,7 @@ export default function BookConsultation() {
                   {/* ---------- Doctor (optional; admin can switch off) ---------- */}
                   {doctorChoiceAllowed && (
                   <fieldset className="mt-8">
-                    <legend className="text-[15px] font-medium mb-3">
+                    <legend className="text-[16px] font-medium mb-3">
                       Doctor
                     </legend>
 
@@ -1009,16 +1060,16 @@ export default function BookConsultation() {
                           <div className="flex items-center gap-3">
                             <DoctorAvatar doctor={selectedDoctor} />
                             <div>
-                              <p className="font-medium text-[15px]">
+                              <p className="font-medium text-[16px]">
                                 {selectedDoctor.name}
                               </p>
-                              <p className="text-[13px] text-black/60">
+                              <p className="text-[15px] text-black/75">
                                 {selectedDoctor.role}
                               </p>
                             </div>
                           </div>
                         ) : (
-                          <p className="text-[14px] text-black/70 max-w-sm">
+                          <p className="text-[16px] text-black/70 max-w-sm">
                             We'll assign you the best available doctor for this
                             consultation. Want to choose your own?
                           </p>
@@ -1028,7 +1079,7 @@ export default function BookConsultation() {
                             <button
                               type="button"
                               onClick={() => setSelectedDoctorId(null)}
-                              className="text-[13.5px] font-medium text-black/50 hover:text-black/70"
+                              className="text-[15px] font-medium text-black/70 hover:text-black/70"
                             >
                               Remove
                             </button>
@@ -1036,7 +1087,7 @@ export default function BookConsultation() {
                           <button
                             type="button"
                             onClick={() => setDoctorPickerOpen(true)}
-                            className="text-[14px] bg-[#F88535] cursor-pointer p-2 rounded-full font-medium text-white hover:underline"
+                            className="text-[16px] bg-[#F88535] cursor-pointer p-2 rounded-full font-medium text-white hover:underline"
                           >
                             {selectedDoctor
                               ? "Change doctor"
@@ -1058,13 +1109,13 @@ export default function BookConsultation() {
                             value={doctorSearch}
                             onChange={(e) => setDoctorSearch(e.target.value)}
                             placeholder="Search by name or specialty"
-                            className="flex-1 rounded-xl border border-black/20 px-4 py-2.5 text-[15px]
+                            className="flex-1 rounded-xl border border-black/20 px-4 py-2.5 text-[16px]
                                        focus:outline-none focus:border-[#F88535] focus:ring-1 focus:ring-[#F88535]"
                           />
                           <button
                             type="button"
                             onClick={() => setDoctorPickerOpen(false)}
-                            className="text-[13.5px] font-medium text-black/50 hover:text-black/70 shrink-0"
+                            className="text-[15px] font-medium text-black/70 hover:text-black/70 shrink-0"
                           >
                             Close
                           </button>
@@ -1085,21 +1136,21 @@ export default function BookConsultation() {
                               <div className="flex items-center gap-3">
                                 <DoctorAvatar doctor={doc} />
                                 <div className="min-w-0">
-                                  <p className="font-medium text-[14.5px] truncate">
+                                  <p className="font-medium text-[16px] truncate">
                                     {doc.name}
                                   </p>
-                                  <p className="text-[13px] text-black/60 truncate">
+                                  <p className="text-[15px] text-black/75 truncate">
                                     {doc.role}
                                   </p>
                                 </div>
                               </div>
-                              <p className="mt-2 text-[12.5px] text-black/60">
+                              <p className="mt-2 text-[15px] text-black/75">
                                 {doc.specialties.join(" · ")}
                               </p>
                             </button>
                           ))}
                           {filteredDoctors.length === 0 && (
-                            <p className="col-span-full text-[14px] text-black/60 py-4 text-center">
+                            <p className="col-span-full text-[16px] text-black/75 py-4 text-center">
                               No doctors match "{doctorSearch}" for this
                               consultation type.
                             </p>
@@ -1111,14 +1162,72 @@ export default function BookConsultation() {
                   )}
 
                   <fieldset className="mt-8">
-                    <legend className="text-[15px] font-medium mb-3">
-                      Your details
+                    <legend className="text-[17px] font-semibold mb-3">
+                      Who is this consultation for?
                     </legend>
+                    <div className="grid grid-cols-2 gap-3" role="radiogroup">
+                      {[
+                        { value: false, label: "Myself" },
+                        { value: true, label: "My child (under 18)" },
+                      ].map((o) => (
+                        <button
+                          key={o.label}
+                          type="button"
+                          role="radio"
+                          aria-checked={forChild === o.value}
+                          onClick={() => {
+                            setForChild(o.value);
+                            if (!o.value) setGuardianConsent(false);
+                          }}
+                          className={`rounded-xl border-2 px-4 py-3.5 text-[16px] font-medium transition ${
+                            forChild === o.value
+                              ? "border-[#F88535] bg-[#F88535]/10 text-black"
+                              : "border-black/15 text-black/80 hover:border-black/30"
+                          }`}
+                        >
+                          {o.label}
+                        </button>
+                      ))}
+                    </div>
+                    {forChild && (
+                      <p className="mt-3 text-[16px] text-black/75">
+                        As the child's parent or legal guardian, you book and
+                        pay from your account, and the details below are your
+                        child's. Please be with your child during the
+                        consultation.
+                      </p>
+                    )}
+                  </fieldset>
+
+                  <fieldset className="mt-8">
+                    <legend className="text-[16px] font-medium mb-3">
+                      {forChild ? "Your child's details" : "Your details"}
+                    </legend>
+                    {forChild && (
+                      <div className="mb-4">
+                        <label
+                          htmlFor="childName"
+                          className="block text-[16px] font-medium mb-1.5"
+                        >
+                          Child's full name
+                        </label>
+                        <input
+                          id="childName"
+                          type="text"
+                          required
+                          maxLength={100}
+                          value={childName}
+                          onChange={(e) => setChildName(e.target.value)}
+                          className="w-full rounded-xl border border-black/20 px-4 py-3 text-[16px]
+                                     focus:outline-none focus:border-[#F88535] focus:ring-1 focus:ring-[#F88535]"
+                        />
+                      </div>
+                    )}
                     <div className="grid sm:grid-cols-2 gap-4">
                       <div>
                         <label
                           htmlFor="dateOfBirth"
-                          className="block text-[15px] font-medium mb-1.5"
+                          className="block text-[16px] font-medium mb-1.5"
                         >
                           Date of birth
                         </label>
@@ -1136,7 +1245,7 @@ export default function BookConsultation() {
                       <div>
                         <label
                           htmlFor="sex"
-                          className="block text-[15px] font-medium mb-1.5"
+                          className="block text-[16px] font-medium mb-1.5"
                         >
                           Sex
                         </label>
@@ -1194,7 +1303,7 @@ export default function BookConsultation() {
                           className="w-full rounded-xl border border-black/30 px-4 py-3.5 text-[18px]
                focus:outline-none focus:border-[#F88535] focus:ring-2 focus:ring-[#F88535]"
                         />
-                        <p className="mt-2 text-[15px] text-black/75">
+                        <p className="mt-2 text-[16px] text-black/75">
                           The part of town you live in, or a landmark close to
                           you.
                         </p>
@@ -1203,7 +1312,7 @@ export default function BookConsultation() {
                       <div>
                         <label
                           htmlFor="phone"
-                          className="block text-[15px] font-medium mb-1.5"
+                          className="block text-[16px] font-medium mb-1.5"
                         >
                           Phone number (WhatsApp preferred)
                         </label>
@@ -1217,7 +1326,7 @@ export default function BookConsultation() {
                           className="w-full rounded-xl border border-black/20 px-4 py-3 text-[16px]
                                      focus:outline-none focus:border-[#F88535] focus:ring-1 focus:ring-[#F88535]"
                         />
-                        <p className="mt-1.5 text-[13px] text-black/60">
+                        <p className="mt-1.5 text-[15px] text-black/75">
                           We'll also use this number for your mobile money
                           payment.
                         </p>
@@ -1227,12 +1336,12 @@ export default function BookConsultation() {
 
                   {/* ---------- Data consent ---------- */}
                   <fieldset className="mt-8 rounded-2xl border border-black/10 p-5">
-                    <legend className="text-[15px] font-medium mb-2 px-1">
+                    <legend className="text-[16px] font-medium mb-2 px-1">
                       Your information
                     </legend>
                     {/* Versioned wording: the server records which version
                         was agreed to (see src/consentText.js). */}
-                    <p className="text-[14px] text-black/90">
+                    <p className="text-[16px] text-black/90">
                       {BOOKING_CONSENT_TEXT}
                     </p>
                     <label className="mt-4 flex items-start gap-3 cursor-pointer">
@@ -1242,7 +1351,7 @@ export default function BookConsultation() {
                         onChange={(e) => setConsent(e.target.checked)}
                         className="mt-1 h-4 w-4 shrink-0 rounded border-black/30 text-[#F88535] focus:ring-[#F88535]"
                       />
-                      <span className="text-[14.5px] text-black/80">
+                      <span className="text-[16px] text-black/80">
                         I agree to Holy Family Catholic Hospital collecting and
                         using my information as described above to provide this
                         consultation. Read our {" "}
@@ -1268,6 +1377,19 @@ export default function BookConsultation() {
                         .
                       </span>
                     </label>
+                    {forChild && (
+                      <label className="mt-4 flex items-start gap-3 cursor-pointer border-t border-black/10 pt-4">
+                        <input
+                          type="checkbox"
+                          checked={guardianConsent}
+                          onChange={(e) => setGuardianConsent(e.target.checked)}
+                          className="mt-1 h-4 w-4 shrink-0 rounded border-black/30 text-[#F88535] focus:ring-[#F88535]"
+                        />
+                        <span className="text-[16px] text-black/85">
+                          {GUARDIAN_CONSENT_TEXT}
+                        </span>
+                      </label>
+                    )}
                   </fieldset>
 
                   {/* Error sits with the button that produced it. */}
@@ -1308,33 +1430,33 @@ export default function BookConsultation() {
 
                   <div className="mt-7 rounded-2xl border border-black/10 p-6 sm:p-7 space-y-5">
                     <div className="flex items-center justify-between gap-4">
-                      <span className="text-[15px] text-black/80">
+                      <span className="text-[16px] text-black/80">
                         Consultation
                       </span>
                       <span className="text-right text-[16px] font-medium">
                         {type === "OPD" ? "General OPD" : "Surgical"}
-                        <span className="block text-[14px] font-normal text-black/60">
+                        <span className="block text-[16px] font-normal text-black/75">
                           {mode === "online" ? "Online" : "In person"}
                         </span>
                       </span>
                     </div>
                     <div className="flex items-center justify-between gap-4 border-t border-black/10 pt-5">
-                      <span className="text-[15px] text-black/80">Doctor</span>
+                      <span className="text-[16px] text-black/80">Doctor</span>
                       {selectedDoctor ? (
                         <span className="flex items-center gap-2.5 text-right">
                           <DoctorAvatar doctor={selectedDoctor} size={32} />
-                          <span className="text-[15px] font-medium">
+                          <span className="text-[16px] font-medium">
                             {selectedDoctor.name}
                           </span>
                         </span>
                       ) : (
-                        <span className="text-[15px] text-black/60">
+                        <span className="text-[16px] text-black/75">
                           To be assigned
                         </span>
                       )}
                     </div>
                     <div className="flex items-center justify-between gap-4 border-t border-black/10 pt-5">
-                      <span className="text-[15px] text-black/80">
+                      <span className="text-[16px] text-black/80">
                         Amount due
                       </span>
                       <span className="font-display text-[20px] font-medium">
@@ -1343,7 +1465,7 @@ export default function BookConsultation() {
                     </div>
                   </div>
 
-                  <p className="mt-5 text-[14px] bg-[#0095D9] px-4 py-2.5 rounded text-white leading-relaxed">
+                  <p className="mt-5 text-[16px] bg-[#0095D9] px-4 py-2.5 rounded text-white leading-relaxed">
                     Your booking is only created once we've confirmed the
                     payment, so please don't close this page until it's done.
                   </p>
@@ -1353,7 +1475,7 @@ export default function BookConsultation() {
                   {paymentState === "pending" && (
                     <div
                       role="status"
-                      className="mt-6 rounded-2xl border border-[#0095D9]/40 bg-[#0095D9]/5 px-5 py-4 text-[15px] text-black/80"
+                      className="mt-6 rounded-2xl border border-[#0095D9]/40 bg-[#0095D9]/5 px-5 py-4 text-[16px] text-black/80"
                     >
                       <span className="font-medium text-black">
                         Waiting for the network to confirm your payment.
@@ -1394,13 +1516,13 @@ export default function BookConsultation() {
                       )}
 
                       {paymentState === "checkout" && (
-                        <span className="text-[14px] text-black/60">
+                        <span className="text-[16px] text-black/75">
                           Approve the prompt on your phone to continue.
                         </span>
                       )}
                     </div>
 
-                    <p className="mt-4 text-[13px] text-black/60">
+                    <p className="mt-4 text-[15px] text-black/75">
                       Payments are processed by Paystack. We never see or store
                       your mobile money PIN.
                     </p>
@@ -1434,7 +1556,7 @@ export default function BookConsultation() {
 
                   <div className="mt-7 rounded-2xl border border-black/10 px-5 py-4 max-w-md mx-auto sm:mx-0 text-left space-y-3">
                     <div>
-                      <span className="block text-[14px] text-black/60">
+                      <span className="block text-[16px] text-black/75">
                         Paid
                       </span>
                       <span className="mt-0.5 block font-display text-[19px] font-medium">
@@ -1445,10 +1567,10 @@ export default function BookConsultation() {
                       <div className="border-t border-black/10 pt-3 flex items-center gap-3">
                         <DoctorAvatar doctor={selectedDoctor} />
                         <div>
-                          <span className="block text-[14px] font-medium">
+                          <span className="block text-[16px] font-medium">
                             {selectedDoctor.name}
                           </span>
-                          <span className="block text-[13px] text-black/60">
+                          <span className="block text-[15px] text-black/75">
                             {selectedDoctor.role}
                           </span>
                         </div>
@@ -1456,7 +1578,7 @@ export default function BookConsultation() {
                     )}
                   </div>
 
-                  <p className="mt-6 text-[16px] text-black/60 max-w-md mx-auto sm:mx-0">
+                  <p className="mt-6 text-[16px] text-black/75 max-w-md mx-auto sm:mx-0">
                     We'll email you your appointment time and consultation ID
                     once{" "}
                     {selectedDoctor ? "a time is" : "a doctor and time are"}{" "}

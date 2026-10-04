@@ -34,7 +34,7 @@ export default function CheckPaymentPanel({ booking, onConfirmed }) {
 
   return (
     <div className="space-y-2.5">
-      <p className="text-sm text-[#5C6B72]">
+      <p className="text-sm text-[#3E4E56]">
         We haven't confirmed a payment for this booking yet. If you paid,
         check it here — please don't book and pay again. Unpaid bookings and
         their details are deleted after 24 hours.
@@ -53,7 +53,7 @@ export default function CheckPaymentPanel({ booking, onConfirmed }) {
         )}
         {checking ? "Checking…" : "Check payment"}
       </button>
-      {message && <p className="text-xs text-[#5C6B72]">{message}</p>}
+      {message && <p className="text-xs text-[#3E4E56]">{message}</p>}
     </div>
   );
 }

@@ -31,6 +31,8 @@ const roomDevices = require("./roomDevices");
 
 // Accounts
 exports.registerPatient = accounts.registerPatient;
+exports.updatePatientProfile = accounts.updatePatientProfile;
+exports.syncAccountEmail = accounts.syncAccountEmail;
 exports.createDoctorAccount = accounts.createDoctorAccount;
 exports.setAccountStatus = accounts.setAccountStatus;
 
@@ -54,6 +56,7 @@ exports.rescheduleConsultation = scheduling.rescheduleConsultation;
 exports.startVideoCall = consultations.startVideoCall;
 exports.getTurnCredentials = consultations.getTurnCredentials;
 exports.markConsultationDone = consultations.markConsultationDone;
+exports.reportCaptureAttempt = consultations.reportCaptureAttempt;
 
 // Telemedicine room computers (doctors start calls only from these)
 exports.registerRoomDevice = roomDevices.registerRoomDevice;

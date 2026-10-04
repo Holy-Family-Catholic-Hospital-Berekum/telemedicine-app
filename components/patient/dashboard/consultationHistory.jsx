@@ -10,7 +10,7 @@ import RefundRequest from "./refundRequest";
 // closes: doctor, date, start and end time, mode, outcome and amount paid.
 export default function ConsultationHistory({ consultations = [], refunds = {}, defaultPhone, onRefundRequested }) {
   if (!consultations.length) {
-    return <p className="text-sm text-black/60">No past consultations yet.</p>;
+    return <p className="text-sm text-black/75">No past consultations yet.</p>;
   }
 
   return (
@@ -26,31 +26,31 @@ export default function ConsultationHistory({ consultations = [], refunds = {}, 
                 {consultation.doctorName || "Doctor"}
               </p>
 
-              <p className="mt-0.5 text-xs text-black/60">
+              <p className="mt-0.5 text-xs text-black/75">
                 {formatDate(consultation.startedAt)}
               </p>
             </div>
 
-            <span className="text-xs text-black/45 shrink-0">
+            <span className="text-xs text-black/70 shrink-0">
               {OUTCOME_LABELS[consultation.outcome] ?? "Closed"}
             </span>
           </div>
 
           <div className="mt-2.5 flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2 text-xs text-black/60">
+            <div className="flex items-center gap-2 text-xs text-black/75">
               <span>
                 {formatTime(consultation.startedAt)}
                 {" – "}
                 {formatTime(consultation.endedAt)}
               </span>
 
-              <span className="text-black/25">·</span>
+              <span className="text-black/75">·</span>
 
               <span>{MODE_LABELS[consultation.mode] ?? consultation.mode}</span>
             </div>
 
             {consultation.amountPaid != null && (
-              <span className="text-xs text-black/60 shrink-0">
+              <span className="text-xs text-black/75 shrink-0">
                 {consultation.currency}{" "}
                 {Number(consultation.amountPaid).toFixed(2)}
               </span>

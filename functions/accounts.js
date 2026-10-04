@@ -2,7 +2,11 @@
 //
 // Account lifecycle. The `role` custom claim is set here and nowhere else.
 //
-//   registerPatient     patient finishes sign-up (profile, claim, consent)
+//   registerPatient     patient finishes sign-up (profile, claim, consent,
+//                       adult age declaration)
+//   updatePatientProfile patient changes their name (dashboard Settings)
+//   syncAccountEmail    copies a patient's newly verified sign-in email to
+//                       their profile and open bookings
 //   createDoctorAccount admin creates a doctor (Auth user, claim, profiles)
 //   setAccountStatus    admin deactivates or reactivates a patient/doctor
 //
@@ -24,7 +28,9 @@ const {
   phoneE164,
   audit,
   rateLimit,
+  sha256,
 } = require("./lib/core");
+const { AGE_DECLARATION_TEXT, CURRENT_AGE_DECLARATION } = require("./lib/consentText");
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -39,7 +45,11 @@ async function legalVersion(id) {
 /* ------------------------------------------------------------------ */
 
 /**
- * data: { name, phone, acceptedTerms: true }
+ * data: { name, phone, acceptedTerms: true, ageDeclarationVersion }
+ * Accounts are for adults only: the patient declares they are 18 or older
+ * (versioned text, stored as its own consent record). Children are booked
+ * by a parent or guardian from the adult's account, with a guardian
+ * consent per booking (payments.js createBookingDraft).
  * Called right after createUserWithEmailAndPassword. Idempotent: calling
  * again for an already-registered patient just re-asserts the claim.
  */
@@ -74,6 +84,12 @@ exports.registerPatient = onCall(async (request) => {
         "Please accept the terms and privacy policy to continue.",
       );
     }
+    if (d.ageDeclarationVersion !== CURRENT_AGE_DECLARATION) {
+      throw new HttpsError(
+        "failed-precondition",
+        "Please confirm that you are 18 or older to create an account.",
+      );
+    }
     const email = String(auth.token.email || "").toLowerCase();
     if (!email) {
       throw new HttpsError("failed-precondition", "An email address is required.");
@@ -105,6 +121,17 @@ exports.registerPatient = onCall(async (request) => {
       ip: meta.ip,
       userAgent: meta.userAgent,
     });
+    batch.set(db.collection("consents").doc(), {
+      subjectUid: uid,
+      consentType: "age_declaration",
+      action: "granted",
+      context: "signup",
+      version: CURRENT_AGE_DECLARATION,
+      textSha256: sha256(AGE_DECLARATION_TEXT[CURRENT_AGE_DECLARATION]),
+      at: serverTime(),
+      ip: meta.ip,
+      userAgent: meta.userAgent,
+    });
     audit(batch, {
       actorId: uid,
       actorRole: "patient",
@@ -128,6 +155,78 @@ exports.registerPatient = onCall(async (request) => {
     await admin.auth().setCustomUserClaims(uid, { role: "patient" });
   }
   return { ok: true };
+});
+
+/* ------------------------------------------------------------------ */
+/* patient settings                                                    */
+/* ------------------------------------------------------------------ */
+
+/**
+ * data: { name }. The new name applies to the account and future
+ * bookings; bookings already made keep the name they were made with.
+ */
+exports.updatePatientProfile = onCall(async (request) => {
+  const caller = await requireRole(request, ["patient"]);
+  const name = str(request.data?.name, { field: "Full name", max: 100, min: 2 });
+  await rateLimit(caller.uid, "updatePatientProfile", { max: 10, windowSeconds: 86400 });
+
+  const batch = db.batch();
+  batch.update(db.collection("users").doc(caller.uid), { name, updatedAt: serverTime() });
+  audit(batch, {
+    actorId: caller.uid,
+    actorRole: "patient",
+    action: "Changed their name",
+    code: "account.name_changed",
+    category: "account",
+    targetType: "user",
+    targetId: caller.uid,
+    patientUid: caller.uid,
+    meta: requestMeta(request),
+  });
+  await batch.commit();
+  await admin.auth().updateUser(caller.uid, { displayName: name }).catch(() => {});
+  return { ok: true, name };
+});
+
+/**
+ * No data. A patient changes their sign-in email in the browser
+ * (verifyBeforeUpdateEmail: the change happens only once they click the
+ * link sent to the new address). After that, this copies the verified
+ * address from their ID token to the profile and to bookings still in
+ * progress, so appointment emails go to the new address.
+ */
+exports.syncAccountEmail = onCall(async (request) => {
+  const caller = await requireRole(request, ["patient"]);
+  const email = String(caller.token.email || "").toLowerCase();
+  if (!email || caller.token.email_verified !== true) {
+    throw new HttpsError("failed-precondition", "Your new email address isn't verified yet.");
+  }
+  if (email === String(caller.profile.email || "").toLowerCase()) {
+    return { changed: false };
+  }
+  await rateLimit(caller.uid, "syncAccountEmail", { max: 10, windowSeconds: 86400 });
+
+  const open = await db
+    .collection("bookings")
+    .where("patientUid", "==", caller.uid)
+    .where("status", "in", ["awaiting_payment", "paid", "scheduled"])
+    .get();
+  const batch = db.batch();
+  batch.update(db.collection("users").doc(caller.uid), { email, updatedAt: serverTime() });
+  open.docs.forEach((d) => batch.update(d.ref, { email }));
+  audit(batch, {
+    actorId: caller.uid,
+    actorRole: "patient",
+    action: "Changed their email address",
+    code: "account.email_changed",
+    category: "account",
+    targetType: "user",
+    targetId: caller.uid,
+    patientUid: caller.uid,
+    meta: requestMeta(request),
+  });
+  await batch.commit();
+  return { changed: true, email };
 });
 
 /* ------------------------------------------------------------------ */

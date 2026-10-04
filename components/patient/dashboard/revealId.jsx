@@ -21,7 +21,7 @@ export default function RevealId({ id, label = 'Consultation ID' }) {
   }
 
   return (
-    <div className="text-right text-xs text-[#5C6B72]">
+    <div className="text-right text-xs text-[#3E4E56]">
       <p>{label}</p>
       <div className="flex items-center justify-end gap-2">
         <button
@@ -40,7 +40,7 @@ export default function RevealId({ id, label = 'Consultation ID' }) {
           <button
             type="button"
             onClick={handleCopy}
-            className="flex items-center gap-1 text-[#5C6B72] hover:text-[#0095D9]"
+            className="flex items-center gap-1 text-[#3E4E56] hover:text-[#0095D9]"
             aria-label={copied ? 'Copied' : `Copy ${label}`}
           >
             {copied ? (

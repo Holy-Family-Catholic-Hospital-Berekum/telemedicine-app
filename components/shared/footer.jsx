@@ -133,13 +133,13 @@ export default function Footer() {
                 <p className="font-display text-[17px] font-semibold leading-tight">
                   Holy Family Catholic Hospital
                 </p>
-                <p className="mt-0.5 text-[13px] text-white/75">
+                <p className="mt-0.5 text-[15px] text-white/75">
                   Berekum, Ghana
                 </p>
               </div>
             </Link>
 
-            <p className="mt-6 max-w-sm text-[14px] leading-6 text-white/80">
+            <p className="mt-6 max-w-sm text-[16px] leading-6 text-white/80">
               Quality healthcare, made simpler. Connect with our healthcare
               services and manage your consultations with ease.
             </p>
@@ -171,11 +171,11 @@ export default function Footer() {
 
           {/* Quick links */}
           <div>
-            <h3 className="text-[13px] font-bold uppercase tracking-[0.16em] text-white/70">
+            <h3 className="text-[15px] font-bold uppercase tracking-[0.16em] text-white/90">
               Quick Links
             </h3>
 
-            <nav className="mt-5 flex flex-col items-start gap-3.5 text-[14px]">
+            <nav className="mt-5 flex flex-col items-start gap-3.5 text-[16px]">
               <Link
                 to="/"
                 className="text-white/85 transition-colors hover:text-white"
@@ -201,13 +201,13 @@ export default function Footer() {
 
           {/* Contact */}
           <div>
-            <h3 className="text-[13px] font-bold uppercase tracking-[0.16em] text-white/70">
+            <h3 className="text-[15px] font-bold uppercase tracking-[0.16em] text-white/90">
               Contact
             </h3>
 
-            <div className="mt-5 space-y-4 text-[14px]">
+            <div className="mt-5 space-y-4 text-[16px]">
               <div>
-                <p className="text-[12px] font-medium uppercase tracking-wide text-white/55">
+                <p className="text-[14px] font-medium uppercase tracking-wide text-white/90">
                   Address
                 </p>
                 <p className="mt-1 text-white/90 leading-6">
@@ -220,7 +220,7 @@ export default function Footer() {
               </div>
 
               <div>
-                <p className="text-[12px] font-medium uppercase tracking-wide text-white/55">
+                <p className="text-[14px] font-medium uppercase tracking-wide text-white/90">
                   Phone
                 </p>
                 <p className="mt-1 text-white/90 leading-6">
@@ -248,7 +248,7 @@ export default function Footer() {
               </div>
 
               <div>
-                <p className="text-[12px] font-medium uppercase tracking-wide text-white/55">
+                <p className="text-[14px] font-medium uppercase tracking-wide text-white/90">
                   Email
                 </p>
                 <p className="mt-1 text-white/90 leading-6">
@@ -269,7 +269,7 @@ export default function Footer() {
               </div>
 
               <div>
-                <p className="text-[12px] font-medium uppercase tracking-wide text-white/55">
+                <p className="text-[14px] font-medium uppercase tracking-wide text-white/90">
                   GPS
                 </p>
                 <p className="mt-1 text-white/90">BB-0020-8042</p>
@@ -280,7 +280,7 @@ export default function Footer() {
 
         {/* Bottom bar */}
         <div className="border-t border-white/15 py-5">
-          <div className="flex flex-col gap-4 text-[12px] text-white/65 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-col gap-4 text-[14px] text-white/90 sm:flex-row sm:items-center sm:justify-between">
             <p>
               © {new Date().getFullYear()} Holy Family Catholic Hospital. All
               rights reserved.

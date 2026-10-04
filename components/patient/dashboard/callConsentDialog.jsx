@@ -42,7 +42,7 @@ export default function CallConsentDialog({ onAgree, onCancel, busy }) {
             onClick={onCancel}
             disabled={busy}
             aria-label="Close"
-            className="text-[#5C6B72] hover:text-[#12242C]"
+            className="text-[#3E4E56] hover:text-[#12242C]"
           >
             <X size={18} />
           </button>

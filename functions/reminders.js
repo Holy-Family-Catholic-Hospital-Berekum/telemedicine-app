@@ -110,7 +110,8 @@ exports.sendAppointmentReminders = onSchedule(
                 data: {
                   ...base,
                   ...extra,
-                  patientName: booking.patientName || c.patientName || "",
+                  // The account holder (a child's parent or guardian).
+                  patientName: booking.guardianName || booking.patientName || c.patientName || "",
                   consultationId: doc.id,
                 },
                 sendBefore: late ? start + LATE_TO : start,

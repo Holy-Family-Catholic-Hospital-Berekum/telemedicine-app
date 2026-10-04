@@ -12,6 +12,11 @@ import SignUp from "./pages/auth/signUp";
 import VerifyEmailNotice from "./pages/auth/verifyEmailNotice";
 import Unauthorized from "./pages/auth/unauthorized";
 import { STAFF_LOGIN_PATH } from "./staffRoute";
+
+// Larger, easier-to-read type on every page patients use (src/index.css).
+function PatientPage({ children }) {
+  return <div className="patient-ui">{children}</div>;
+}
 import Privacy from "./pages/privacy";
 import Terms from "./pages/terms";
 
@@ -22,21 +27,21 @@ export default function App() {
   return (
     <AuthProvider>
       <Routes>
-        <Route path="/" element={<Home />} />
-        <Route path="/privacy" element={<Privacy />} />
-        <Route path="/terms" element={<Terms />} />
+        <Route path="/" element={<PatientPage><Home /></PatientPage>} />
+        <Route path="/privacy" element={<PatientPage><Privacy /></PatientPage>} />
+        <Route path="/terms" element={<PatientPage><Terms /></PatientPage>} />
 
         {/* Signed-in users get bounced away from these to their own dashboard */}
         <Route element={<PublicOnlyRoute />}>
-          <Route path="/signin" element={<SignIn audience="patient" />} />
-          <Route path="/signup" element={<SignUp />} />
+          <Route path="/signin" element={<PatientPage><SignIn audience="patient" /></PatientPage>} />
+          <Route path="/signup" element={<PatientPage><SignUp /></PatientPage>} />
           {STAFF_LOGIN_PATH && (
             <Route path={STAFF_LOGIN_PATH} element={<StaffSignIn />} />
           )}
         </Route>
 
-        <Route path="/verify-email" element={<VerifyEmailNotice />} />
-        <Route path="/unauthorized" element={<Unauthorized />} />
+        <Route path="/verify-email" element={<PatientPage><VerifyEmailNotice /></PatientPage>} />
+        <Route path="/unauthorized" element={<PatientPage><Unauthorized /></PatientPage>} />
 
         {/* Patient-only, and only once their email is verified */}
         <Route
@@ -44,8 +49,8 @@ export default function App() {
             <ProtectedRoute allowedRoles={["patient"]} requireVerifiedEmail />
           }
         >
-          <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/book" element={<BookConsultation />} />
+          <Route path="/dashboard" element={<PatientPage><Dashboard /></PatientPage>} />
+          <Route path="/book" element={<PatientPage><BookConsultation /></PatientPage>} />
         </Route>
 
         <Route element={<ProtectedRoute allowedRoles={["admin"]} redirectTo={STAFF_HOME} />}>

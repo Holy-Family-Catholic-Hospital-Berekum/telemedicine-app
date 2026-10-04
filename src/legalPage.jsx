@@ -62,7 +62,7 @@ function Inline({ text }) {
 function Block({ block }) {
   if (block.type === "ul") {
     return (
-      <ul className="mt-3 list-disc space-y-2 pl-5 text-[15px] leading-relaxed text-black/80 marker:text-[#F88535]">
+      <ul className="mt-3 list-disc space-y-2 pl-5 text-[16px] leading-relaxed text-black/80 marker:text-[#F88535]">
         {block.items.map((item, i) => (
           <li key={i}>
             <Inline text={item} />
@@ -72,7 +72,7 @@ function Block({ block }) {
     );
   }
   return (
-    <p className="mt-3 text-[15px] leading-relaxed text-black/80">
+    <p className="mt-3 text-[16px] leading-relaxed text-black/80">
       <Inline text={block.text} />
     </p>
   );
@@ -117,13 +117,13 @@ export default function LegalPage({ docId, heading, contactLead }) {
         }}
       >
         <div className="mx-auto max-w-3xl px-5 sm:px-8 py-8 sm:py-10">
-          <p className="text-[12.5px] font-medium uppercase tracking-wide text-white/70">
+          <p className="text-[15px] font-medium uppercase tracking-wide text-white/90">
             Holy Family Catholic Hospital
           </p>
           <h1 className="mt-1 font-display text-[28px] sm:text-[34px] font-medium">
             {heading}
           </h1>
-          <p className="mt-2 text-[14px] text-white/80">
+          <p className="mt-2 text-[16px] text-white/80">
             Last updated {lastUpdated}
           </p>
         </div>
@@ -138,7 +138,7 @@ export default function LegalPage({ docId, heading, contactLead }) {
           aria-label="On this page"
           className="mt-8 rounded-2xl border border-black/10 p-5"
         >
-          <p className="text-[13px] font-medium uppercase tracking-wide text-black/60">
+          <p className="text-[15px] font-medium uppercase tracking-wide text-black/75">
             On this page
           </p>
           <ol className="mt-3 grid gap-x-6 gap-y-1.5 sm:grid-cols-2">
@@ -146,7 +146,7 @@ export default function LegalPage({ docId, heading, contactLead }) {
               <li key={s.id}>
                 <a
                   href={`#${s.id}`}
-                  className="text-[14.5px] text-[#0095D9] hover:underline"
+                  className="text-[16px] text-[#0095D9] hover:underline"
                 >
                   {s.heading}
                 </a>
@@ -155,7 +155,7 @@ export default function LegalPage({ docId, heading, contactLead }) {
             <li>
               <a
                 href="#contact"
-                className="text-[14.5px] text-[#0095D9] hover:underline"
+                className="text-[16px] text-[#0095D9] hover:underline"
               >
                 {contactHeading}
               </a>
@@ -179,7 +179,7 @@ export default function LegalPage({ docId, heading, contactLead }) {
             <h2 className="font-display text-[22px] font-medium">
               {contactHeading}
             </h2>
-            <p className="mt-3 text-[15px] leading-relaxed text-black/80">
+            <p className="mt-3 text-[16px] leading-relaxed text-black/80">
               {contactLead}{" "}
               <a href={`mailto:${contactEmail}`} className={LINK_CLASS}>
                 {contactEmail}
@@ -196,7 +196,7 @@ export default function LegalPage({ docId, heading, contactLead }) {
         <div className="mt-12">
           <Link
             to="/"
-            className="inline-flex rounded-full border border-black/20 px-6 py-3 text-[15px] font-medium transition hover:border-black/40"
+            className="inline-flex rounded-full border border-black/20 px-6 py-3 text-[16px] font-medium transition hover:border-black/40"
           >
             Back to home
           </Link>

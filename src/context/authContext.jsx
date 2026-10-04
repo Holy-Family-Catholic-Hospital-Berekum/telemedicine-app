@@ -104,12 +104,18 @@ import {
   setPersistence,
   browserLocalPersistence,
   browserSessionPersistence,
+  EmailAuthProvider,
+  reauthenticateWithCredential,
+  verifyBeforeUpdateEmail,
 } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
 import { auth, db, functions } from "../firebase";
+import { CURRENT_AGE_DECLARATION } from "../consentText.js";
 
 const callRegisterPatient = httpsCallable(functions, "registerPatient");
+const callUpdatePatientProfile = httpsCallable(functions, "updatePatientProfile");
+const callSyncAccountEmail = httpsCallable(functions, "syncAccountEmail");
 
 const AuthContext = createContext(null);
 
@@ -240,6 +246,7 @@ export function AuthProvider({ children }) {
           role,
           name: data.name || fbUser.displayName || "Patient",
           phone: data.phone,
+          email: data.email || null,
         };
   }, []);
 
@@ -308,7 +315,7 @@ export function AuthProvider({ children }) {
   // consent record and the role claim on the server. If that fails, the
   // half-made Auth account is deleted so the email can be used again.
   const signUpPatient = useCallback(
-    async ({ name, phone, email, password, acceptedTerms }) => {
+    async ({ name, phone, email, password, acceptedTerms, confirmedAdult }) => {
       signingInRef.current = true;
       try {
         let cred;
@@ -327,6 +334,11 @@ export function AuthProvider({ children }) {
             name: name.trim(),
             phone: phone.trim(),
             acceptedTerms: acceptedTerms === true,
+            // Only sent when the box was ticked; the server stores the
+            // declaration against this version of the wording.
+            ...(confirmedAdult === true
+              ? { ageDeclarationVersion: CURRENT_AGE_DECLARATION }
+              : {}),
           });
         } catch (err) {
           await cred.user.delete().catch(() => signOut(auth).catch(() => {}));
@@ -493,6 +505,66 @@ export function AuthProvider({ children }) {
     return verified;
   }, []);
 
+  // ---- Patient settings (dashboard Settings tab) ----
+
+  const updatePatientName = useCallback(async (name) => {
+    const { data } = await callUpdatePatientProfile({ name: name.trim() });
+    setProfile((p) => (p ? { ...p, name: data.name } : p));
+    return data.name;
+  }, []);
+
+  // Changing the sign-in email needs the current password (a fresh
+  // sign-in), and only happens once the patient clicks the link Firebase
+  // sends to the NEW address; the old address gets a notice with a way to
+  // undo it. Until then nothing changes.
+  const requestEmailChange = useCallback(async ({ newEmail, password }) => {
+    const u = auth.currentUser;
+    if (!u?.email) throw new Error("Please sign in again and retry.");
+    try {
+      await reauthenticateWithCredential(u, EmailAuthProvider.credential(u.email, password));
+    } catch (err) {
+      const code = err?.code || "";
+      throw new Error(
+        code === "auth/too-many-requests"
+          ? "Too many attempts. Please wait a few minutes and try again."
+          : "Your current password is incorrect.",
+        { cause: err },
+      );
+    }
+    try {
+      await verifyBeforeUpdateEmail(u, newEmail.trim(), {
+        url: `${window.location.origin}/signin`,
+      });
+    } catch (err) {
+      const code = err?.code || "";
+      throw new Error(
+        code === "auth/invalid-email"
+          ? "Enter a valid email address."
+          : code === "auth/too-many-requests"
+            ? "Too many attempts. Please wait a few minutes and try again."
+            : "We couldn't send the confirmation email. Check the address and try again.",
+        { cause: err },
+      );
+    }
+  }, []);
+
+  // After a confirmed email change, copy the new address to the patient's
+  // profile and open bookings (where appointment emails are sent).
+  useEffect(() => {
+    const u = firebaseUser;
+    if (!u || profile?.role !== "patient" || !u.email || !u.emailVerified) return;
+    if (u.email.toLowerCase() === (profile.email || "").toLowerCase()) return;
+    let cancelled = false;
+    callSyncAccountEmail()
+      .then(({ data }) => {
+        if (!cancelled && data?.email) setProfile((p) => (p ? { ...p, email: data.email } : p));
+      })
+      .catch(() => {}); // retried on the next sign-in or page load
+    return () => {
+      cancelled = true;
+    };
+  }, [firebaseUser, profile?.role, profile?.email]);
+
   const value = {
     user: firebaseUser,
     role: profile?.role ?? null,
@@ -505,6 +577,8 @@ export function AuthProvider({ children }) {
     resetPassword,
     resendVerificationEmail,
     refreshEmailVerified,
+    updatePatientName,
+    requestEmailChange,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

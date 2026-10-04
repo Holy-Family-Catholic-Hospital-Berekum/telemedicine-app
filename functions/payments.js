@@ -42,6 +42,7 @@ const {
   oneOf,
   docId,
   dateOfBirth,
+  ageInYears,
   phoneE164,
   randomCode,
   sha256,
@@ -52,6 +53,8 @@ const { loadPrices, doctorSelectionEnabled } = require("./siteSettings");
 const {
   BOOKING_CONSENT_TEXT,
   CURRENT_BOOKING_CONSENT,
+  GUARDIAN_CONSENT_TEXT,
+  CURRENT_GUARDIAN_CONSENT,
 } = require("./lib/consentText");
 
 const PAYSTACK_SECRET_KEY = defineSecret("PAYSTACK_SECRET_KEY");
@@ -315,7 +318,15 @@ async function markBookingPaid(bookingRef, paystackData, via) {
 
 /**
  * data: { type, mode, dateOfBirth, sex, town, area, phone,
- *         doctorUid?, slotId?, consentVersion }
+ *         doctorUid?, slotId?, consentVersion,
+ *         forChild?, childName?, guardianConsentVersion? }
+ *
+ * Accounts belong to adults. A booking is either for the account holder
+ * (who must then be 18 or older by the date of birth given) or for their
+ * child under 18 (Ghana Data Protection Act, 2012 (Act 843): a child's
+ * data needs a parent's or guardian's consent). A child's booking carries
+ * the child's name and a guardian consent record; the account holder is
+ * kept as guardianName and is the one emailed.
  */
 exports.createBookingDraft = onCall({ secrets: [PAYSTACK_SECRET_KEY] }, async (request) => {
   const caller = await requireRole(request, ["patient"]);
@@ -337,6 +348,29 @@ exports.createBookingDraft = onCall({ secrets: [PAYSTACK_SECRET_KEY] }, async (r
     throw new HttpsError(
       "failed-precondition",
       "The consent wording has changed. Please reload the page and review it.",
+    );
+  }
+  const forChild = d.forChild === true;
+  const age = ageInYears(dob);
+  let childName = null;
+  if (forChild) {
+    childName = str(d.childName, { field: "Child's full name", max: 100, min: 2 });
+    if (age >= 18) {
+      throw new HttpsError(
+        "invalid-argument",
+        "This date of birth is 18 or over. Adults book from their own account.",
+      );
+    }
+    if (d.guardianConsentVersion !== CURRENT_GUARDIAN_CONSENT) {
+      throw new HttpsError(
+        "failed-precondition",
+        "Please confirm you are the child's parent or guardian and give consent for them.",
+      );
+    }
+  } else if (age < 18) {
+    throw new HttpsError(
+      "invalid-argument",
+      "You must be 18 or older to book for yourself. If this booking is for your child, choose \"My child\".",
     );
   }
 
@@ -452,9 +486,28 @@ exports.createBookingDraft = onCall({ secrets: [PAYSTACK_SECRET_KEY] }, async (r
       userAgent: meta.userAgent,
     });
 
+    if (forChild) {
+      tx.set(db.collection("consents").doc(), {
+        subjectUid: uid,
+        consentType: "guardian_consent",
+        action: "granted",
+        context: "booking",
+        version: CURRENT_GUARDIAN_CONSENT,
+        textSha256: sha256(GUARDIAN_CONSENT_TEXT[CURRENT_GUARDIAN_CONSENT]),
+        bookingId: bookingRef.id,
+        at: serverTime(),
+        ip: meta.ip,
+        userAgent: meta.userAgent,
+      });
+    }
+
     tx.set(bookingRef, {
       patientUid: uid,
-      patientName: caller.profile.name || null,
+      // For a child: the child is the patient, the account holder their
+      // parent or guardian. Deleted with the booking when it closes.
+      patientName: forChild ? childName : caller.profile.name || null,
+      forChild,
+      guardianName: forChild ? caller.profile.name || null : null,
       email: caller.token.email || null,
       type,
       mode,

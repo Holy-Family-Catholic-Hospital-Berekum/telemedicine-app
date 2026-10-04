@@ -50,6 +50,8 @@ export async function fetchAssignedConsultations(doctorUid) {
       patientJoined: Boolean(c.patientFirstJoinedAt),
       patient: {
         name: c.patientName || "Patient",
+        // Set when the patient is a child booked by a parent or guardian.
+        guardianName: c.guardianName || null,
         location: c.patientDetails?.location || "",
       },
       sensitiveDetails: {

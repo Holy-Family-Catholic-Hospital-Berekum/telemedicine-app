@@ -145,6 +145,8 @@ exports.scheduleConsultation = onCall(async (request) => {
       bookingId,
       patientUid: booking.patientUid,
       patientName: booking.patientName || null,
+      // A child's parent or guardian (the account holder), if any.
+      guardianName: booking.guardianName || null,
       // What the doctor needs to see. Deleted when the consultation closes.
       patientDetails: {
         dateOfBirth: booking.dateOfBirth,
@@ -180,7 +182,7 @@ exports.scheduleConsultation = onCall(async (request) => {
       to: booking.email,
       kind: "appointment_scheduled",
       data: {
-        patientName: booking.patientName || "",
+        patientName: booking.guardianName || booking.patientName || "",
         doctorName: doctor.name,
         type: booking.type,
         mode: booking.mode,
@@ -479,7 +481,7 @@ exports.rescheduleConsultation = onCall(async (request) => {
       to: booking.email,
       kind: "appointment_rescheduled",
       data: {
-        patientName: booking.patientName || "",
+        patientName: booking.guardianName || booking.patientName || "",
         doctorName: doctor.name,
         type: booking.type,
         mode: booking.mode,

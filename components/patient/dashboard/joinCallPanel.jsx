@@ -57,7 +57,7 @@ export default function JoinCallPanel({ booking, onJoined }) {
 
   if (!unlocked && !callInProgress) {
     return (
-      <div className="mt-4 flex items-center gap-2 rounded-sm border border-[#DCE6EC] px-3.5 py-2.5 text-sm text-[#5C6B72]">
+      <div className="mt-4 flex items-center gap-2 rounded-sm border border-[#DCE6EC] px-3.5 py-2.5 text-sm text-[#3E4E56]">
         <Lock size={14} strokeWidth={1.75} />
         The video room opens {CALL_UNLOCK_MINUTES} minutes before your
         appointment (in {formatWait(minutesUntilUnlock)})
@@ -104,7 +104,7 @@ export default function JoinCallPanel({ booking, onJoined }) {
           )}
           {joining ? "Joining…" : "Join call"}
         </button>
-        <p className="mt-2 text-[11px] text-[#5C6B72]">
+        <p className="mt-2 text-[14px] text-[#3E4E56]">
           Calls may be recorded (video with sound, or sound only) when the
           hospital has recording switched on. You'll see a REC sign on screen
           if this call is recorded.

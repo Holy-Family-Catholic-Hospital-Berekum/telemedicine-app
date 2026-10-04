@@ -405,6 +405,11 @@ export default function BookingsPanel({
                   <tr key={b.bookingId}>
                     <td>
                       <div className="admin-cell-name">{b.patientName}</div>
+                      {b.forChild && (
+                        <div className="admin-cell-sub">
+                          Child · parent/guardian: {b.guardianName || "—"}
+                        </div>
+                      )}
                       <div className="admin-cell-sub">{b.phone}</div>
                     </td>
                     <td>

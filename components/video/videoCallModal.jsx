@@ -1,3 +1,5 @@
+import { useEffect, useState } from "react";
+import { httpsCallable } from "firebase/functions";
 import {
   Mic,
   MicOff,
@@ -7,9 +9,51 @@ import {
   ShieldCheck,
   Circle,
   Loader2,
+  ShieldAlert,
 } from "lucide-react";
 import { useWebRTCCall } from "./useWebRTCCall";
 import hospitalLogo from "../../src/assets/logo.png";
+import { functions } from "../../src/firebase";
+
+const callReportCapture = httpsCallable(functions, "reportCaptureAttempt");
+
+// Screen capture. A web page can't stop the operating system, another app
+// or a second phone from capturing the screen, so this is deterrence:
+// - the other person's video carries a watermark with the viewer's name
+//   and the date and time, so any capture identifies who made it;
+// - screenshot / screen-recording shortcuts the browser can see (Print
+//   Screen; Cmd+Shift+3/4/5 on Mac; Win+Shift+S / Win+Alt+R are usually
+//   taken by Windows first) show a warning and are logged to the audit tab
+//   (reportCaptureAttempt);
+// - right-click (save video), picture-in-picture and dragging are off.
+// The hospital's own recording (callRecording.js) is unaffected.
+function captureMethod(e) {
+  const key = String(e.key || "");
+  if (key === "PrintScreen" || e.code === "PrintScreen") return "print_screen";
+  if (e.metaKey && e.shiftKey && ["3", "4"].includes(key)) return "screenshot_shortcut";
+  if (e.metaKey && e.shiftKey && key === "5") return "record_shortcut";
+  if (e.metaKey && e.shiftKey && key.toLowerCase() === "s") return "screenshot_shortcut";
+  if (e.metaKey && e.altKey && key.toLowerCase() === "r") return "record_shortcut";
+  return null;
+}
+
+function Watermark({ text }) {
+  // Tiled, faint and diagonal: readable in a capture, not in the way.
+  return (
+    <div
+      aria-hidden="true"
+      className="pointer-events-none absolute inset-0 z-10 select-none overflow-hidden"
+    >
+      <div className="absolute -inset-1/2 flex rotate-[-24deg] flex-wrap content-center gap-x-24 gap-y-20 opacity-[0.16]">
+        {Array.from({ length: 40 }, (_, i) => (
+          <span key={i} className="whitespace-nowrap text-sm font-semibold text-white lg:text-lg">
+            {text}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 /**
  * VideoCallModal — full-screen call view, laid out for a phone, a laptop or
@@ -22,12 +66,14 @@ import hospitalLogo from "../../src/assets/logo.png";
  * - Own camera is a mirrored picture-in-picture, larger on big screens.
  *
  * Props: consultationId, role ("doctor" | "patient"),
- *        patientSeq (patient only, from startVideoCall), onClose
+ *        patientSeq (patient only, from startVideoCall), viewerName
+ *        (for the anti-capture watermark), onClose
  */
 export default function VideoCallModal({
   consultationId,
   role,
   patientSeq,
+  viewerName,
   onClose,
 }) {
   const {
@@ -45,7 +91,47 @@ export default function VideoCallModal({
     hangUp,
   } = useWebRTCCall({ consultationId, role, patientSeq, onEnded: onClose });
 
+  const [now, setNow] = useState(() => new Date());
+  const [captureWarning, setCaptureWarning] = useState(false);
+
+  // Keeps the watermark's time current.
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 30000);
+    return () => clearInterval(id);
+  }, []);
+
+  useEffect(() => {
+    if (!consultationId) return undefined;
+    let hideTimer;
+    const onKey = (e) => {
+      const method = captureMethod(e);
+      if (!method) return;
+      setCaptureWarning(true);
+      clearTimeout(hideTimer);
+      hideTimer = setTimeout(() => setCaptureWarning(false), 8000);
+      // Print Screen copies to the clipboard: overwrite it where allowed.
+      navigator.clipboard?.writeText?.("").catch(() => {});
+      callReportCapture({ consultationId, method }).catch(() => {});
+    };
+    window.addEventListener("keydown", onKey, true);
+    window.addEventListener("keyup", onKey, true);
+    return () => {
+      clearTimeout(hideTimer);
+      window.removeEventListener("keydown", onKey, true);
+      window.removeEventListener("keyup", onKey, true);
+    };
+  }, [consultationId]);
+
   if (!consultationId) return null;
+
+  const watermarkText = `${viewerName || (role === "doctor" ? "Doctor" : "Patient")} · ${now.toLocaleString("en-GB", {
+    timeZone: "Africa/Accra",
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  })} · Confidential`;
 
   const other = role === "doctor" ? "patient" : "doctor";
   const overlay =
@@ -62,7 +148,11 @@ export default function VideoCallModal({
             : null;
 
   return (
-    <div className="fixed inset-0 z-50 flex h-[100dvh] flex-col bg-black">
+    <div
+      className="fixed inset-0 z-50 flex h-[100dvh] select-none flex-col bg-black"
+      onContextMenu={(e) => e.preventDefault()}
+      onDragStart={(e) => e.preventDefault()}
+    >
       {/* Header */}
       <div className="flex shrink-0 items-center justify-between gap-3 bg-[#F28539] px-4 py-2.5 lg:px-6 lg:py-3">
         <div className="flex min-w-0 items-center gap-2">
@@ -140,8 +230,23 @@ export default function VideoCallModal({
               ref={remoteVideoRef}
               autoPlay
               playsInline
+              disablePictureInPicture
+              controlsList="nodownload nofullscreen noremoteplayback"
               className="absolute inset-0 h-full w-full object-contain"
             />
+
+            <Watermark text={watermarkText} />
+
+            {captureWarning && (
+              <div
+                role="alert"
+                className="absolute inset-x-3 top-3 z-20 mx-auto flex max-w-xl items-start gap-2 rounded-lg bg-[#B23A3A] px-4 py-3 text-sm text-white shadow-lg lg:text-base"
+              >
+                <ShieldAlert size={20} className="mt-0.5 shrink-0" />
+                Screenshots and recordings of consultations are not allowed.
+                This attempt has been recorded by the hospital.
+              </div>
+            )}
 
             {overlay && (
               <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/40 px-6 text-center text-sm text-white lg:text-lg">

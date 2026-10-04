@@ -93,9 +93,11 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Open slots are public (doctor, type, mode, time; no patient data) so
+    // the home page can list them. Held/booked slots stay staff-only.
     match /availableSlots/{slotId} {
       allow read: if isAdmin()
-                  || (isPatient() && resource.data.status == 'open');
+                  || resource.data.status == 'open';
       allow write: if false;
     }
 

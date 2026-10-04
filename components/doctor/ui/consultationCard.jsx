@@ -87,6 +87,11 @@ export default function ConsultationCard({
             <h3 className="mt-1 text-base font-semibold text-[#12242C]">
               {consultation.patient.name}
             </h3>
+            {consultation.patient.guardianName && (
+              <p className="text-sm text-[#5C6B72]">
+                Child · parent/guardian: {consultation.patient.guardianName}
+              </p>
+            )}
             <p className="mt-0.5 flex items-center gap-1.5 text-sm text-[#5C6B72]">
               <MapPin size={13} strokeWidth={1.75} />{" "}
               {consultation.patient.location}

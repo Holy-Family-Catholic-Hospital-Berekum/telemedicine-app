@@ -13,6 +13,8 @@ import { useListedDoctors } from "../../src/doctorDirectory";
 import { DoctorCardSummary, DoctorProfileDialog } from "./doctorProfileDetails";
 import heroDefault from "../../src/assets/hero-consult.jpg";
 import { useSiteSettings } from "../../src/siteSettings";
+import { fetchAvailableSlots } from "./dashboard/patientFirestoreService";
+import { TYPE_LABELS, MODE_LABELS, formatDateTime } from "../../src/constants";
 /**
  * Home.jsx
  * Public landing page for Holy Family Catholic Hospital's telemedicine platform.
@@ -246,7 +248,7 @@ function BookingCta({
   const sizing =
     size === "lg"
       ? "pl-7 pr-7 py-4 text-[16px] gap-3"
-      : "pl-6 pr-6 py-3.5 text-[15px] gap-2.5";
+      : "pl-6 pr-6 py-3.5 text-[16px] gap-2.5";
 
   const base = `group relative inline-flex items-center justify-center ${sizing} rounded-full font-semibold
                 transition active:scale-[0.97]
@@ -336,7 +338,7 @@ function BookingSlip({
       style={{ boxShadow: "0 30px 60px -24px rgba(15,20,17,0.5)" }}
     >
       <div className={compact ? "px-5 pt-4 pb-4" : "px-6 pt-6 pb-5"}>
-        <p className="text-[11px] text-[var(--forest-2)]">
+        <p className="text-[14px] text-[var(--forest-2)]">
           Holy Family Catholic Hospital
         </p>
         <div
@@ -353,7 +355,7 @@ function BookingSlip({
           >
             {type}
           </span>
-          <span className="shrink-0 rounded-full bg-[var(--forest)] px-3 py-1 text-[11px] font-medium text-[var(--parchment)]">
+          <span className="shrink-0 rounded-full bg-[var(--forest)] px-3 py-1 text-[14px] font-medium text-[var(--parchment)]">
             {mode}
           </span>
         </div>
@@ -388,10 +390,10 @@ function BookingSlip({
                 </svg>
               </span>
               <div>
-                <p className="text-[12.5px] font-medium text-[var(--forest-2)]">
+                <p className="text-[15px] font-medium text-[var(--forest-2)]">
                   {reassurance.label}
                 </p>
-                <p className="mt-0.5 text-[12.5px] leading-snug text-[#16211b8a]">
+                <p className="mt-0.5 text-[15px] leading-snug text-[#16211b8a]">
                   {reassurance.text}
                 </p>
               </div>
@@ -423,7 +425,7 @@ function BookingSlip({
                   ))}
                 </p>
               ) : (
-                <p className="mt-1 font-mono text-[15px] text-[#16211b70]">
+                <p className="mt-1 font-mono text-[16px] text-[#16211b70]">
                   {placeholder}
                 </p>
               )}
@@ -437,7 +439,7 @@ function BookingSlip({
           className="pointer-events-none absolute inset-6 flex items-center justify-center"
         >
           <span
-            className="rotate-[-8deg] rounded-md border-[3px] border-[var(--gold)] px-4 py-1.5 text-[14px] font-medium tracking-wide text-[var(--gold)] opacity-0"
+            className="rotate-[-8deg] rounded-md border-[3px] border-[var(--gold)] px-4 py-1.5 text-[16px] font-medium tracking-wide text-[var(--gold)] opacity-0"
             style={{ animation: "var(--stamp-anim, none)" }}
             data-stamp
           >
@@ -483,7 +485,7 @@ function DoctorPortrait({ doctor }) {
         aria-hidden="true"
         className="absolute inset-0 bg-gradient-to-t from-[var(--ink2)]/75 via-transparent to-transparent"
       />
-      <span className="absolute bottom-3 left-3 rounded-full bg-[var(--parchment)]/90 px-3 py-1 text-[11px] font-medium text-[var(--ink2)]">
+      <span className="absolute bottom-3 left-3 rounded-full bg-[var(--parchment)]/90 px-3 py-1 text-[14px] font-medium text-[var(--ink2)]">
         {doctor.availability}
       </span>
     </div>
@@ -501,6 +503,90 @@ function DoctorPortrait({ doctor }) {
  * rendered. When the viewport changes and maxIndex shrinks, safeIndex is
  * clamped during render, so no effect is needed to "fix up" state.
  */
+/**
+ * OpenSlots: appointment times admins have opened, listed under "Meet your
+ * doctors". Firestore rules make open slots public (doctor, type, mode and
+ * time only). "Book this time" opens /book with the slot pre-filled; a
+ * visitor who isn't signed in is sent to sign in first. Hidden when there
+ * are none.
+ */
+const SLOTS_SHOWN = 6;
+
+function OpenSlots() {
+  const [slots, setSlots] = useState([]);
+  const [showAll, setShowAll] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    fetchAvailableSlots()
+      .then((data) => active && setSlots(data ?? []))
+      .catch(() => {}); // the section just stays hidden
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  if (slots.length === 0) return null;
+  const shown = showAll ? slots : slots.slice(0, SLOTS_SHOWN);
+
+  return (
+    <section id="open-slots" className="pb-16 sm:pb-24">
+      <div className="mx-auto max-w-6xl px-5 sm:px-8">
+        <h2 className="font-display text-[26px] sm:text-[30px] font-medium text-[var(--ink2)]">
+          Open appointment times
+        </h2>
+        <p className="mt-3 max-w-xl text-[17px] text-[#142138]">
+          Pick a time that suits you and book it straight away.
+        </p>
+        <ul className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {shown.map((slot) => {
+            const params = new URLSearchParams({
+              slotId: slot.slotId,
+              type: slot.type,
+              mode: slot.mode,
+            });
+            if (slot.doctorUid) params.set("doctor", slot.doctorUid);
+            return (
+              <li
+                key={slot.slotId}
+                className="flex flex-col justify-between gap-4 rounded-2xl border border-black/10 bg-white p-5 shadow-[0_8px_24px_-18px_rgba(0,0,0,0.35)]"
+              >
+                <div>
+                  <p className="text-[18px] font-semibold text-[#142138]">
+                    {formatDateTime(slot.startAt)}
+                  </p>
+                  <p className="mt-1 text-[17px] text-[#142138]">
+                    {slot.doctorName || "Hospital doctor"}
+                  </p>
+                  <p className="mt-1 text-[16px] text-[#142138cc]">
+                    {TYPE_LABELS[slot.type] ?? slot.type} ·{" "}
+                    {MODE_LABELS[slot.mode] ?? slot.mode}
+                  </p>
+                </div>
+                <Link
+                  to={`/book?${params.toString()}`}
+                  className="inline-flex items-center justify-center rounded-full bg-[#0095D9] px-5 py-3 text-[16px] font-semibold text-white transition hover:bg-[#0083c0]"
+                >
+                  Book this time
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
+        {slots.length > SLOTS_SHOWN && (
+          <button
+            type="button"
+            onClick={() => setShowAll((v) => !v)}
+            className="mt-6 text-[16px] font-medium text-[#0095D9] underline underline-offset-4"
+          >
+            {showAll ? "Show fewer times" : `Show all ${slots.length} times`}
+          </button>
+        )}
+      </div>
+    </section>
+  );
+}
+
 function DoctorsSlider() {
   const { doctors, loading } = useListedDoctors();
   const { doctorSelectionEnabled } = useSiteSettings().settings;
@@ -568,7 +654,7 @@ function DoctorsSlider() {
 
   if (!loading && doctors.length === 0) {
     return (
-      <p className="mt-8 px-2 sm:px-3 text-[15px] text-[#142138cc]">
+      <p className="mt-8 px-2 sm:px-3 text-[16px] text-[#142138cc]">
         Our doctors' profiles will appear here soon.
       </p>
     );
@@ -615,14 +701,14 @@ function DoctorsSlider() {
                     <h3 className="font-display text-[17px] font-medium leading-tight text-[var(--ink2)]">
                       {doctor.name}
                     </h3>
-                    <p className="mt-1 text-[13px] font-medium text-[var(--forest-2)]">
+                    <p className="mt-1 text-[15px] font-medium text-[var(--forest-2)]">
                       {doctor.role}
                     </p>
                     <DoctorCardSummary doctor={doctor} />
                     <button
                       type="button"
                       onClick={() => setProfileDoctor(doctor)}
-                      className="mt-3 block text-[12.5px] font-medium text-[#0095D9] underline-offset-2 hover:underline"
+                      className="mt-3 block text-[15px] font-medium text-[#0095D9] underline-offset-2 hover:underline"
                     >
                       View full profile
                     </button>
@@ -632,7 +718,7 @@ function DoctorsSlider() {
                     {doctorSelectionEnabled && (
                       <Link
                         to={`/book?doctor=${doctor.id}`}
-                        className="mt-4 inline-flex items-center gap-1.5 rounded-full border border-[var(--forest)]/20 px-3.5 py-2 text-[12.5px] font-medium text-[var(--forest-2)]
+                        className="mt-4 inline-flex items-center gap-1.5 rounded-full border border-[var(--forest)]/20 px-3.5 py-2 text-[15px] font-medium text-[var(--forest-2)]
                                  transition hover:border-[var(--forest)] hover:bg-[var(--forest)] hover:text-white
                                  focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--forest)]"
                       >
@@ -1026,7 +1112,7 @@ function HeroSection({ heroImage }) {
         {/* Floating glass chips. Only facts the page already states. */}
 
         <div
-          className="hero-float absolute bottom-[30%] left-[4%] hidden items-center gap-2.5 rounded-2xl border border-white/70 bg-white/85 px-3.5 py-2.5 text-[12.5px] font-semibold text-[#142138] shadow-[0_18px_40px_-22px_rgba(20,33,56,0.45)] backdrop-blur-md sm:flex lg:bottom-[14%] lg:left-[16%]"
+          className="hero-float absolute bottom-[30%] left-[4%] hidden items-center gap-2.5 rounded-2xl border border-white/70 bg-white/85 px-3.5 py-2.5 text-[15px] font-semibold text-[#142138] shadow-[0_18px_40px_-22px_rgba(20,33,56,0.45)] backdrop-blur-md sm:flex lg:bottom-[14%] lg:left-[16%]"
           style={{ animationDelay: "-2.5s" }}
         >
           <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#F88535] text-white">
@@ -1051,7 +1137,7 @@ function HeroSection({ heroImage }) {
         </div>
 
         <div
-          className="hero-float absolute bottom-[8%] right-[5%] hidden items-center gap-2.5 rounded-full border border-white/70 bg-white/85 px-4 py-2.5 text-[12px] font-semibold text-[#142138] shadow-[0_18px_45px_-24px_rgba(20,33,56,0.4)] backdrop-blur-md lg:flex"
+          className="hero-float absolute bottom-[8%] right-[5%] hidden items-center gap-2.5 rounded-full border border-white/70 bg-white/85 px-4 py-2.5 text-[14px] font-semibold text-[#142138] shadow-[0_18px_45px_-24px_rgba(20,33,56,0.4)] backdrop-blur-md lg:flex"
           style={{ animationDelay: "-4.5s" }}
         >
           <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#0095D9] text-white">
@@ -1087,7 +1173,7 @@ function HeroSection({ heroImage }) {
       <div className="relative z-10 mx-auto max-w-7xl px-5 pb-12 sm:px-8 lg:flex lg:min-h-[calc(100svh-80px)] lg:items-center lg:px-10 lg:py-16">
         <div className="-mt-24 text-center sm:-mt-32 lg:mt-0 lg:max-w-[560px] lg:text-left xl:max-w-[600px]">
           <div
-            className="hero-rise inline-flex items-center gap-2 rounded-full border border-[#0095D9]/15 bg-white/80 px-3.5 py-2 text-[12px] font-semibold text-[#0079B2] shadow-[0_10px_30px_-22px_rgba(0,149,217,0.6)] backdrop-blur-sm"
+            className="hero-rise inline-flex items-center gap-2 rounded-full border border-[#0095D9]/15 bg-white/80 px-3.5 py-2 text-[14px] font-semibold text-[#0079B2] shadow-[0_10px_30px_-22px_rgba(0,149,217,0.6)] backdrop-blur-sm"
             style={{ animationDelay: "0.05s" }}
           >
             <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white shadow-sm ring-1 ring-[#0095D9]/10">
@@ -1147,7 +1233,7 @@ function HeroSection({ heroImage }) {
             </span>
             <a
               href={HOSPITAL_PHONE_TEL}
-              className="inline-flex items-center justify-center gap-2 rounded-full border border-[#14213820] bg-white/90 px-5 py-3.5 text-[14px] font-semibold text-[var(--ink2)] shadow-[0_12px_30px_-24px_rgba(20,33,56,0.45)] backdrop-blur transition hover:-translate-y-0.5 hover:border-[#0095D9]/40 hover:text-[#0095D9] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0095D9]"
+              className="inline-flex items-center justify-center gap-2 rounded-full border border-[#14213820] bg-white/90 px-5 py-3.5 text-[16px] font-semibold text-[var(--ink2)] shadow-[0_12px_30px_-24px_rgba(20,33,56,0.45)] backdrop-blur transition hover:-translate-y-0.5 hover:border-[#0095D9]/40 hover:text-[#0095D9] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0095D9]"
             >
               <svg
                 width="16"
@@ -1175,7 +1261,7 @@ function HeroSection({ heroImage }) {
             {["Same doctors as our hospital"].map((item) => (
               <li
                 key={item}
-                className="flex items-center gap-2 text-[12.5px] font-medium text-[#142138B0]"
+                className="flex items-center gap-2 text-[15px] font-medium text-[#142138B0]"
               >
                 <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#0095D9]/[0.1] text-[#0095D9]">
                   <svg
@@ -1309,13 +1395,13 @@ function HomeContent({ isLoggedIn }) {
             <ol className="mt-10 sm:mt-14 relative border-l-2 border-dashed border-[var(--forest)]/25 pl-6 sm:pl-8 space-y-9 sm:space-y-10">
               {steps.map((item, i) => (
                 <li key={item.title} className="relative">
-                  <span className="absolute -left-[31px] sm:-left-[39px] top-0 flex h-6 w-6 items-center justify-center rounded-full bg-[var(--forest)] text-[12px] font-medium text-[var(--parchment)]">
+                  <span className="absolute -left-[31px] sm:-left-[39px] top-0 flex h-6 w-6 items-center justify-center rounded-full bg-[var(--forest)] text-[14px] font-medium text-[var(--parchment)]">
                     {i + 1}
                   </span>
-                  <h3 className="font-medium text-[15px] sm:text-[16px] text-[var(--ink2)]">
+                  <h3 className="font-medium text-[16px] sm:text-[16px] text-[var(--ink2)]">
                     {item.title}
                   </h3>
-                  <p className="mt-1 text-[14px] sm:text-[15px] leading-relaxed text-[#16211bb3]">
+                  <p className="mt-1 text-[16px] sm:text-[16px] leading-relaxed text-[#16211bb3]">
                     {item.detail}
                   </p>
                 </li>
@@ -1330,7 +1416,7 @@ function HomeContent({ isLoggedIn }) {
             <h2 className="font-display text-[26px] sm:text-[30px] font-medium max-w-lg text-[var(--ink2)]">
               Which care do you need?
             </h2>
-            <p className="mt-3 text-[15px] sm:text-[16px] text-[#142138cc] max-w-lg">
+            <p className="mt-3 text-[16px] sm:text-[16px] text-[#142138cc] max-w-lg">
               Both consultation types are available online or in person,
               whichever works better for you.
             </p>
@@ -1351,10 +1437,10 @@ function HomeContent({ isLoggedIn }) {
                         className="max-w-none mx-auto sm:mx-0 transition duration-300 group-hover:shadow-[0_36px_70px_-24px_rgba(15,20,17,0.55)]"
                       />
                     </div>
-                    <p className="mt-4 text-[14px] leading-relaxed text-[#142138b3] text-center sm:text-left max-w-sm mx-auto sm:mx-0">
+                    <p className="mt-4 text-[16px] leading-relaxed text-[#142138b3] text-center sm:text-left max-w-sm mx-auto sm:mx-0">
                       {service.detail}
                     </p>
-                    <span className="mt-2 inline-flex items-center gap-1.5 text-[13.5px] font-medium text-[var(--forest-2)] transition group-hover:text-[var(--forest)]">
+                    <span className="mt-2 inline-flex items-center gap-1.5 text-[15px] font-medium text-[var(--forest-2)] transition group-hover:text-[var(--forest)]">
                       Book this consultation
                       <svg
                         width="14"
@@ -1382,7 +1468,7 @@ function HomeContent({ isLoggedIn }) {
                     {service.subServices.map((item) => (
                       <li
                         key={item}
-                        className="inline-flex items-center gap-1.5 rounded-full border border-[var(--forest)]/15 bg-[var(--forest)]/[0.04] px-3 py-1.5 text-[12.5px] text-[var(--forest-2)]"
+                        className="inline-flex items-center gap-1.5 rounded-full border border-[var(--forest)]/15 bg-[var(--forest)]/[0.04] px-3 py-1.5 text-[15px] text-[var(--forest-2)]"
                       >
                         <CheckGlyph />
                         {item}
@@ -1401,7 +1487,7 @@ function HomeContent({ isLoggedIn }) {
                   className="h-full w-full object-cover"
                 />
               </div>
-              <p className="text-[14px] sm:text-[15px] leading-relaxed text-[#142138b3] max-w-md">
+              <p className="text-[16px] sm:text-[16px] leading-relaxed text-[#142138b3] max-w-md">
                 Whichever you choose, the same doctors who see you at the
                 hospital are the ones who hold your consultation.
               </p>
@@ -1416,7 +1502,7 @@ function HomeContent({ isLoggedIn }) {
               <h2 className="font-display text-[26px] sm:text-[30px] font-medium text-[var(--ink2)]">
                 Meet your doctors
               </h2>
-              <p className="mt-3 max-w-lg text-[15px] sm:text-[16px] text-[#142138cc]">
+              <p className="mt-3 max-w-lg text-[16px] sm:text-[16px] text-[#142138cc]">
                 You'll be assigned to one of them when your booking is
                 confirmed, based on what you're being seen for.
               </p>
@@ -1426,6 +1512,9 @@ function HomeContent({ isLoggedIn }) {
           </div>
         </section>
 
+        {/* ---------- Open appointment times ---------- */}
+        <OpenSlots />
+
         {/* ---------- CTA banner ---------- */}
         <section className="px-5 sm:px-8 py-16 sm:py-24">
           <div className="mx-auto max-w-6xl rounded-3xl bg-[#0095D9] text-[var(--parchment)] px-6 sm:px-10 py-10 sm:py-14 flex flex-col md:flex-row md:items-center gap-8 md:gap-10">
@@ -1433,7 +1522,7 @@ function HomeContent({ isLoggedIn }) {
               <h2 className="font-display text-[24px] sm:text-[28px] font-medium">
                 Ready when you are
               </h2>
-              <p className="mt-3 text-[15px] leading-relaxed text-[var(--parchment)]/70 max-w-sm mx-auto md:mx-0">
+              <p className="mt-3 text-[16px] leading-relaxed text-[var(--parchment)]/70 max-w-sm mx-auto md:mx-0">
                 Book a consultation now, or call the hospital directly if you'd
                 rather speak to someone first.
               </p>
@@ -1447,7 +1536,7 @@ function HomeContent({ isLoggedIn }) {
                 <a
                   key={action.label}
                   href={action.href}
-                  className="inline-flex items-center gap-2 whitespace-nowrap rounded-full border border-[var(--parchment)]/20 px-4 py-2.5 text-[13.5px] font-medium text-[var(--parchment)]/90
+                  className="inline-flex items-center gap-2 whitespace-nowrap rounded-full border border-[var(--parchment)]/20 px-4 py-2.5 text-[15px] font-medium text-[var(--parchment)]/90
                              hover:border-[var(--gold)] hover:text-[var(--gold)] transition"
                 >
                   <svg
@@ -1479,7 +1568,7 @@ function HomeContent({ isLoggedIn }) {
               <h2 className="font-display text-[24px] sm:text-[28px] font-medium text-[var(--parchment)]">
                 How We Handle Your data
               </h2>
-              <p className="mt-4 text-[15px] sm:text-[16px] leading-relaxed text-[var(--parchment)]/75">
+              <p className="mt-4 text-[16px] sm:text-[16px] leading-relaxed text-[var(--parchment)]/75">
                 When your consultation closes, the details you gave when booking
                 (date of birth, sex, location and phone) are permanently
                 deleted. We keep a short record of each visit (doctor, date,
