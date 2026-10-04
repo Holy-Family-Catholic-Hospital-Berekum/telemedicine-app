@@ -27,6 +27,7 @@ const maintenance = require("./maintenance");
 const siteSettings = require("./siteSettings");
 const legalDocs = require("./legalDocs");
 const refunds = require("./refunds");
+const roomDevices = require("./roomDevices");
 
 // Accounts
 exports.registerPatient = accounts.registerPatient;
@@ -54,6 +55,10 @@ exports.startVideoCall = consultations.startVideoCall;
 exports.getTurnCredentials = consultations.getTurnCredentials;
 exports.markConsultationDone = consultations.markConsultationDone;
 
+// Telemedicine room computers (doctors start calls only from these)
+exports.registerRoomDevice = roomDevices.registerRoomDevice;
+exports.revokeRoomDevice = roomDevices.revokeRoomDevice;
+
 // Call recording
 exports.setCallRecordingMode = recordings.setCallRecordingMode;
 exports.startRecording = recordings.startRecording;
@@ -75,10 +80,13 @@ exports.releaseSlotHolds = maintenance.releaseSlotHolds;
 exports.cleanupSignalling = maintenance.cleanupSignalling;
 exports.cleanupRateLimits = maintenance.cleanupRateLimits;
 
-// Patient emails. They need the RESEND_API_KEY secret, so they're only
-// deployed once lib/mailConfig.js FROM uses the hospital's verified domain.
+// Appointment emails and reminders to patients and doctors. Sending needs
+// the RESEND_API_KEY secret, so these are only deployed once
+// lib/mailConfig.js FROM uses the hospital's verified domain.
 if (require("./lib/mailConfig").EMAIL_CONFIGURED) {
   const email = require("./email");
+  const reminders = require("./reminders");
   exports.sendQueuedEmail = email.sendQueuedEmail;
   exports.retryQueuedEmails = email.retryQueuedEmails;
+  exports.sendAppointmentReminders = reminders.sendAppointmentReminders;
 }

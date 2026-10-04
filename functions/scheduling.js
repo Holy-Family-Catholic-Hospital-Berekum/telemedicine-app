@@ -8,12 +8,14 @@
 //   requestReschedule      patient asks to move a scheduled consultation
 //   rescheduleConsultation admin applies (or declines) a reschedule
 //
-// Contacting the patient stays manual (phone/WhatsApp): these functions
-// only record what was decided.
+// The patient and the doctor are emailed about each change (lib/mailQueue.js,
+// sent by email.js once a verified sending domain is set); reminders before
+// the appointment come from reminders.js.
 
 const { onCall } = require("firebase-functions/v2/https");
 const {
   db,
+  FieldValue,
   Timestamp,
   serverTime,
   TYPES,
@@ -29,8 +31,9 @@ const {
   newConsultationId,
   audit,
   rateLimit,
+  deleteTree,
 } = require("./lib/core");
-const { queueAppointmentEmail } = require("./lib/mailQueue");
+const { queueEmail } = require("./lib/mailQueue");
 
 // A doctor can't have two consultations closer together than this.
 const MIN_GAP_MINUTES = 30;
@@ -61,8 +64,12 @@ async function activeDoctor(tx, doctorUid, type) {
   return {
     name: staff.name || profile?.name || "Doctor",
     department: staff.department || profile?.roleTitle || null,
+    email: staff.email || null,
   };
 }
+
+/** True once both the patient and the doctor have joined the video call. */
+const bothJoined = (c) => Boolean(c.patientFirstJoinedAt && c.doctorFirstJoinedAt);
 
 function checkFutureTime(date) {
   const now = Date.now();
@@ -151,6 +158,8 @@ exports.scheduleConsultation = onCall(async (request) => {
       scheduledTime,
       status: "scheduled",
       callStartedAt: null,
+      // When the patient and doctor were told the time (reminders.js).
+      scheduleSetAt: Timestamp.now(),
       rescheduleHistory: [],
       createdAt: serverTime(),
       createdByUid: caller.uid,
@@ -165,8 +174,8 @@ exports.scheduleConsultation = onCall(async (request) => {
       scheduledTime,
       updatedAt: serverTime(),
     });
-    // Tell the patient by email (sent by functions/email.js).
-    queueAppointmentEmail(tx, {
+    // Tell the patient and the doctor by email (sent by functions/email.js).
+    queueEmail(tx, {
       bookingId,
       to: booking.email,
       kind: "appointment_scheduled",
@@ -178,6 +187,11 @@ exports.scheduleConsultation = onCall(async (request) => {
         scheduledAt: when.getTime(),
         consultationId: id,
       },
+    });
+    queueEmail(tx, {
+      to: doctor.email,
+      kind: "doctor_assigned",
+      data: { doctorName: doctor.name, type: booking.type, mode: booking.mode, scheduledAt: when.getTime() },
     });
     audit(tx, {
       actorId: caller.uid,
@@ -303,12 +317,11 @@ exports.cancelAvailableSlot = onCall(async (request) => {
 /* reschedules                                                         */
 /* ------------------------------------------------------------------ */
 
-/** data: { bookingId, consultationId, preferredTime?, reason? } */
+/** data: { bookingId, preferredTime?, reason? } */
 exports.requestReschedule = onCall(async (request) => {
   const caller = await requireRole(request, ["patient"]);
   const d = request.data || {};
   const bookingId = docId(d.bookingId, "Booking");
-  const typedId = str(d.consultationId, { field: "Consultation ID", max: 40 }).toUpperCase();
   const preferredTime = str(d.preferredTime, { field: "Preferred time", max: 80, optional: true });
   const reason = str(d.reason, { field: "Reason", max: 300, optional: true });
 
@@ -324,14 +337,20 @@ exports.requestReschedule = onCall(async (request) => {
     if (booking.status !== "scheduled" || !booking.consultationId) {
       throw new HttpsError("failed-precondition", "This booking isn't scheduled yet.");
     }
-    if (booking.consultationId !== typedId) {
-      throw new HttpsError(
-        "invalid-argument",
-        "That consultation ID doesn't match this booking.",
-      );
+    const [consultationSnap, refundSnap] = await Promise.all([
+      tx.get(db.collection("consultations").doc(booking.consultationId)),
+      tx.get(db.collection("refundRequests").doc(booking.consultationId)),
+    ]);
+    // A missed consultation can be moved: one the patient, or the doctor,
+    // never joined.
+    if (bothJoined(consultationSnap.data() || {})) {
+      throw new HttpsError("failed-precondition", "This consultation has already taken place.");
     }
-    if (booking.callStartedAt) {
-      throw new HttpsError("failed-precondition", "This consultation has already started.");
+    if (refundSnap.exists) {
+      throw new HttpsError(
+        "failed-precondition",
+        "You've asked for a refund for this consultation, so it can't be rescheduled.",
+      );
     }
     tx.update(ref, {
       rescheduleRequest: {
@@ -371,7 +390,7 @@ exports.rescheduleConsultation = onCall(async (request) => {
 
   const bookingRef = db.collection("bookings").doc(bookingId);
 
-  await db.runTransaction(async (tx) => {
+  const moved = await db.runTransaction(async (tx) => {
     const bookingSnap = await tx.get(bookingRef);
     if (!bookingSnap.exists) throw new HttpsError("not-found", "Booking not found.");
     const booking = bookingSnap.data();
@@ -395,7 +414,7 @@ exports.rescheduleConsultation = onCall(async (request) => {
         patientUid: booking.patientUid,
         meta: requestMeta(request),
       });
-      return;
+      return null;
     }
 
     const when = isoDateTime(d.scheduledTime, "Time");
@@ -406,8 +425,9 @@ exports.rescheduleConsultation = onCall(async (request) => {
     const consultationSnap = await tx.get(consultationRef);
     if (!consultationSnap.exists) throw new HttpsError("not-found", "Consultation not found.");
     const consultation = consultationSnap.data();
-    if (consultation.status !== "scheduled") {
-      throw new HttpsError("failed-precondition", "This consultation has already started.");
+    // A call one side never joined was missed, and can be moved.
+    if (bothJoined(consultation)) {
+      throw new HttpsError("failed-precondition", "This consultation has already taken place.");
     }
     if ((consultation.rescheduleHistory || []).length >= MAX_RESCHEDULES) {
       throw new HttpsError("failed-precondition", "This consultation has been rescheduled too many times.");
@@ -415,6 +435,10 @@ exports.rescheduleConsultation = onCall(async (request) => {
 
     const doctor = await activeDoctor(tx, doctorUid, booking.type);
     await assertNoClash(tx, doctorUid, when, booking.consultationId);
+    const previousDoctorSnap =
+      consultation.doctorUid && consultation.doctorUid !== doctorUid
+        ? await tx.get(db.collection("adminUsers").doc(consultation.doctorUid))
+        : null;
 
     const scheduledTime = Timestamp.fromDate(when);
     const entry = {
@@ -424,10 +448,18 @@ exports.rescheduleConsultation = onCall(async (request) => {
       byUid: caller.uid,
       at: Timestamp.now(),
     };
+    // A missed call starts again from scratch at the new time: nobody has
+    // joined, and the reminders go out again. Call consent is kept.
     tx.update(consultationRef, {
       scheduledTime,
       doctorUid,
       doctorName: doctor.name,
+      status: "scheduled",
+      callStartedAt: null,
+      patientFirstJoinedAt: FieldValue.delete(),
+      doctorFirstJoinedAt: FieldValue.delete(),
+      reminders: FieldValue.delete(),
+      scheduleSetAt: Timestamp.now(),
       rescheduleHistory: [...(consultation.rescheduleHistory || []), entry],
       updatedAt: serverTime(),
     });
@@ -436,10 +468,13 @@ exports.rescheduleConsultation = onCall(async (request) => {
       doctorUid,
       doctorName: doctor.name,
       doctorDepartment: doctor.department,
+      callStartedAt: null,
+      patientJoinedAt: FieldValue.delete(),
+      doctorJoinedAt: FieldValue.delete(),
       ...(booking.rescheduleRequest ? { "rescheduleRequest.status": "applied" } : {}),
       updatedAt: serverTime(),
     });
-    queueAppointmentEmail(tx, {
+    queueEmail(tx, {
       bookingId,
       to: booking.email,
       kind: "appointment_rescheduled",
@@ -452,6 +487,25 @@ exports.rescheduleConsultation = onCall(async (request) => {
         consultationId: booking.consultationId,
       },
     });
+    queueEmail(tx, {
+      to: doctor.email,
+      kind: previousDoctorSnap ? "doctor_assigned" : "doctor_rescheduled",
+      data: { doctorName: doctor.name, type: booking.type, mode: booking.mode, scheduledAt: when.getTime() },
+    });
+    if (previousDoctorSnap?.exists) {
+      const was = toDate(consultation.scheduledTime);
+      queueEmail(tx, {
+        to: previousDoctorSnap.data().email,
+        kind: "doctor_unassigned",
+        data: {
+          doctorName: previousDoctorSnap.data().name || "",
+          type: booking.type,
+          mode: booking.mode,
+          scheduledAt: was ? was.getTime() : when.getTime(),
+        },
+        sendBefore: Date.now() + 86400 * 1000,
+      });
+    }
     audit(tx, {
       actorId: caller.uid,
       actorRole: "admin",
@@ -463,7 +517,12 @@ exports.rescheduleConsultation = onCall(async (request) => {
       patientUid: booking.patientUid,
       meta: requestMeta(request),
     });
+    return booking.consultationId;
   });
 
+  // A missed call's signalling is cleared so the new time starts fresh.
+  if (moved) {
+    await deleteTree(db.collection("calls").doc(moved)).catch(() => {});
+  }
   return { ok: true };
 });

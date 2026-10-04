@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Video, Lock, Loader2, ShieldQuestion, PhoneCall } from "lucide-react";
+import { Video, Lock, Loader2, PhoneCall } from "lucide-react";
 import { getCallWindow } from "./patientUtils";
 import { joinVideoCall } from "./patientFirestoreService";
 import { callableMessage, CALL_UNLOCK_MINUTES } from "../../../src/constants";
@@ -13,16 +13,18 @@ function formatWait(minutes) {
   return m ? `${h} h ${m} min` : `${h} h`;
 }
 
-// The patient types the consultation ID from their appointment email to
-// join. The first join of each consultation also asks for the video
-// consultation consent (stored by the server); later joins don't.
+// One click to join: the server checks this is the patient booked on the
+// consultation and that the video room is open. The first join of each
+// consultation also asks for the video consultation consent (stored by the
+// server); later joins don't.
 export default function JoinCallPanel({ booking, onJoined }) {
-  const [enteredId, setEnteredId] = useState("");
   const [joining, setJoining] = useState(false);
   const [error, setError] = useState(null);
   const [askConsent, setAskConsent] = useState(false);
   const { unlocked, minutesUntilUnlock } = getCallWindow(booking.scheduledTime);
-  const callInProgress = Boolean(booking.callStartedAt);
+  // The patient has been in this call before: "Rejoin call" takes them back.
+  const callInProgress = Boolean(booking.patientJoinedAt);
+  const doctorWaiting = Boolean(booking.doctorJoinedAt) && !callInProgress;
 
   async function join(withConsent) {
     setJoining(true);
@@ -30,7 +32,6 @@ export default function JoinCallPanel({ booking, onJoined }) {
     try {
       const result = await joinVideoCall({
         booking,
-        enteredConsultationId: enteredId,
         callConsentVersion: withConsent ? CURRENT_CALL_CONSENT : undefined,
       });
       setAskConsent(false);
@@ -81,35 +82,28 @@ export default function JoinCallPanel({ booking, onJoined }) {
   return (
     <>
       <form onSubmit={handleSubmit} className="mt-4 rounded-md border border-[#DCE6EC] p-3.5">
-        <p className="flex items-center gap-1.5 text-xs text-[#5C6B72]">
-          <ShieldQuestion size={13} strokeWidth={1.75} />
-          Enter the consultation ID from your appointment email to join
+        {doctorWaiting && (
+          <p className="mb-2 flex items-center gap-1.5 text-sm font-medium text-[#1E8E5A]">
+            <PhoneCall size={14} strokeWidth={2} />
+            Your doctor is in the video room. Join now.
+          </p>
+        )}
+        <p className="text-sm text-[#12242C]">
+          The video room is open. Join from a quiet, private place.
         </p>
-        <div className="mt-2 flex flex-wrap gap-2">
-          <input
-            type="text"
-            value={enteredId}
-            onChange={(e) => {
-              setEnteredId(e.target.value);
-              setError(null);
-            }}
-            placeholder="e.g. HFC-XXXXXXXXXX"
-            className="min-w-0 flex-1 rounded-sm border border-[#DCE6EC] px-3 py-2 text-sm font-mono uppercase text-[#12242C] focus:border-[#0095D9] focus:outline-none"
-          />
-          <button
-            type="submit"
-            disabled={joining || !enteredId.trim()}
-            className="flex items-center gap-2 rounded-sm px-3.5 py-2 text-sm font-medium text-white transition disabled:cursor-not-allowed disabled:opacity-60"
-            style={{ backgroundColor: "#0095D9" }}
-          >
-            {joining ? (
-              <Loader2 size={15} strokeWidth={2} className="animate-spin" />
-            ) : (
-              <Video size={15} strokeWidth={2} />
-            )}
-            {joining ? "Checking…" : "Join call"}
-          </button>
-        </div>
+        <button
+          type="submit"
+          disabled={joining}
+          className="mt-3 flex w-full items-center justify-center gap-2 rounded-md px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+          style={{ backgroundColor: "#1E8E5A" }}
+        >
+          {joining ? (
+            <Loader2 size={16} strokeWidth={2} className="animate-spin" />
+          ) : (
+            <Video size={16} strokeWidth={2} />
+          )}
+          {joining ? "Joining…" : "Join call"}
+        </button>
         <p className="mt-2 text-[11px] text-[#5C6B72]">
           Calls may be recorded (video with sound, or sound only) when the
           hospital has recording switched on. You'll see a REC sign on screen

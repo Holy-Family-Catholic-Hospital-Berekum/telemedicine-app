@@ -6,10 +6,10 @@ import {
   PhoneCall,
   CheckSquare,
   History,
+  Loader2,
 } from "lucide-react";
 import SensitiveDetails from "../sensitiveDetails";
 import { getCallWindow } from "../docUtils";
-import VerifyConsultationIdModal from "./verifyConsultationIdModal";
 import { TYPE_LABELS, formatTime } from "../../../src/constants";
 
 const MODE_STYLE = {
@@ -21,9 +21,9 @@ export default function ConsultationCard({
   consultation,
   onStartCall,
   onMarkDone,
+  inRoom,
 }) {
   const [expandedHistory, setExpandedHistory] = useState(false);
-  const [verifyModalOpen, setVerifyModalOpen] = useState(false);
   const mode = MODE_STYLE[consultation.mode] ?? MODE_STYLE.in_person;
   const isOnline = consultation.mode === "online";
   const callInProgress = isOnline && consultation.status === "in_progress";
@@ -31,26 +31,18 @@ export default function ConsultationCard({
     consultation.scheduledTime,
   );
 
-  const [rejoinError, setRejoinError] = useState(null);
-  const [rejoining, setRejoining] = useState(false);
+  const [callError, setCallError] = useState(null);
+  const [starting, setStarting] = useState(false);
 
-  // Doctors get the consultation ID from reception and type it in to START
-  // a call (startVideoCall checks it, with the assignment and time window).
-  // Once the call has started, rejoining doesn't ask again. This is an
-  // organisational control, not the security boundary: rules and the
-  // function are.
-  async function handleRejoin() {
-    setRejoining(true);
-    setRejoinError(null);
-    const result = await onStartCall(consultation.consultationId, consultation.consultationId);
-    setRejoining(false);
-    if (!result.ok) setRejoinError(result.message);
-  }
-
-  async function handleVerifyId(enteredId) {
-    const result = await onStartCall(consultation.consultationId, enteredId);
-    if (result.ok) setVerifyModalOpen(false);
-    return result;
+  // One click on the telemedicine room computer: startVideoCall checks the
+  // computer's room key, that this doctor is assigned and the time window.
+  // On any other device the button is disabled and the server refuses too.
+  async function handleStart() {
+    setStarting(true);
+    setCallError(null);
+    const result = await onStartCall(consultation.consultationId);
+    setStarting(false);
+    if (!result.ok) setCallError(result.message);
   }
 
   return (
@@ -131,13 +123,20 @@ export default function ConsultationCard({
             unlocked ? (
               <button
                 type="button"
-                onClick={() => (callInProgress ? handleRejoin() : setVerifyModalOpen(true))}
-                disabled={rejoining}
-                className="flex items-center gap-2 rounded-sm px-3.5 py-2 text-sm font-medium text-white transition disabled:opacity-60"
+                onClick={handleStart}
+                disabled={starting || !inRoom}
+                title={inRoom ? undefined : "Available on the telemedicine room computer"}
+                className="flex items-center gap-2 rounded-sm px-3.5 py-2 text-sm font-medium text-white transition disabled:cursor-not-allowed disabled:opacity-60"
                 style={{ backgroundColor: "#0095D9" }}
               >
-                <Video size={15} strokeWidth={2} />
-                {callInProgress ? (rejoining ? "Rejoining…" : "Rejoin call") : "Start video call"}
+                {starting ? (
+                  <Loader2 size={15} strokeWidth={2} className="animate-spin" />
+                ) : (
+                  <Video size={15} strokeWidth={2} />
+                )}
+                {callInProgress
+                  ? starting ? "Rejoining…" : "Rejoin call"
+                  : starting ? "Starting…" : "Start video call"}
               </button>
             ) : (
               <span className="flex items-center gap-1.5 rounded-sm border border-[#DCE6EC] px-3 py-2 text-sm text-[#5C6B72]">
@@ -160,9 +159,21 @@ export default function ConsultationCard({
             Mark done
           </button>
 
-          {rejoinError && (
+          {callError && (
             <span className="text-xs" style={{ color: "#D64545" }}>
-              {rejoinError}
+              {callError}
+            </span>
+          )}
+
+          {isOnline && unlocked && !inRoom && (
+            <span className="text-xs text-[#5C6B72]">
+              Start this call from the telemedicine room computer.
+            </span>
+          )}
+
+          {callInProgress && !consultation.patientJoined && (
+            <span className="text-xs text-[#5C6B72]">
+              The patient hasn't joined yet.
             </span>
           )}
 
@@ -189,13 +200,6 @@ export default function ConsultationCard({
           )}
         </div>
       </div>
-
-      {verifyModalOpen && (
-        <VerifyConsultationIdModal
-          onClose={() => setVerifyModalOpen(false)}
-          onVerify={handleVerifyId}
-        />
-      )}
     </div>
   );
 }

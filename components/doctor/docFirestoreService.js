@@ -24,6 +24,7 @@ import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage
 
 import { db, functions, storage } from "../../src/firebase";
 import { toDate } from "../../src/constants";
+import { getRoomDevice } from "../../src/roomDevice";
 
 const callStartVideoCall = httpsCallable(functions, "startVideoCall");
 const callMarkDone = httpsCallable(functions, "markConsultationDone");
@@ -46,6 +47,7 @@ export async function fetchAssignedConsultations(doctorUid) {
       status: c.status,
       scheduledTime: toDate(c.scheduledTime),
       callStartedAt: toDate(c.callStartedAt),
+      patientJoined: Boolean(c.patientFirstJoinedAt),
       patient: {
         name: c.patientName || "Patient",
         location: c.patientDetails?.location || "",
@@ -64,14 +66,16 @@ export async function fetchAssignedConsultations(doctorUid) {
 }
 
 /**
- * The server checks the typed ID, that this doctor is assigned, the mode
- * and the time window, then opens (or resets) the signalling room.
+ * Sends this browser's telemedicine room key (src/roomDevice.js). The
+ * server checks the key, that this doctor is assigned, the mode and the
+ * time window, then opens (or resets) the signalling room.
  * Resolves: { consultationId, callStartedAt, recordingEnabled }
  */
-export async function startVideoCall(consultationId, enteredConsultationId) {
+export async function startVideoCall(consultationId) {
+  const device = getRoomDevice();
   const { data } = await callStartVideoCall({
     consultationId,
-    enteredConsultationId: enteredConsultationId.trim().toUpperCase(),
+    ...(device ? { roomDevice: { id: device.id, key: device.key } } : {}),
   });
   return data;
 }

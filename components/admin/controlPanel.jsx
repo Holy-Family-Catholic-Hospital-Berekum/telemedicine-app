@@ -1,7 +1,9 @@
 // controlPanel.jsx
 //
 // Admin "Control Panel" tab. Lets an administrator:
-//   0. switch call recording on or off (RecordingSwitchCard)
+//   0. switch call recording on or off (RecordingSwitchCard), and register
+//      the telemedicine room computers doctors start calls from
+//      (RoomDevicesCard)
 //   1. change the photo on the home page hero
 //   2. set the consultation prices
 //   3. manage the photos in the BrandAside slideshow (add / remove / reorder)
@@ -35,6 +37,7 @@ import ConfirmDialog from "./confirmDialog.jsx";
 import "./controlPanel.css";
 import LegalDocsCard from "./legalDocsCard.jsx";
 import RecordingSwitchCard from "./recordingSwitchCard.jsx";
+import RoomDevicesCard from "./roomDevicesCard.jsx";
 import DoctorSelectionCard from "./doctorSelectionCard.jsx";
 
 const callUpdatePrices = httpsCallable(functions, "updateConsultationPrices");
@@ -914,6 +917,8 @@ export default function ControlPanel({ onAudit }) {
   return (
     <div className="cp-stack">
       <RecordingSwitchCard />
+
+      <RoomDevicesCard />
 
       <DoctorSelectionCard enabled={raw?.doctorSelectionEnabled !== false} />
 

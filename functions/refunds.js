@@ -1,7 +1,8 @@
 // functions/refunds.js
 //
-//   requestRefund        patient asks for a refund (only after the scheduled
-//                        day has passed; one request per consultation)
+//   requestRefund        patient asks for a refund of a consultation they
+//                        did not attend (only after the scheduled day has
+//                        passed; one request per consultation)
 //   resolveRefundRequest admin records the outcome after refunding manually
 //
 // Refunds are made by hand (Paystack dashboard, or mobile money), so each
@@ -10,6 +11,13 @@
 // number on the request is one the patient gives for the refund (the
 // booking's phone is deleted when the consultation closes). Requests are
 // kept as financial records and every step is audited.
+//
+// Who can ask (terms of service, "Cancellations and refunds"): a patient
+// whose consultation was scheduled but who did not attend it. A patient
+// who joined the video call, or whose in-person visit was closed as
+// completed, can't ask for a refund. Rescheduling is the first option the
+// dashboard offers; a refund and a reschedule of the same consultation
+// exclude each other.
 
 const { onCall } = require("firebase-functions/v2/https");
 const {
@@ -30,9 +38,13 @@ const {
 /** YYYY-MM-DD in hospital time. Ghana is UTC+0 all year. */
 const hospitalDay = (date) => date.toISOString().slice(0, 10);
 
+const NOT_ELIGIBLE =
+  "You attended this consultation, so it can't be refunded. If something " +
+  "went wrong, please call the hospital.";
+
 /**
  * data: { source: "history" | "booking", id, reason, refundPhone }
- *   history: id = consultationId of a closed consultation
+ *   history: id = consultationId of a consultation closed as a no-show
  *   booking: id = bookingId of a scheduled consultation that never closed
  */
 exports.requestRefund = onCall(async (request) => {
@@ -52,8 +64,22 @@ exports.requestRefund = onCall(async (request) => {
   if (!rec || rec.patientUid !== caller.uid) {
     throw new HttpsError("not-found", "Consultation not found.");
   }
-  if (source === "booking" && (rec.status !== "scheduled" || !rec.consultationId)) {
-    throw new HttpsError("failed-precondition", "Only scheduled consultations can be refunded.");
+  if (source === "booking") {
+    if (rec.status !== "scheduled" || !rec.consultationId) {
+      throw new HttpsError("failed-precondition", "Only scheduled consultations can be refunded.");
+    }
+    if (rec.rescheduleRequest?.status === "requested") {
+      throw new HttpsError(
+        "failed-precondition",
+        "You've asked to reschedule this consultation. Wait for the new time, or call the hospital.",
+      );
+    }
+    const consultation = await db.collection("consultations").doc(rec.consultationId).get();
+    if (rec.patientJoinedAt || consultation.data()?.patientFirstJoinedAt) {
+      throw new HttpsError("failed-precondition", NOT_ELIGIBLE);
+    }
+  } else if (rec.outcome !== "no_show" || rec.patientJoined === true) {
+    throw new HttpsError("failed-precondition", NOT_ELIGIBLE);
   }
 
   const scheduled = toDate(rec.scheduledTime);

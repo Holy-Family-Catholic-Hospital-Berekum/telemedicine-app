@@ -27,7 +27,6 @@ const {
   requireRole,
   requireVerifiedEmail,
   requestMeta,
-  str,
   oneOf,
   docId,
   toDate,
@@ -37,6 +36,7 @@ const {
   sha256,
 } = require("./lib/core");
 const { CALL_CONSENT_TEXT, CURRENT_CALL_CONSENT } = require("./lib/consentText");
+const { verifyRoomDevice } = require("./roomDevices");
 
 const CLOUDFLARE_TURN_KEY_ID = defineSecret("CLOUDFLARE_TURN_KEY_ID");
 const CLOUDFLARE_TURN_API_TOKEN = defineSecret("CLOUDFLARE_TURN_API_TOKEN");
@@ -73,7 +73,14 @@ async function loadForParticipant(caller, consultationId) {
 /* ------------------------------------------------------------------ */
 
 /**
- * data: { consultationId, enteredConsultationId, callConsentVersion? }
+ * Patient data: { consultationId, callConsentVersion? }
+ * Doctor data:  { consultationId, roomDevice: { id, key } }
+ *
+ * Patients join with one click: the caller must be the signed-in,
+ * verified patient booked on this consultation (loadForParticipant).
+ * Doctors can only start or rejoin a call from a registered telemedicine
+ * room computer (roomDevices.js), whose browser sends its device key.
+ *
  * A patient's first join of each consultation must carry the current
  * video-consultation consent version; it's stored as a consent record and
  * later joins don't ask again.
@@ -83,17 +90,11 @@ exports.startVideoCall = onCall(async (request) => {
   if (caller.role === "patient") requireVerifiedEmail(caller);
   const d = request.data || {};
   const consultationId = docId(d.consultationId, "Consultation");
-  const typed = str(d.enteredConsultationId, { field: "Consultation ID", max: 40 })
-    .toUpperCase();
 
   await rateLimit(caller.uid, "startVideoCall", { max: 30, windowSeconds: 3600 });
 
-  if (typed !== consultationId) {
-    throw new HttpsError(
-      "invalid-argument",
-      "That consultation ID doesn't match this session.",
-    );
-  }
+  const roomDeviceRef =
+    caller.role === "doctor" ? await verifyRoomDevice(d.roomDevice) : null;
 
   const { ref, consultation } = await loadForParticipant(caller, consultationId);
   if (consultation.mode !== "online") {
@@ -186,15 +187,28 @@ exports.startVideoCall = onCall(async (request) => {
       tx.update(callRef, { patientSeq, answer: FieldValue.delete(), expiresAt });
     }
 
+    // Who has joined decides what the patient can do afterwards: a patient
+    // who joined can't ask for a refund, and a consultation both sides
+    // joined can't be rescheduled. The booking carries a copy for the
+    // patient's dashboard.
     const joinedField = caller.role === "doctor" ? "doctorFirstJoinedAt" : "patientFirstJoinedAt";
+    const bookingJoinedField = caller.role === "doctor" ? "doctorJoinedAt" : "patientJoinedAt";
     const updates = { status: "in_progress", updatedAt: serverTime() };
-    if (!current.callStartedAt) updates.callStartedAt = serverTime();
-    if (!current[joinedField]) updates[joinedField] = serverTime();
-    tx.update(ref, updates);
+    const bookingUpdates = {};
     if (!current.callStartedAt) {
-      tx.update(db.collection("bookings").doc(current.bookingId), {
-        callStartedAt: serverTime(),
-      });
+      updates.callStartedAt = serverTime();
+      bookingUpdates.callStartedAt = serverTime();
+    }
+    if (!current[joinedField]) {
+      updates[joinedField] = serverTime();
+      bookingUpdates[bookingJoinedField] = serverTime();
+    }
+    tx.update(ref, updates);
+    if (Object.keys(bookingUpdates).length) {
+      tx.update(db.collection("bookings").doc(current.bookingId), bookingUpdates);
+    }
+    if (roomDeviceRef) {
+      tx.update(roomDeviceRef, { lastUsedAt: serverTime(), lastUsedByUid: caller.uid });
     }
     audit(tx, {
       actorId: caller.uid,
@@ -335,6 +349,10 @@ exports.markConsultationDone = onCall(async (request) => {
       scheduledTime: c.scheduledTime,
       // Online: when the call actually began. In person: the booked time.
       startedAt: c.callStartedAt || c.scheduledTime,
+      // Whether each side joined the video call (online only). A patient
+      // who joined can't ask for a refund (refunds.js).
+      patientJoined: Boolean(c.patientFirstJoinedAt),
+      doctorJoined: Boolean(c.doctorFirstJoinedAt),
       endedAt: serverTime(),
       amountPaid,
       currency: booking.currency || "GHS",

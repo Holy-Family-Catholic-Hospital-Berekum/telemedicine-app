@@ -1,16 +1,20 @@
-import { CALL_UNLOCK_MINUTES } from "../../../src/constants";
+import { CALL_UNLOCK_MINUTES, CALL_CLOSES_HOURS } from "../../../src/constants";
 
 const UNLOCK_WINDOW_MS = CALL_UNLOCK_MINUTES * 60 * 1000;
+const CLOSE_AFTER_MS = CALL_CLOSES_HOURS * 3600 * 1000;
 
 // Same rule as the doctor dashboard: the video room opens
-// CALL_UNLOCK_MINUTES before the scheduled time (server enforces it too).
+// CALL_UNLOCK_MINUTES before the scheduled time and closes
+// CALL_CLOSES_HOURS after it (server enforces both). `closed` also marks
+// when an in-person appointment time is well past.
 export function getCallWindow(scheduledTime, now = new Date()) {
   const scheduledMs = new Date(scheduledTime).getTime();
   const unlockAtMs = scheduledMs - UNLOCK_WINDOW_MS;
   const nowMs = now.getTime();
   const unlocked = nowMs >= unlockAtMs;
+  const closed = nowMs > scheduledMs + CLOSE_AFTER_MS;
   const minutesUntilUnlock = unlocked ? 0 : Math.ceil((unlockAtMs - nowMs) / 60000);
-  return { unlocked, minutesUntilUnlock };
+  return { unlocked, closed, minutesUntilUnlock };
 }
 
 export function formatCurrency(amount) {

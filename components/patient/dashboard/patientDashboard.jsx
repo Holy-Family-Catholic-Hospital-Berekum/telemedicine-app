@@ -15,6 +15,7 @@ import {
   fetchMyRefundRequests,
 } from "./patientFirestoreService";
 
+import { getCallWindow } from "./patientUtils";
 import StatTile from "./patientStatTile";
 import BookingCard from "./patientBookingCard";
 import AvailableSlots from "./patientAvailableSlots";
@@ -81,7 +82,6 @@ export default function Dashboard() {
     try {
       const result = await joinVideoCall({
         booking,
-        enteredConsultationId: booking.consultationId,
         callConsentVersion,
       });
       setConsentFor(null);
@@ -121,6 +121,8 @@ export default function Dashboard() {
   function handleJoined(bookingId, result) {
     updateBooking(bookingId, {
       callStartedAt: result.callStartedAt,
+      patientJoinedAt: new Date(),
+      state: "in_progress",
       callConsentId: "recorded",
     });
     setActiveCall({ bookingId, patientSeq: result.patientSeq ?? 0 });
@@ -147,16 +149,21 @@ export default function Dashboard() {
     (booking) => booking.state === "pending_assignment",
   ).length;
 
-  const liveNow = safeBookings.some((booking) =>
-    Boolean(booking.callStartedAt),
+  const liveNow = safeBookings.some(
+    (booking) =>
+      Boolean(booking.patientJoinedAt) && !getCallWindow(booking.scheduledTime).closed,
   );
 
   const activeCallBooking = safeBookings.find(
     (booking) => booking.bookingId === activeCall?.bookingId,
   );
 
+  // Calls the patient has been in: one click to go back in.
   const liveBookings = safeBookings.filter(
-    (booking) => booking.mode === "online" && Boolean(booking.callStartedAt),
+    (booking) =>
+      booking.mode === "online" &&
+      Boolean(booking.patientJoinedAt) &&
+      !getCallWindow(booking.scheduledTime).closed,
   );
 
   const firstName = (profile?.name || user.displayName || "there").split(" ")[0];

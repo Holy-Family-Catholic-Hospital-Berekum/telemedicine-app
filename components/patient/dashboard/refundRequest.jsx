@@ -3,9 +3,11 @@ import { Loader2, X } from "lucide-react";
 import { requestRefund } from "./patientFirestoreService";
 import { callableMessage, toDate } from "../../../src/constants";
 
-// "Request a refund" for a consultation whose scheduled day has passed.
-// The server re-checks eligibility (day passed, money paid, one request
-// per consultation). Admin refunds manually and marks the outcome.
+// "Request a refund" for a consultation the patient didn't attend, once its
+// scheduled day has passed. Deliberately low-key: rescheduling is the
+// option the dashboard puts first. The server re-checks eligibility (not
+// joined, day passed, money paid, no reschedule pending, one request per
+// consultation). Admin refunds manually and marks the outcome.
 
 const STATUS_TEXT = {
   requested: "Refund requested — the hospital will contact you",
@@ -57,9 +59,9 @@ export default function RefundRequest({ source, id, scheduledTime, amountPaid, e
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="text-xs font-medium text-[#0095D9] underline-offset-2 hover:underline"
+        className="text-xs text-[#5C6B72] underline underline-offset-2 hover:text-[#12242C]"
       >
-        Request a refund
+        Request a refund instead
       </button>
 
       {open && (
@@ -99,7 +101,7 @@ export default function RefundRequest({ source, id, scheduledTime, amountPaid, e
               rows={3}
               value={reason}
               onChange={(e) => setReason(e.target.value)}
-              placeholder="e.g. The doctor didn't join the call"
+              placeholder="e.g. I couldn't attend because I was unwell"
               className="mt-1 w-full rounded-sm border border-[#DCE6EC] px-3 py-2 text-sm focus:border-[#0095D9] focus:outline-none"
             />
 

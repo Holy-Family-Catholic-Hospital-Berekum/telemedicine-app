@@ -10,6 +10,9 @@ export const OUTCOME_LABELS = { completed: "Completed", no_show: "No-show" };
 // Video room opens this long before the scheduled time. Keep in step with
 // JOIN_OPENS_MINUTES_BEFORE in functions/consultations.js (server enforces).
 export const CALL_UNLOCK_MINUTES = 30;
+// ...and closes this long after it. Keep in step with
+// JOIN_CLOSES_HOURS_AFTER in functions/consultations.js.
+export const CALL_CLOSES_HOURS = 4;
 
 /** Firestore Timestamp / Date / ISO string -> Date (or null). */
 export function toDate(value) {

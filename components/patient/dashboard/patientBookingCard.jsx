@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { ShieldCheck, ChevronDown, ChevronUp, Video } from "lucide-react";
+import { ShieldCheck, ChevronDown, ChevronUp, Video, CalendarX2 } from "lucide-react";
 
-import { formatCurrency } from "./patientUtils";
+import { formatCurrency, getCallWindow } from "./patientUtils";
 import { TYPE_LABELS, MODE_LABELS, formatDateTime } from "../../../src/constants";
 import RescheduleForm from "./rescheduleForm";
 import RevealId from "./revealId";
@@ -32,6 +32,12 @@ const STATE_META = {
   },
 };
 
+const MISSED_META = {
+  label: "Didn't take place",
+  color: "#A85420",
+  bg: "#F885351A",
+};
+
 export default function BookingCard({
   booking,
   onRescheduled,
@@ -42,16 +48,34 @@ export default function BookingCard({
   defaultPhone,
   onRefundRequested,
 }) {
-  const [expanded, setExpanded] = useState(
-    booking.state === "pending_assignment" || booking.state === "awaiting_payment",
-  );
-
-  const meta = STATE_META[booking.state] ?? STATE_META.scheduled;
-
   const isScheduled =
     booking.state === "scheduled" || booking.state === "in_progress";
+
+  // A consultation that didn't take place (the time is well past and the
+  // patient, or the doctor, never joined) is offered a reschedule first;
+  // a refund only if the patient didn't join. In person, the doctor closes
+  // the visit once it happens, so one still open hours after its time
+  // counts as missed.
+  const patientJoined = Boolean(booking.patientJoinedAt);
+  const bothJoined = patientJoined && Boolean(booking.doctorJoinedAt);
+  const { closed } = getCallWindow(booking.scheduledTime);
+  const didNotHappen =
+    isScheduled && closed && (booking.mode === "online" ? !bothJoined : true);
+  const rescheduleRequested = booking.rescheduleRequest?.status === "requested";
+
   const callInProgress =
-    booking.mode === "online" && booking.state === "in_progress";
+    booking.mode === "online" && booking.state === "in_progress" && !closed;
+
+  const [expanded, setExpanded] = useState(
+    booking.state === "pending_assignment" ||
+      booking.state === "awaiting_payment" ||
+      (didNotHappen && !refund),
+  );
+
+  const meta =
+    didNotHappen && !refund && !rescheduleRequested
+      ? MISSED_META
+      : (STATE_META[booking.state] ?? STATE_META.scheduled);
 
   return (
     <div className="rounded-md border border-[#DCE6EC] overflow-hidden">
@@ -147,35 +171,70 @@ export default function BookingCard({
                 <RevealId id={booking.consultationId} />
               </div>
 
-              {booking.mode === "online" ? (
-                <JoinCallPanel
-                  booking={booking}
-                  onJoined={(bookingId, result) => onJoined?.(bookingId, result)}
-                />
-              ) : (
+              {refund ? (
+                // A refund request ends the booking's options.
+                <RefundRequest existing={refund} />
+              ) : rescheduleRequested ? (
                 <p className="text-sm text-[#5C6B72]">
-                  Please come to the hospital at your appointment time.
+                  Reschedule requested — we'll email you the new time.
                 </p>
-              )}
-
-              <RefundRequest
-                source="booking"
-                id={booking.bookingId}
-                scheduledTime={booking.scheduledTime}
-                amountPaid={booking.amountPaid}
-                existing={refund}
-                defaultPhone={defaultPhone}
-                onRequested={onRefundRequested}
-              />
-
-              {booking.state === "scheduled" &&
-                (booking.rescheduleRequest?.status === "requested" ? (
-                  <p className="text-xs text-[#5C6B72]">
-                    Reschedule requested — we'll email you the new time.
+              ) : didNotHappen ? (
+                <div className="rounded-md border border-[#F88535]/40 bg-[#F88535]/5 p-4">
+                  <p className="flex items-center gap-2 text-sm font-semibold text-[#12242C]">
+                    <CalendarX2 size={16} strokeWidth={1.75} className="text-[#A85420]" />
+                    {patientJoined
+                      ? "Your doctor couldn't join this consultation"
+                      : "You missed this appointment"}
                   </p>
-                ) : (
-                  <RescheduleForm booking={booking} onRequested={onRescheduled} />
-                ))}
+                  <p className="mt-1 text-sm text-[#5C6B72]">
+                    {patientJoined
+                      ? "Sorry about that. Choose a new time and we'll book you in again at no extra cost."
+                      : "No problem. Choose a new time and we'll book you in again at no extra cost."}
+                  </p>
+                  <div className="mt-3">
+                    <RescheduleForm booking={booking} onRequested={onRescheduled} />
+                  </div>
+                  {!patientJoined && (
+                    <div className="mt-3">
+                      <RefundRequest
+                        source="booking"
+                        id={booking.bookingId}
+                        scheduledTime={booking.scheduledTime}
+                        amountPaid={booking.amountPaid}
+                        defaultPhone={defaultPhone}
+                        onRequested={onRefundRequested}
+                      />
+                    </div>
+                  )}
+                </div>
+              ) : bothJoined && closed ? (
+                <p className="text-sm text-[#5C6B72]">
+                  Your consultation has taken place. It will move to your
+                  history once the doctor closes it.
+                </p>
+              ) : (
+                <>
+                  {booking.mode === "online" ? (
+                    <JoinCallPanel
+                      booking={booking}
+                      onJoined={(bookingId, result) => onJoined?.(bookingId, result)}
+                    />
+                  ) : (
+                    <p className="text-sm text-[#5C6B72]">
+                      Please come to the hospital at your appointment time.
+                    </p>
+                  )}
+
+                  {!bothJoined && (
+                    <div className="border-t border-[#DCE6EC] pt-4">
+                      <p className="mb-2 text-xs text-[#5C6B72]">
+                        Can't make this time?
+                      </p>
+                      <RescheduleForm booking={booking} onRequested={onRescheduled} />
+                    </div>
+                  )}
+                </>
+              )}
             </div>
           )}
         </div>

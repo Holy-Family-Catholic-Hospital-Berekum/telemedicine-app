@@ -1,12 +1,10 @@
 import { useState } from 'react';
 import { Eye, EyeOff, Copy, Check } from 'lucide-react';
 
-// The consultation ID is treated as a shared secret between the hospital
-// and the patient (given to them by phone/WhatsApp — 4.4, 7), not
-// something to leave sitting in plain view on a shared or screen-recorded
-// device. Reveal-on-tap is a small, low-friction nod to that — the copy
-// button only appears once the ID is visible, so copying never leaks it
-// without the patient having chosen to look at it first.
+// The consultation ID is a reference for the patient (quoting it on the
+// phone, at the front desk for in-person visits). Joining and rescheduling
+// don't need it. Reveal-on-tap keeps it out of view on a shared or
+// screen-recorded device; the copy button appears once it's visible.
 export default function RevealId({ id, label = 'Consultation ID' }) {
   const [visible, setVisible] = useState(false);
   const [copied, setCopied] = useState(false);

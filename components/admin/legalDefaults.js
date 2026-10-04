@@ -100,7 +100,7 @@ If you are not happy with how we handle your information, you can complain to Gh
   },
 
   terms: {
-    lastUpdated: "30 September 2026",
+    lastUpdated: "4 October 2026",
     contactEmail: "info@hfhberekum.org",
     intro:
       "These terms explain the rules for using the hospital's telemedicine platform to book and attend consultations. Please read them before you book.",
@@ -117,6 +117,7 @@ If you are not happy with how we handle your information, you can complain to Gh
 
 - You must be 18 or older to create an account. A parent or legal guardian may book on behalf of a child, and is responsible for the booking.
 - You can choose a doctor when you book, but we cannot guarantee a particular doctor or time. Our team assigns the final doctor and time based on availability.
+- Doctors hold online consultations from the hospital's dedicated telemedicine room.
 - Your booking is confirmed only after your payment is confirmed. Booking does not by itself create a doctor and patient relationship for treatment beyond the consultation itself.`,
       },
       {
@@ -143,14 +144,15 @@ If you are not happy with how we handle your information, you can complain to Gh
         id: "booking",
         title: "Booking and scheduling",
         body: `- After you pay, our team assigns you a doctor and a time and tells you by email, and may also contact you by phone or WhatsApp.
-- Keep your phone reachable and join or arrive on time. If you miss your appointment without letting us know, the hospital may treat the consultation as completed.
-- You can ask to reschedule from your dashboard or by calling the hospital. Rescheduling depends on availability.
+- We send email reminders about a day and about an hour before your appointment. For an online consultation, we also email you if the start time has passed and you have not joined the call yet.
+- Keep your phone reachable and join or arrive on time. The video room opens 30 minutes before your appointment and stays open for 4 hours after the start time.
+- You can ask to reschedule from your dashboard or by calling the hospital, before your appointment or after missing it. Rescheduling depends on availability.
 - For online consultations, you are responsible for a working internet connection, a device with a camera and microphone, and a private place to talk.`,
       },
       {
         id: "fees",
         title: "Fees and payment",
-        body: `- The fee is shown before you pay. It depends on the consultation type and may be higher if you choose a specialist.
+        body: `- The fee is shown before you pay. It depends only on the consultation type (General OPD or surgical), not on the doctor you choose.
 - You pay by mobile money through Paystack. We do not see or store your mobile money PIN.
 - The amount charged is decided by our system, not by your browser, and your booking is only created once the payment is confirmed.
 - If a payment fails, your booking is not created and you can try again. If money leaves your account but your booking does not appear, contact the hospital with your payment details and we will investigate.`,
@@ -158,9 +160,11 @@ If you are not happy with how we handle your information, you can complain to Gh
       {
         id: "refunds",
         title: "Cancellations and refunds",
-        body: `- If the hospital cannot provide your consultation, for example because no doctor is available, you can reschedule or ask for a refund of the amount you paid.
-- If you cancel or do not attend, the hospital decides whether a refund or a new appointment is possible, taking into account how much notice you gave.
-- Approved refunds are returned to the mobile money account used for payment.`,
+        body: `- If you cannot attend a scheduled appointment, or you missed it, you can reschedule it from your dashboard at no extra cost. This is the quickest way to still see a doctor.
+- If you would rather not reschedule, you can ask for a refund, but only for a scheduled appointment that you did not attend. For an online consultation, that means you never joined the video call. Once you have joined a consultation, it cannot be refunded.
+- You can ask for a refund from your dashboard once the day of your appointment has passed. Each consultation can be either rescheduled or refunded, not both.
+- If your doctor could not join your online consultation, you can reschedule it at no extra cost. If you need help, call the hospital.
+- The hospital reviews each refund request and may keep part of the fee for an appointment you did not attend. Approved refunds are paid to the mobile money number you give in your request.`,
       },
       {
         id: "conduct",

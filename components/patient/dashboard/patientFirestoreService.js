@@ -3,8 +3,7 @@
 //
 // Reads go straight to Firestore; Security Rules only return the signed-in
 // patient's own bookings and history, and open slots. Every write goes
-// through a Cloud Function, which re-checks ownership and the typed
-// consultation ID on the server.
+// through a Cloud Function, which re-checks ownership on the server.
 // ---------------------------------------------------------------------------
 
 import {
@@ -47,11 +46,12 @@ export async function checkPaymentStatus(bookingId) {
 // Dashboard display state, derived from the stored booking status.
 //   awaiting_payment -> "awaiting_payment" (draft; deleted if never paid)
 //   paid             -> "pending_assignment"
-//   scheduled        -> "scheduled" / "in_progress"
+//   scheduled        -> "scheduled", or "in_progress" once the patient
+//                       has joined the call
 function displayState(b) {
   if (b.status === "awaiting_payment") return "awaiting_payment";
   if (b.status === "paid") return "pending_assignment";
-  if (b.callStartedAt) return "in_progress";
+  if (b.patientJoinedAt) return "in_progress";
   return "scheduled";
 }
 
@@ -75,6 +75,8 @@ export async function fetchMyBookings(patientUid) {
       createdAt: toDate(b.createdAt),
       scheduledTime: toDate(b.scheduledTime),
       callStartedAt: toDate(b.callStartedAt),
+      patientJoinedAt: toDate(b.patientJoinedAt),
+      doctorJoinedAt: toDate(b.doctorJoinedAt),
       state: displayState(b),
     };
   });
@@ -115,6 +117,7 @@ export async function fetchConsultationHistory(patientUid) {
       type: h.type,
       mode: h.mode,
       outcome: h.outcome,
+      patientJoined: h.patientJoined === true,
       scheduledTime: toDate(h.scheduledTime),
       startedAt: toDate(h.startedAt),
       endedAt: toDate(h.endedAt),
@@ -128,21 +131,19 @@ export async function fetchConsultationHistory(patientUid) {
 // Writes (Cloud Functions)
 // ---------------------------------------------------------------------
 
-export async function requestReschedule({ booking, consultationId, preferredTime, reason }) {
+export async function requestReschedule({ booking, preferredTime, reason }) {
   const { data } = await callRequestReschedule({
     bookingId: booking.bookingId,
-    consultationId: consultationId.trim().toUpperCase(),
     preferredTime,
     reason,
   });
   return data;
 }
 
-/** Server checks the typed ID, ownership, time window and opens the call. */
-export async function joinVideoCall({ booking, enteredConsultationId, callConsentVersion }) {
+/** Server checks ownership and the time window, then opens the call. */
+export async function joinVideoCall({ booking, callConsentVersion }) {
   const { data } = await callStartVideoCall({
     consultationId: booking.consultationId,
-    enteredConsultationId: enteredConsultationId.trim().toUpperCase(),
     ...(callConsentVersion ? { callConsentVersion } : {}),
   });
   return data;

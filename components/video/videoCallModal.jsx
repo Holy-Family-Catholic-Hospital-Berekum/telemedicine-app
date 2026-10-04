@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from "react";
 import {
   Mic,
   MicOff,
@@ -7,16 +8,29 @@ import {
   ShieldCheck,
   Circle,
   Loader2,
+  Maximize2,
+  Minimize2,
 } from "lucide-react";
 import { useWebRTCCall } from "./useWebRTCCall";
 import hospitalLogo from "../../src/assets/logo.png";
+
+// How far "Fill" may zoom past showing the whole picture. When the two
+// screens have similar shapes (laptop and TV, or two phones) this is enough
+// to fill the screen edge to edge. A portrait phone on a landscape TV would
+// need about 3x, which cuts off the patient's head and chin, so the zoom
+// stops here and a blurred copy of the same video fills the sides.
+const MAX_FILL_ZOOM = 2;
 
 /**
  * VideoCallModal — full-screen call view, laid out for a phone, a laptop or
  * a TV in the consulting room.
  *
- * - The other person's video is shown WHOLE (letterboxed, never cropped),
- *   so a portrait phone camera fits a landscape TV and vice versa.
+ * - The other person's video fills the screen ("Fill", the default): it is
+ *   zoomed until it covers the video area, up to MAX_FILL_ZOOM, keeping the
+ *   upper middle (where faces are) in view. Any space left is filled with a
+ *   blurred copy of the same video, never an empty background.
+ * - "Fit" shows the whole picture uncropped, e.g. when the patient shows
+ *   something near the edge of their camera.
  * - Header and controls are fixed bars; the video area takes what's left,
  *   so the controls are always on screen.
  * - Own camera is a mirrored picture-in-picture, larger on big screens.
@@ -44,6 +58,50 @@ export default function VideoCallModal({
     toggleCamera,
     hangUp,
   } = useWebRTCCall({ consultationId, role, patientSeq, onEnded: onClose });
+
+  const areaRef = useRef(null);
+  const backdropRef = useRef(null);
+  const [fill, setFill] = useState(true);
+  const [zoom, setZoom] = useState(1);
+
+  // Works out the "Fill" zoom from the video area and the incoming video's
+  // shape, and mirrors the incoming stream into the blurred backdrop.
+  // Re-runs on window resize, rotation, and when the other side's camera
+  // changes shape or reconnects.
+  useEffect(() => {
+    const area = areaRef.current;
+    const video = remoteVideoRef.current;
+    if (!area || !video) return undefined;
+
+    const update = (event) => {
+      const backdrop = backdropRef.current;
+      // Same stream object after a reconnect, but with new tracks:
+      // re-attach, like useWebRTCCall does for the main picture.
+      if (backdrop && (backdrop.srcObject !== video.srcObject || event?.type === "loadedmetadata")) {
+        backdrop.srcObject = null;
+        backdrop.srcObject = video.srcObject;
+        backdrop.play?.().catch(() => {});
+      }
+      const W = area.clientWidth;
+      const H = area.clientHeight;
+      const w = video.videoWidth;
+      const h = video.videoHeight;
+      if (!W || !H || !w || !h) return;
+      const contain = Math.min(W / w, H / h);
+      const cover = Math.max(W / w, H / h);
+      setZoom(Math.min(cover / contain, MAX_FILL_ZOOM));
+    };
+
+    const observer = new ResizeObserver(update);
+    observer.observe(area);
+    const events = ["loadedmetadata", "resize", "emptied", "playing"];
+    events.forEach((e) => video.addEventListener(e, update));
+    update();
+    return () => {
+      observer.disconnect();
+      events.forEach((e) => video.removeEventListener(e, update));
+    };
+  }, [remoteVideoRef, status]);
 
   if (!consultationId) return null;
 
@@ -128,7 +186,7 @@ export default function VideoCallModal({
       )}
 
       {/* Video area: takes the remaining height; never pushes the controls off screen */}
-      <div className="relative min-h-0 flex-1 overflow-hidden bg-[#0095D9]">
+      <div ref={areaRef} className="relative min-h-0 flex-1 overflow-hidden bg-black">
         {status === "error" ? (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-6 text-center text-sm text-white">
             <p>Couldn't connect to the call.</p>
@@ -136,11 +194,26 @@ export default function VideoCallModal({
           </div>
         ) : (
           <>
+            {/* Blurred copy of the other person's video behind the main
+                picture, so no part of the screen is left empty. */}
+            <video
+              ref={backdropRef}
+              autoPlay
+              playsInline
+              muted
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-0 h-full w-full scale-110 object-cover opacity-70 blur-2xl"
+            />
             <video
               ref={remoteVideoRef}
               autoPlay
               playsInline
-              className="absolute inset-0 h-full w-full object-contain"
+              className="absolute inset-0 h-full w-full object-contain transition-transform duration-300"
+              style={{
+                transform: `scale(${fill ? zoom : 1})`,
+                // Zoom around the upper middle so heads stay in the frame.
+                transformOrigin: "50% 40%",
+              }}
             />
 
             {overlay && (
@@ -186,6 +259,16 @@ export default function VideoCallModal({
           title={cameraOn ? "Turn camera off" : "Turn camera on"}
         >
           {cameraOn ? <Video size={20} /> : <VideoOff size={20} />}
+        </button>
+        <button
+          type="button"
+          onClick={() => setFill((v) => !v)}
+          className="flex h-12 w-12 items-center justify-center rounded-full bg-[#2A3B44] text-white lg:h-14 lg:w-14"
+          aria-label={fill ? "Show the whole picture" : "Fill the screen"}
+          title={fill ? "Show the whole picture" : "Fill the screen"}
+          aria-pressed={!fill}
+        >
+          {fill ? <Minimize2 size={20} /> : <Maximize2 size={20} />}
         </button>
         <button
           type="button"

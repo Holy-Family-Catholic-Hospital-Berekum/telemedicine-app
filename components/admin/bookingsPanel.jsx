@@ -448,7 +448,13 @@ export default function BookingsPanel({
                             >
                               {b.doctorName || "—"} ·{" "}
                               {formatDateTime(b.scheduledTime)}
-                              {b.callStartedAt ? " · call started" : ""}
+                              {b.patientJoinedAt && b.doctorJoinedAt
+                                ? " · call started"
+                                : b.callStartedAt
+                                  ? b.patientJoinedAt
+                                    ? " · doctor hasn't joined"
+                                    : " · patient hasn't joined"
+                                  : ""}
                             </div>
                             {b.lastEmail && (
                               <div
@@ -482,8 +488,9 @@ export default function BookingsPanel({
                             <IconCalendar size={14} /> Schedule
                           </button>
                         )}
+                        {/* A call one side never joined was missed and can be moved. */}
                         {(subtab === "reschedules" ||
-                          (subtab === "scheduled" && !b.callStartedAt)) && (
+                          (subtab === "scheduled" && !(b.patientJoinedAt && b.doctorJoinedAt))) && (
                           <button
                             className="btn btn-outline"
                             onClick={() => setRescheduling(b)}

@@ -166,6 +166,11 @@ service cloud.firestore {
       allow read: if isAdmin();
       allow write: if false; // resolvePaymentIssue
     }
+    // Telemedicine room computers. Holds only a hash of each device key.
+    match /roomDevices/{deviceId} {
+      allow read: if isAdmin();
+      allow write: if false; // registerRoomDevice, revokeRoomDevice
+    }
     match /auditLog/{entryId} {
       allow read: if isAdmin();
       allow write: if false;

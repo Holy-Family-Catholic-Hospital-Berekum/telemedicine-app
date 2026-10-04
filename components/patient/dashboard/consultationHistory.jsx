@@ -56,17 +56,21 @@ export default function ConsultationHistory({ consultations = [], refunds = {}, 
               </span>
             )}
           </div>
-          <div className="mt-2">
-            <RefundRequest
-              source="history"
-              id={consultation.id}
-              scheduledTime={consultation.scheduledTime || consultation.startedAt}
-              amountPaid={consultation.amountPaid}
-              existing={refunds[consultation.id]}
-              defaultPhone={defaultPhone}
-              onRequested={onRefundRequested}
-            />
-          </div>
+          {/* Refunds only for a consultation the patient didn't attend. */}
+          {(refunds[consultation.id] ||
+            (consultation.outcome === "no_show" && !consultation.patientJoined)) && (
+            <div className="mt-2">
+              <RefundRequest
+                source="history"
+                id={consultation.id}
+                scheduledTime={consultation.scheduledTime || consultation.startedAt}
+                amountPaid={consultation.amountPaid}
+                existing={refunds[consultation.id]}
+                defaultPhone={defaultPhone}
+                onRequested={onRefundRequested}
+              />
+            </div>
+          )}
         </div>
       ))}
     </div>

@@ -5,7 +5,6 @@ import { callableMessage } from "../../../src/constants";
 
 export default function RescheduleForm({ booking, onRequested }) {
   const [open, setOpen] = useState(false);
-  const [consultationId, setConsultationId] = useState("");
   const [preferredTime, setPreferredTime] = useState("");
   const [reason, setReason] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -19,7 +18,6 @@ export default function RescheduleForm({ booking, onRequested }) {
     try {
       const result = await requestReschedule({
         booking,
-        consultationId,
         preferredTime,
         reason,
       });
@@ -40,16 +38,18 @@ export default function RescheduleForm({ booking, onRequested }) {
     );
   }
 
+  // The main way to deal with an appointment the patient can't make (or
+  // missed): kept large and obvious; the refund link is deliberately small.
   if (!open) {
     return (
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="flex items-center gap-1.5 rounded-sm px-3 py-2 text-xs font-medium text-white transition hover:brightness-95 active:brightness-90"
+        className="flex w-full items-center justify-center gap-2 rounded-md px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:brightness-95 active:brightness-90 sm:w-auto"
         style={{ backgroundColor: "#0095D9" }}
       >
-        <RefreshCw size={13} strokeWidth={1.75} />
-        Request reschedule
+        <RefreshCw size={16} strokeWidth={2} />
+        Reschedule appointment
       </button>
     );
   }
@@ -60,16 +60,8 @@ export default function RescheduleForm({ booking, onRequested }) {
       className="rounded-md border border-[#DCE6EC] p-3.5 space-y-2.5"
     >
       <p className="text-xs text-[#5C6B72]">
-        Confirm your consultation ID to request a reschedule.
+        Tell us when suits you and we'll email you the new time.
       </p>
-      <input
-        type="text"
-        required
-        value={consultationId}
-        onChange={(e) => setConsultationId(e.target.value)}
-        placeholder="e.g. HFC-XXXXXXXXXX"
-        className="w-full rounded-sm border border-[#DCE6EC] px-3 py-2 text-sm font-mono uppercase text-[#12242C] focus:border-[#0095D9] focus:outline-none"
-      />
       <input
         type="text"
         maxLength={80}

@@ -301,10 +301,7 @@ export function useWebRTCCall({ consultationId, role, patientSeq, onEnded }) {
         if (cancelled || pcRef.current?.connectionState === "connected") return;
         try {
           // Re-join: the server bumps patientSeq, the doctor offers again.
-          const { data } = await callStartVideoCall({
-            consultationId,
-            enteredConsultationId: consultationId,
-          });
+          const { data } = await callStartVideoCall({ consultationId });
           if (typeof data.patientSeq === "number") {
             mySeq = data.patientSeq;
             // The doctor's new offer may already be here; look again.

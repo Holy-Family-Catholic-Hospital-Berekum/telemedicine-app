@@ -9,6 +9,8 @@ import {
   Stethoscope,
   CalendarDays,
   UserRound,
+  MonitorCheck,
+  MonitorX,
 } from "lucide-react";
 import StatTile from "./ui/statTile";
 import ConsultationCard from "./ui/consultationCard";
@@ -30,6 +32,7 @@ import {
 import VideoCallModal from "../video/videoCallModal";
 import hospitalLogo from "../../src/assets/logo.png";
 import { callableMessage, HOSPITAL_TIME_ZONE } from "../../src/constants";
+import { getRoomDevice } from "../../src/roomDevice";
 
 const TABS = [
   { id: "schedule", label: "Schedule", icon: CalendarDays },
@@ -62,6 +65,8 @@ export default function DoctorDashboard() {
     useState(null);
 
   const [today] = useState(() => new Date());
+  // Calls start only from the registered telemedicine room computer.
+  const [roomDevice] = useState(() => getRoomDevice());
 
   // The real signed-in doctor, resolved from Firestore via authContext
   // (adminUsers doc, role: "doctor"). null until both `user` and
@@ -119,12 +124,12 @@ export default function DoctorDashboard() {
     setTimeout(() => setToast(null), duration);
   }
 
-  // Resolves { ok } so the ID modal can show a mismatch inline. The
-  // server checks the typed ID; the client never compares it.
-  async function handleStartCall(consultationId, enteredId) {
+  // Resolves { ok, message } so the card can show the error inline. The
+  // server checks this computer's room key, the assignment and the time.
+  async function handleStartCall(consultationId) {
     setStartingCallId(consultationId);
     try {
-      const result = await startVideoCall(consultationId, enteredId);
+      const result = await startVideoCall(consultationId);
       setConsultations((prev) =>
         prev.map((c) =>
           c.consultationId === consultationId
@@ -315,6 +320,19 @@ export default function DoctorDashboard() {
       <main className="mx-auto max-w-5xl px-4 py-6 sm:px-6 sm:py-8">
         {activeTab === "schedule" && (
           <>
+            {roomDevice ? (
+              <p className="mb-5 flex items-center gap-2 rounded-md border border-[#1E8E5A]/30 bg-[#1E8E5A]/5 px-4 py-2.5 text-sm text-[#16683F]">
+                <MonitorCheck size={16} strokeWidth={1.75} className="shrink-0" />
+                Telemedicine room computer{roomDevice.label ? ` (${roomDevice.label})` : ""}: you
+                can start your video consultations here.
+              </p>
+            ) : (
+              <p className="mb-5 flex items-center gap-2 rounded-md border border-[#DCE6EC] bg-white px-4 py-2.5 text-sm text-[#5C6B72]">
+                <MonitorX size={16} strokeWidth={1.75} className="shrink-0" />
+                You can view your schedule here, but video consultations can only be
+                started from the telemedicine room computer.
+              </p>
+            )}
             <section>
               <h2 className="mb-3 text-sm font-medium text-[#5C6B72]">Today</h2>
               {loading ? (
@@ -324,7 +342,7 @@ export default function DoctorDashboard() {
               ) : todayList.length === 0 ? (
                 <div className="rounded-md border border-dashed border-[#DCE6EC] bg-white p-8 text-center text-sm text-[#5C6B72]">
                   Nothing on today's schedule. New assignments will appear here
-                  once admin issues a consultation ID against your account.
+                  once admin assigns a consultation to you.
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -334,6 +352,7 @@ export default function DoctorDashboard() {
                       consultation={c}
                       startingCall={startingCallId === c.consultationId}
                       onStartCall={handleStartCall}
+                      inRoom={Boolean(roomDevice)}
                       onMarkDone={setMarkDoneTarget}
                     />
                   ))}
@@ -353,6 +372,7 @@ export default function DoctorDashboard() {
                       consultation={c}
                       startingCall={startingCallId === c.consultationId}
                       onStartCall={handleStartCall}
+                      inRoom={Boolean(roomDevice)}
                       onMarkDone={setMarkDoneTarget}
                     />
                   ))}

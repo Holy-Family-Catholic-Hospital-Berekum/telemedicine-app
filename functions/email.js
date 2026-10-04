@@ -19,7 +19,7 @@ const { defineSecret } = require("firebase-functions/params");
 const logger = require("firebase-functions/logger");
 const { db, Timestamp, serverTime, audit } = require("./lib/core");
 const { FROM, REPLY_TO, EMAIL_CONFIGURED } = require("./lib/mailConfig");
-const { renderAppointmentEmail } = require("./lib/emailTemplates");
+const { renderEmail } = require("./lib/emailTemplates");
 
 const RESEND_API_KEY = defineSecret("RESEND_API_KEY");
 const MAX_ATTEMPTS = 6;
@@ -61,12 +61,13 @@ async function deliver(ref) {
     logger.warn("Email not sent: set FROM in functions/lib/mailConfig.js to a verified domain.");
     return;
   }
-  if (Number(m.data?.scheduledAt) < Date.now()) {
-    await ref.update({ status: "skipped", reason: "appointment already passed", updatedAt: serverTime() });
+  // Too late to be useful (e.g. a reminder for a time that has passed).
+  if (Number(m.data?.sendBefore ?? m.data?.scheduledAt) < Date.now()) {
+    await ref.update({ status: "skipped", reason: "too late to send", updatedAt: serverTime() });
     return;
   }
 
-  const { subject, text, html } = renderAppointmentEmail(m.kind, m.data || {});
+  const { subject, text, html } = renderEmail(m.kind, m.data || {});
   let res;
   try {
     res = await fetch("https://api.resend.com/emails", {
@@ -103,12 +104,14 @@ async function deliver(ref) {
   if (giveUp) {
     await setBookingEmailStatus(m.bookingId, "failed", m.kind);
     await audit(null, {
-      action: "Appointment email couldn't be sent — contact the patient",
+      action: String(m.kind).startsWith("doctor_")
+        ? "Appointment email to a doctor couldn't be sent"
+        : "Appointment email couldn't be sent — contact the patient",
       code: "email.failed",
       category: "booking",
       result: "failed",
-      targetType: "booking",
-      targetId: m.bookingId,
+      targetType: m.bookingId ? "booking" : "mail",
+      targetId: m.bookingId || ref.id,
       details: { error: lastError },
     });
     logger.error("Appointment email failed", { mailId: ref.id, lastError });
