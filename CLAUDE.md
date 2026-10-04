@@ -65,6 +65,9 @@ Routes in `src/App.jsx`: public `/`, `/privacy`, `/terms`; `PublicOnlyRoute` for
 
 ## Current state / gotchas
 
+- Appointment emails: scheduling writes `mail/{id}` (outbox, `lib/mailQueue.js`); `functions/email.js` sends via Resend. The email functions (and the `RESEND_API_KEY` secret) are only loaded when `lib/mailConfig.js` FROM isn't `@example.com` — the CLI refuses to deploy anything if a declared secret is missing. `bookings.lastEmail.status` shows admins whether the patient was emailed.
+- New bookings are refused while any earlier payment attempt is unconfirmed (`checkAttempts(..., { strict: true })`). Patients consent once per consultation before their first video join (`consents` type `video_consultation`, versioned in both `consentText.js` files). Refund requests (`refundRequests/{consultationId}`) are allowed only after the appointment day and resolved manually by admins.
+- Idle sign-out is 60 minutes for every role; staff routes redirect to `STAFF_LOGIN_PATH`. The video room opens 30 minutes before (`CALL_UNLOCK_MINUTES` ↔ `JOIN_OPENS_MINUTES_BEFORE`).
 - Times are hospital time (Africa/Accra = UTC+0). The scheduling modal sends the `datetime-local` value with `Z`; slot times are UTC.
 - Signed URLs need the functions service account to hold "Service Account Token Creator" on itself; Storage rules use cross-service Firestore reads (accept the console prompt on first deploy).
 - Not done yet: staff MFA, App Check, CSP/security headers, backups/PITR, emulator tests for rules.
