@@ -28,6 +28,11 @@ const siteSettings = require("./siteSettings");
 const legalDocs = require("./legalDocs");
 const refunds = require("./refunds");
 const roomDevices = require("./roomDevices");
+const staffAuth = require("./staffAuth");
+
+// Staff sign-in second factor (admin authenticator app, doctor email code)
+exports.confirmStaffSession = staffAuth.confirmStaffSession;
+exports.verifyStaffCode = staffAuth.verifyStaffCode;
 
 // Accounts
 exports.registerPatient = accounts.registerPatient;

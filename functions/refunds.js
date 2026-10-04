@@ -19,8 +19,8 @@
 // dashboard offers; a refund and a reschedule of the same consultation
 // exclude each other.
 
-const { onCall } = require("firebase-functions/v2/https");
 const {
+  onCall,
   db,
   serverTime,
   HttpsError,

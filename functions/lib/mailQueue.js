@@ -23,8 +23,10 @@ const MAIL_RETENTION_DAYS = 30;
  *       whether the patient was told.
  * sendBefore: ms; the email is dropped if it can't go out by then
  *       (default: the appointment time).
+ * deleteAfterMs: how long to keep the mail document (default
+ *       MAIL_RETENTION_DAYS); short for one-time sign-in codes.
  */
-function queueEmail(tx, { to, kind, data, bookingId = null, sendBefore }) {
+function queueEmail(tx, { to, kind, data, bookingId = null, sendBefore, deleteAfterMs }) {
   if (!to) return null;
   const ref = db.collection("mail").doc();
   tx.set(ref, {
@@ -35,7 +37,7 @@ function queueEmail(tx, { to, kind, data, bookingId = null, sendBefore }) {
     status: "queued",
     attempts: 0,
     createdAt: serverTime(),
-    deleteAt: Timestamp.fromMillis(Date.now() + MAIL_RETENTION_DAYS * 86400 * 1000),
+    deleteAt: Timestamp.fromMillis(Date.now() + (deleteAfterMs ?? MAIL_RETENTION_DAYS * 86400 * 1000)),
   });
   if (bookingId) {
     tx.update(db.collection("bookings").doc(bookingId), {

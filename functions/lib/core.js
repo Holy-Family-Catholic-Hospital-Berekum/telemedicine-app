@@ -19,7 +19,11 @@ const { getFirestore, FieldValue, Timestamp } = require("firebase-admin/firestor
 const { getAuth } = require("firebase-admin/auth");
 const { getStorage } = require("firebase-admin/storage");
 const { setGlobalOptions } = require("firebase-functions/v2");
-const { HttpsError } = require("firebase-functions/v2/https");
+const { HttpsError, onCall: rawOnCall } = require("firebase-functions/v2/https");
+const {
+  ENFORCE_APP_CHECK,
+  ADMIN_SESSION_MAX_HOURS,
+} = require("./securityConfig");
 
 if (!getApps().length) initializeApp();
 
@@ -35,6 +39,17 @@ setGlobalOptions({ region: REGION, maxInstances: 10 });
 
 const db = getFirestore();
 const serverTime = () => FieldValue.serverTimestamp();
+
+/**
+ * Every callable is defined through this, so App Check is enforced on all
+ * of them at once (lib/securityConfig.js ENFORCE_APP_CHECK). Same
+ * signature as firebase-functions' onCall: (handler) or (options, handler).
+ */
+function onCall(optionsOrHandler, maybeHandler) {
+  const handler = typeof optionsOrHandler === "function" ? optionsOrHandler : maybeHandler;
+  const options = typeof optionsOrHandler === "function" ? {} : optionsOrHandler;
+  return rawOnCall({ enforceAppCheck: ENFORCE_APP_CHECK, ...options }, handler);
+}
 
 // Enum values shared with the client (src/constants.js). Functions deploy
 // from functions/ alone, so the two copies must be kept in step by hand.
@@ -65,10 +80,54 @@ function profileRef(uid, role) {
 }
 
 /**
+ * Staff second factor, checked on every staff call (and mirrored in
+ * firestore.rules / storage.rules):
+ *
+ * Admin: this sign-in used the authenticator app (TOTP), with the one
+ *   factor pinned to the account (adminUsers.mfaFactorUid — a factor added
+ *   later by someone else doesn't count), and happened within
+ *   ADMIN_SESSION_MAX_HOURS.
+ * Doctor: staffSessions/{uid} says this exact sign-in (the token's
+ *   auth_time) was confirmed with an emailed code (staffAuth.js) and
+ *   hasn't expired. Another sign-in with the same password, elsewhere,
+ *   has a different auth_time and gets nothing.
+ */
+const MFA_REQUIRED = { reason: "mfa_required" };
+
+function assertAdminSecondFactor(token, profile) {
+  const fb = token.firebase || {};
+  const ageSeconds = Date.now() / 1000 - Number(token.auth_time || 0);
+  if (
+    fb.sign_in_second_factor !== "totp" ||
+    !profile.mfaFactorUid ||
+    fb.second_factor_identifier !== profile.mfaFactorUid ||
+    !(ageSeconds < ADMIN_SESSION_MAX_HOURS * 3600)
+  ) {
+    throw new HttpsError(
+      "permission-denied",
+      "Please sign in again with your authenticator code.",
+      MFA_REQUIRED,
+    );
+  }
+}
+
+async function doctorSessionVerified(uid, token) {
+  const snap = await db.collection("staffSessions").doc(uid).get();
+  const s = snap.exists ? snap.data() : null;
+  return Boolean(
+    s &&
+      s.verified === true &&
+      s.authTime === Number(token.auth_time) &&
+      (s.expiresAt?.toMillis?.() ?? 0) > Date.now(),
+  );
+}
+
+/**
  * Rejects unless the caller is signed in, holds one of `roles` in the
  * signed `role` claim, and their profile document says `active`. Reading
  * the profile on every call means a deactivated account loses access at
- * once, not when its ID token next refreshes.
+ * once, not when its ID token next refreshes. Staff must also have passed
+ * their second factor for this sign-in (see above).
  *
  * Returns { uid, role, profile, token }.
  */
@@ -91,9 +150,16 @@ async function requireRole(request, roles) {
       "This account is not active. Please contact the hospital.",
     );
   }
-  // MFA HOOK: when staff TOTP is switched on, also require
-  // auth.token.firebase.sign_in_second_factor for STAFF_ROLES here.
-  return { uid: auth.uid, role, profile: snap.data(), token: auth.token };
+  const profile = snap.data();
+  if (role === "admin") assertAdminSecondFactor(auth.token, profile);
+  if (role === "doctor" && !(await doctorSessionVerified(auth.uid, auth.token))) {
+    throw new HttpsError(
+      "permission-denied",
+      "Please sign in again and enter the code we email you.",
+      MFA_REQUIRED,
+    );
+  }
+  return { uid: auth.uid, role, profile, token: auth.token };
 }
 
 /** Patients must have verified their email before booking or joining. */
@@ -320,6 +386,10 @@ function deleteTree(ref) {
 }
 
 module.exports = {
+  onCall,
+  assertAdminSecondFactor,
+  doctorSessionVerified,
+  profileRef,
   admin,
   db,
   FieldValue,

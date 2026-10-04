@@ -22,7 +22,7 @@ Firebase config: `firebase.json`, `.firebaserc` (project `telemedicine-hfch`), `
 
 ## Environment (`.env`, not committed)
 
-`VITE_FIREBASE_API_KEY`, `VITE_FIREBASE_AUTH_DOMAIN`, `VITE_FIREBASE_PROJECT_ID`, `VITE_FIREBASE_STORAGE_BUCKET`, `VITE_FIREBASE_MESSAGING_SENDER_ID`, `VITE_FIREBASE_APP_ID`, `VITE_PAYSTACK_PUBLIC_KEY`, and `VITE_STAFF_LOGIN_PATH`. The staff sign-in route is registered only if `VITE_STAFF_LOGIN_PATH` is set (`src/staffRoute.js`); there's deliberately no default path, and the hidden URL should never be hard-coded or linked from public pages.
+`VITE_FIREBASE_API_KEY`, `VITE_FIREBASE_AUTH_DOMAIN`, `VITE_FIREBASE_PROJECT_ID`, `VITE_FIREBASE_STORAGE_BUCKET`, `VITE_FIREBASE_MESSAGING_SENDER_ID`, `VITE_FIREBASE_APP_ID`, `VITE_PAYSTACK_PUBLIC_KEY`, `VITE_STAFF_LOGIN_PATH`, `VITE_RECAPTCHA_ENTERPRISE_SITE_KEY` (App Check; App Check is skipped when unset) and, local only, `VITE_APPCHECK_DEBUG_TOKEN`. The staff sign-in route is registered only if `VITE_STAFF_LOGIN_PATH` is set (`src/staffRoute.js`); there's deliberately no default path, and the hidden URL should never be hard-coded or linked from public pages.
 
 Function secrets (via `firebase functions:secrets:set`): `PAYSTACK_SECRET_KEY` (test key until go-live), `CLOUDFLARE_TURN_KEY_ID`, `CLOUDFLARE_TURN_API_TOKEN`.
 
@@ -50,7 +50,8 @@ Routes in `src/App.jsx`: public `/`, `/privacy`, `/terms`; `PublicOnlyRoute` for
 - **Role comes from the `role` custom claim**, set only by functions (`registerPatient`, `createDoctorAccount`) and the `staffAdmin` script. The profile doc (`adminUsers/{uid}` for staff, `users/{uid}` for patients) must be `active`. No claim = no access; there is no patient fallback. `ProtectedRoute` fails closed on a null role.
 - `signIn()` takes `audience: "patient" | "staff"`; an account on the wrong page gets the same generic error as a wrong password. Sign-up creates the Auth user then calls `registerPatient` (deletes the Auth user if that fails).
 - Persistence is session-only by default; "Remember me" (patients only) switches to local. Idle timeout 15 min staff / 30 min patients.
-- Staff MFA (TOTP via Identity Platform) is deferred — search `MFA HOOK` in authContext, `functions/lib/core.js` and `firestore.rules`.
+- Staff second factor (setup steps in `SECURITY_SETUP.md`): admins use an authenticator app (Identity Platform TOTP; first factor pinned to `adminUsers.mfaFactorUid`; fresh sign-in every 12 h); doctors get a 6-digit emailed code per sign-in, bound to the token's `auth_time` in `staffSessions/{uid}` (`functions/staffAuth.js`: `confirmStaffSession`, `verifyStaffCode`; auto-confirmed and audited as `staff.mfa_unavailable` until email is configured). Enforced in `requireRole` (core.js) and in `isAdmin()`/`isDoctor()` in both rules files. Sign-in UI: `signIn()` returns `{ step }`, rendered by `src/pages/auth/staffSecondFactor.jsx`; until the step is done the account is held in `pendingStaffRef`, not exposed. Lost authenticator: `staffAdmin.js reset-mfa`.
+- App Check (reCAPTCHA Enterprise) is initialised in `src/firebase.js`; every callable is defined through `onCall` from `lib/core.js`, which applies `ENFORCE_APP_CHECK` (`functions/lib/securityConfig.js`, off until the console shows verified traffic). Never import `onCall` from firebase-functions directly.
 
 ## Security model (keep this intact)
 
@@ -78,6 +79,6 @@ Routes in `src/App.jsx`: public `/`, `/privacy`, `/terms`; `PublicOnlyRoute` for
 - Idle sign-out is 60 minutes for every role; staff routes redirect to `STAFF_LOGIN_PATH`. The video room opens 30 minutes before (`CALL_UNLOCK_MINUTES` ↔ `JOIN_OPENS_MINUTES_BEFORE`).
 - Times are hospital time (Africa/Accra = UTC+0). The scheduling modal sends the `datetime-local` value with `Z`; slot times are UTC.
 - Signed URLs need the functions service account to hold "Service Account Token Creator" on itself; Storage rules use cross-service Firestore reads (accept the console prompt on first deploy).
-- Not done yet: staff MFA, App Check, CSP/security headers, backups/PITR, emulator tests for rules.
+- CSP and security headers are in `vercel.json` (keep reCAPTCHA, Paystack and Firebase origins in it). Not done yet: backups/PITR, emulator tests for rules.
 - `src/siteSettings.js` and `src/legalDocs.js` fall back to bundled defaults (images in `src/assets`/`images/`, legal text in `components/admin/legalDefaults.js`) so public pages render before Firestore responds. Keep that fallback.
 - Code comments may refer to an "architecture doc" by section number; it isn't in the repo.

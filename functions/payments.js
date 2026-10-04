@@ -23,7 +23,7 @@
 // Use the test secret key until go-live, then set the live key.
 
 const crypto = require("crypto");
-const { onCall, onRequest } = require("firebase-functions/v2/https");
+const { onRequest } = require("firebase-functions/v2/https");
 const { defineSecret } = require("firebase-functions/params");
 const logger = require("firebase-functions/logger");
 const {
@@ -48,6 +48,7 @@ const {
   sha256,
   audit,
   rateLimit,
+  onCall,
 } = require("./lib/core");
 const { loadPrices, doctorSelectionEnabled } = require("./siteSettings");
 const {

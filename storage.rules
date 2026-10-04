@@ -19,16 +19,31 @@ service firebase.storage {
 
     function signedIn() { return request.auth != null; }
     function role() { return request.auth.token.get('role', ''); }
-    function staffActive() {
-      return firestore.get(/databases/(default)/documents/adminUsers/$(request.auth.uid)).data.status == 'active';
+    function staffDoc() {
+      return firestore.get(/databases/(default)/documents/adminUsers/$(request.auth.uid)).data;
+    }
+    function staffActive() { return staffDoc().status == 'active'; }
+    // Same second-factor checks as firestore.rules.
+    function isAdmin() {
+      let fb = request.auth.token.get('firebase', {});
+      return signedIn() && role() == 'admin' && staffActive()
+        && fb.get('sign_in_second_factor', '') == 'totp'
+        && fb.get('second_factor_identifier', '') == staffDoc().get('mfaFactorUid', '-')
+        && request.time.toMillis() / 1000 - request.auth.token.auth_time < 43200;
+    }
+    function isDoctor() {
+      let s = firestore.get(/databases/(default)/documents/staffSessions/$(request.auth.uid)).data;
+      return signedIn() && role() == 'doctor' && staffActive()
+        && s.get('verified', false) == true
+        && s.get('authTime', 0) == request.auth.token.auth_time
+        && s.expiresAt > request.time;
     }
 
     match /recordings/{recordingId}/parts/{part} {
       function rec() {
         return firestore.get(/databases/(default)/documents/recordings/$(recordingId)).data;
       }
-      allow create: if signedIn()
-        && role() == 'doctor'
+      allow create: if isDoctor()
         && part.matches('^[0-9]{6}[.]webm$')
         && rec().doctorUid == request.auth.uid
         && rec().status == 'recording'
@@ -40,7 +55,7 @@ service firebase.storage {
 
     match /siteAssets/{slot}/{fileName} {
       allow read: if true;
-      allow create, update: if signedIn() && role() == 'admin' && staffActive()
+      allow create, update: if isAdmin()
         && slot in ['hero', 'auth', 'slider']
         && fileName.matches('^[A-Za-z0-9_.-]+[.]jpg$')
         && request.resource.contentType == 'image/jpeg'
@@ -50,11 +65,10 @@ service firebase.storage {
 
     match /doctorProfilePictures/{uid}/profile.jpg {
       allow read: if true;
-      allow create, update: if signedIn() && request.auth.uid == uid
-        && role() == 'doctor' && staffActive()
+      allow create, update: if isDoctor() && request.auth.uid == uid
         && request.resource.contentType == 'image/jpeg'
         && request.resource.size < 1024 * 1024;
-      allow delete: if signedIn() && request.auth.uid == uid && role() == 'doctor';
+      allow delete: if isDoctor() && request.auth.uid == uid;
     }
 
     // Everything else, including recordings/{id}/recording.webm: no client access.

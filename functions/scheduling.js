@@ -12,8 +12,8 @@
 // sent by email.js once a verified sending domain is set); reminders before
 // the appointment come from reminders.js.
 
-const { onCall } = require("firebase-functions/v2/https");
 const {
+  onCall,
   db,
   FieldValue,
   Timestamp,

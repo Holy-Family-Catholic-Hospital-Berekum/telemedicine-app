@@ -38,12 +38,19 @@
 //    expire and require re-authentication after a period of inactivity"
 //    (6.2) at the app level, on top of Firebase's own token refresh.
 //
-// 5. Staff MFA (TOTP) is planned but not implemented yet; it needs the
-//    Identity Platform upgrade. Search for "MFA HOOK" here, in
-//    functions/lib/core.js and in firestore.rules for where it plugs in.
-//    Firebase surfaces it as `auth/multi-factor-auth-required` on
-//    signInWithEmailAndPassword, resolved with getMultiFactorResolver()
-//    + TotpMultiFactorGenerator. Until then the UI must not claim MFA.
+// 5. Staff second factor (functions/staffAuth.js, enforced by
+//    functions/lib/core.js requireRole and the Security Rules):
+//    - Admin: authenticator app (TOTP). With one enrolled, the password
+//      step throws auth/multi-factor-auth-required; signIn() returns
+//      { step: "totp", resolver } and completeTotpSignIn() finishes it.
+//      Without one, signIn() returns { step: "totp_enroll" }: the admin
+//      must set one up (startTotpEnrollment / finishTotpEnrollment) and
+//      then sign in again with it.
+//    - Doctor: signIn() returns { step: "email_code" } after the server
+//      emails a code; submitStaffCode() finishes it.
+//    Until the second step is done the account is held back
+//    (pendingStaffRef): no user, no profile, no role in the app. On page
+//    reload a staff session that isn't confirmed is signed out.
 //
 // 6. emailVerified is tracked as its own state, not read directly off
 //    firebaseUser.emailVerified. That field is a snapshot cached by the
@@ -107,6 +114,9 @@ import {
   EmailAuthProvider,
   reauthenticateWithCredential,
   verifyBeforeUpdateEmail,
+  getMultiFactorResolver,
+  multiFactor,
+  TotpMultiFactorGenerator,
 } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
@@ -116,6 +126,8 @@ import { CURRENT_AGE_DECLARATION } from "../consentText.js";
 const callRegisterPatient = httpsCallable(functions, "registerPatient");
 const callUpdatePatientProfile = httpsCallable(functions, "updatePatientProfile");
 const callSyncAccountEmail = httpsCallable(functions, "syncAccountEmail");
+const callConfirmStaffSession = httpsCallable(functions, "confirmStaffSession");
+const callVerifyStaffCode = httpsCallable(functions, "verifyStaffCode");
 
 const AuthContext = createContext(null);
 
@@ -161,8 +173,9 @@ function mapAuthError(err) {
     case "auth/network-request-failed":
       return "Network error. Check your connection and try again.";
     case "auth/multi-factor-auth-required":
-      // MFA HOOK: resolve with getMultiFactorResolver(auth, err) once MFA is enabled.
       return "Additional verification is required for this account.";
+    case "auth/invalid-verification-code":
+      return "That code isn't right. Check your authenticator app and try again.";
     default:
       return "Something went wrong. Please try again.";
   }
@@ -193,6 +206,9 @@ export function AuthProvider({ children }) {
   // users during this window; signIn() decides whether the account is
   // allowed on this page and sets user/profile itself.
   const signingInRef = useRef(false);
+  // A staff account that passed the password step but not yet its second
+  // factor: { uid, profile }. Kept out of React state until it does.
+  const pendingStaffRef = useRef(null);
 
   const clearIdleTimer = useCallback(() => {
     if (idleTimer.current) clearTimeout(idleTimer.current);
@@ -266,6 +282,7 @@ export function AuthProvider({ children }) {
       // this login page and then set user/profile itself. Don't expose
       // a not-yet-vetted user to the rest of the app.
       if (signingInRef.current) return;
+      if (pendingStaffRef.current?.uid === fbUser.uid) return;
 
       setFirebaseUser(fbUser);
       setEmailVerifiedFlag(fbUser.emailVerified ?? false);
@@ -284,6 +301,15 @@ export function AuthProvider({ children }) {
           // No role, or the account was deactivated: fail closed.
           await signOut(auth).catch(() => {});
           return;
+        }
+        if (STAFF_ROLES.includes(p.role)) {
+          // Page reload: only a session that already passed its second
+          // factor carries on. Never send a new code from here.
+          const { data } = await callConfirmStaffSession({ sendCode: false });
+          if (data?.status !== "ok") {
+            await signOut(auth).catch(() => {});
+            return;
+          }
         }
         loadedProfileUidRef.current = fbUser.uid;
         setProfile(p);
@@ -369,6 +395,52 @@ export function AuthProvider({ children }) {
     [loadProfile, scheduleIdleLogout],
   );
 
+  // Makes a fully signed-in account visible to the rest of the app.
+  const exposeSession = useCallback(
+    (fbUser, p) => {
+      setFirebaseUser(fbUser);
+      setEmailVerifiedFlag(fbUser.emailVerified ?? false);
+      loadedProfileUidRef.current = fbUser.uid;
+      setProfile(p);
+      scheduleIdleLogout(p.role);
+    },
+    [scheduleIdleLogout],
+  );
+
+  // Asks the server what this staff sign-in still needs (doctors: it
+  // emails a code). Holds the account back until it's done.
+  const staffSecondStep = useCallback(
+    async (fbUser, p) => {
+      let status;
+      let sentTo;
+      try {
+        const { data } = await callConfirmStaffSession({ sendCode: true });
+        status = data?.status;
+        sentTo = data?.sentTo;
+      } catch (err) {
+        await signOut(auth).catch(() => {});
+        throw new Error(
+          err?.code?.startsWith("functions/") && err.message
+            ? err.message
+            : "We couldn't finish signing you in. Please try again.",
+          { cause: err },
+        );
+      }
+      if (status === "ok") {
+        pendingStaffRef.current = null;
+        exposeSession(fbUser, p);
+        return { user: fbUser, role: p.role };
+      }
+      if (status === "totp_enroll" || status === "email_code") {
+        pendingStaffRef.current = { uid: fbUser.uid, profile: p };
+        return { step: status, sentTo };
+      }
+      await signOut(auth).catch(() => {});
+      throw new Error("Please sign in again and enter the code from your authenticator app.");
+    },
+    [exposeSession],
+  );
+
   const signIn = useCallback(
     async (
       email,
@@ -399,14 +471,21 @@ export function AuthProvider({ children }) {
           cred = await signInWithEmailAndPassword(auth, email.trim(), password);
           attemptStore.delete(key);
         } catch (err) {
+          // Right password, and the account has an authenticator: ask for
+          // its code. Only on the staff page; patients don't use MFA.
+          if (err?.code === "auth/multi-factor-auth-required" && audience === "staff") {
+            const resolver = getMultiFactorResolver(auth, err);
+            const hint = resolver.hints.find(
+              (h) => h.factorId === TotpMultiFactorGenerator.FACTOR_ID,
+            );
+            if (hint) {
+              attemptStore.delete(key);
+              return { step: "totp", resolver, hintUid: hint.uid };
+            }
+          }
           recordFailure(key);
           throw new Error(mapAuthError(err), { cause: err });
         }
-
-        // MFA HOOK: if this account has mfaEnabled and Firebase throws
-        // 'auth/multi-factor-auth-required', it's caught in the block
-        // above (before this point is reached) — handle the resolver
-        // there instead once MFA is turned back on.
 
         // --- Step 2: profile lookup, restricted to the collection that
         // belongs to this login page. ---
@@ -441,20 +520,121 @@ export function AuthProvider({ children }) {
           throw new Error("Invalid email or password.");
         }
 
-        // Account is allowed here — now expose it to the rest of the app.
-        setFirebaseUser(cred.user);
-        setEmailVerifiedFlag(cred.user.emailVerified ?? false);
-        loadedProfileUidRef.current = cred.user.uid;
-        setProfile(p);
-        scheduleIdleLogout(p.role);
+        if (audience === "staff") return await staffSecondStep(cred.user, p);
 
+        exposeSession(cred.user, p);
         return { user: cred.user, role: p.role };
       } finally {
         signingInRef.current = false;
       }
     },
-    [loadProfile, scheduleIdleLogout],
+    [loadProfile, exposeSession, staffSecondStep],
   );
+
+  // ---- Staff second factor ----
+
+  // Admin: the 6-digit code from the authenticator app.
+  const completeTotpSignIn = useCallback(
+    async ({ resolver, hintUid, code }) => {
+      signingInRef.current = true;
+      try {
+        let cred;
+        try {
+          cred = await resolver.resolveSignIn(
+            TotpMultiFactorGenerator.assertionForSignIn(hintUid, code.trim()),
+          );
+        } catch (err) {
+          throw new Error(mapAuthError(err), { cause: err });
+        }
+        const p = await loadProfile(cred.user, "staff").catch(() => null);
+        if (!p) {
+          await signOut(auth).catch(() => {});
+          throw new Error("Invalid email or password.");
+        }
+        return await staffSecondStep(cred.user, p);
+      } finally {
+        signingInRef.current = false;
+      }
+    },
+    [loadProfile, staffSecondStep],
+  );
+
+  // Admin without an authenticator: make one. Returns what the setup
+  // screen shows (QR code URL and the key to type in by hand).
+  const startTotpEnrollment = useCallback(async () => {
+    const u = auth.currentUser;
+    if (!u || pendingStaffRef.current?.uid !== u.uid) {
+      throw new Error("Please sign in again.");
+    }
+    try {
+      const session = await multiFactor(u).getSession();
+      const secret = await TotpMultiFactorGenerator.generateSecret(session);
+      return {
+        secret,
+        qrUrl: secret.generateQrCodeUrl(u.email, "Holy Family Telemedicine"),
+        key: secret.secretKey,
+      };
+    } catch (err) {
+      const code = err?.code || "";
+      throw new Error(
+        code === "auth/unverified-email"
+          ? "This account's email isn't verified. Ask IT to run the make-admin command again."
+          : code === "auth/operation-not-allowed"
+            ? "Authenticator sign-in isn't switched on for this project yet. Ask IT to run enable-totp."
+            : "We couldn't start the setup. Please sign in again and retry.",
+        { cause: err },
+      );
+    }
+  }, []);
+
+  // Confirms the first code from the new authenticator, then signs out:
+  // the admin signs in again using it.
+  const finishTotpEnrollment = useCallback(async ({ secret, code }) => {
+    const u = auth.currentUser;
+    if (!u) throw new Error("Please sign in again.");
+    try {
+      const assertion = TotpMultiFactorGenerator.assertionForEnrollment(secret, code.trim());
+      await multiFactor(u).enroll(assertion, "Authenticator app");
+    } catch (err) {
+      throw new Error(mapAuthError(err), { cause: err });
+    }
+    pendingStaffRef.current = null;
+    await signOut(auth).catch(() => {});
+  }, []);
+
+  // Doctor: the 6-digit code from the email.
+  const submitStaffCode = useCallback(
+    async (code) => {
+      const pending = pendingStaffRef.current;
+      const u = auth.currentUser;
+      if (!pending || !u || u.uid !== pending.uid) throw new Error("Please sign in again.");
+      try {
+        await callVerifyStaffCode({ code: code.trim() });
+      } catch (err) {
+        throw new Error(
+          err?.code?.startsWith("functions/") && err.message
+            ? err.message
+            : "We couldn't check the code. Please try again.",
+          { cause: err },
+        );
+      }
+      pendingStaffRef.current = null;
+      exposeSession(u, pending.profile);
+      return { user: u, role: pending.profile.role };
+    },
+    [exposeSession],
+  );
+
+  const resendStaffCode = useCallback(async () => {
+    const { data } = await callConfirmStaffSession({ sendCode: true });
+    return data;
+  }, []);
+
+  // Back out of a half-finished staff sign-in.
+  const cancelStaffSignIn = useCallback(async () => {
+    pendingStaffRef.current = null;
+    await signOut(auth).catch(() => {});
+  }, []);
 
   const signOutUser = useCallback(async () => {
     clearIdleTimer();
@@ -579,6 +759,12 @@ export function AuthProvider({ children }) {
     refreshEmailVerified,
     updatePatientName,
     requestEmailChange,
+    completeTotpSignIn,
+    startTotpEnrollment,
+    finishTotpEnrollment,
+    submitStaffCode,
+    resendStaffCode,
+    cancelStaffSignIn,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

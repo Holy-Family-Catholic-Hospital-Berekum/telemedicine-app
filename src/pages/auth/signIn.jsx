@@ -3,6 +3,7 @@ import { useNavigate, useLocation, Link } from "react-router-dom";
 import { useAuth } from "../../context/authContext.jsx";
 import HealthcarePreloader from "../../components/common/healthcarePreloader.jsx";
 import AuthAside from "../../components/auth/authAside.jsx";
+import StaffSecondFactor from "./staffSecondFactor.jsx";
 import {
   IconMail,
   IconLock,
@@ -23,8 +24,8 @@ const PATIENT_ASIDE_POINTS = [
 
 const STAFF_ASIDE_POINTS = [
   "Authorized hospital staff only",
+  "Two-step sign-in for every staff account",
   "All sign-ins and actions are logged",
-  "Sessions expire after a short idle period",
 ];
 
 // Where each role lands after a successful sign-in.
@@ -52,6 +53,9 @@ export default function SignIn({ audience = "patient" }) {
   const [error, setError] = useState("");
   const [resetSent, setResetSent] = useState(false);
   const [resetting, setResetting] = useState(false);
+  // Staff second step: { kind: "totp" | "totp_enroll" | "email_code", ... }
+  const [staffStep, setStaffStep] = useState(null);
+  const [enrolledNote, setEnrolledNote] = useState(false);
 
   // Keep the staff page out of search results.
   useEffect(() => {
@@ -86,15 +90,17 @@ export default function SignIn({ audience = "patient" }) {
 
     setSubmitting(true);
     try {
-      const { role } = await signIn(email, password, {
+      const result = await signIn(email, password, {
         rememberMe: isStaff ? false : rememberMe,
         audience,
       });
-
-      // MFA HOOK: once MFA is re-enabled for staff, catch
-      // 'auth/multi-factor-auth-required' here and show a TOTP input.
-
-      navigate(resolveRedirect(role), { replace: true });
+      if (result.step) {
+        setEnrolledNote(false);
+        setPassword("");
+        setStaffStep({ ...result, kind: result.step });
+        return;
+      }
+      navigate(resolveRedirect(result.role), { replace: true });
     } catch (err) {
       setError(err.message || "Sign-in failed.");
     } finally {
@@ -165,6 +171,26 @@ export default function SignIn({ audience = "patient" }) {
             </p>
           </div>
 
+          {staffStep ? (
+            <StaffSecondFactor
+              step={staffStep}
+              onSignedIn={({ role }) => navigate(resolveRedirect(role), { replace: true })}
+              onDone={(outcome) => {
+                setStaffStep(null);
+                setEnrolledNote(outcome === "enrolled");
+              }}
+            />
+          ) : (
+          <>
+          {enrolledNote && (
+            <div className="auth-alert success" role="status">
+              <IconCheckCircle size={15} />
+              <span>
+                Your authenticator is set up. Sign in again; you'll be asked
+                for its code.
+              </span>
+            </div>
+          )}
           {error && (
             <div className="auth-alert">
               <IconAlert size={15} />
@@ -266,6 +292,8 @@ export default function SignIn({ audience = "patient" }) {
             <p className="auth-switch">
               New patient? <Link to="/signup">Create an account</Link>
             </p>
+          )}
+          </>
           )}
         </div>
       </div>

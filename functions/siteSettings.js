@@ -21,9 +21,9 @@
  * index.js re-exports updateConsultationPrices and updateSiteImages.
  */
 
-const { onCall, HttpsError } = require("firebase-functions/v2/https");
+const { HttpsError } = require("firebase-functions/v2/https");
 const logger = require("firebase-functions/logger");
-const { admin, db, FieldValue, REGION, requireRole } = require("./lib/core");
+const { onCall, admin, db, FieldValue, REGION, requireRole } = require("./lib/core");
 
 // Fallback fees, used until an admin sets prices. Keep in step with
 // DEFAULT_PRICES in src/siteSettings.js.

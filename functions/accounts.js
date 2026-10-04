@@ -14,8 +14,8 @@
 // Auth user and revokes its sessions, which is reversible and keeps history
 // and recordings resolving to a real person.
 
-const { onCall } = require("firebase-functions/v2/https");
 const {
+  onCall,
   admin,
   db,
   serverTime,

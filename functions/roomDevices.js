@@ -13,8 +13,8 @@
 // here. Every step is audited.
 
 const crypto = require("crypto");
-const { onCall } = require("firebase-functions/v2/https");
 const {
+  onCall,
   db,
   serverTime,
   HttpsError,

@@ -9,7 +9,8 @@
 // production point at different projects.
 
 import { initializeApp } from "firebase/app";
-import { getAuth, browserSessionPersistence } from "firebase/auth";
+import { initializeAppCheck, ReCaptchaEnterpriseProvider } from "firebase/app-check";
+import { getAuth, browserSessionPersistence, initializeRecaptchaConfig } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 import { getFunctions } from "firebase/functions";
 import { getStorage } from "firebase/storage";
@@ -29,6 +30,25 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 export { app };
+
+// App Check: every request to Firestore, Storage and the Cloud Functions
+// carries a token proving it comes from this website (reCAPTCHA Enterprise
+// scores the visitor invisibly). With enforcement on (Firebase console for
+// Firestore/Storage, functions/lib/securityConfig.js for functions),
+// scripts and copies of the site using the public config are refused.
+// See SECURITY_SETUP.md. Set before any other Firebase service is used.
+const appCheckSiteKey = import.meta.env.VITE_RECAPTCHA_ENTERPRISE_SITE_KEY;
+if (import.meta.env.DEV) {
+  // Local development: a debug token registered in the App Check console
+  // (VITE_APPCHECK_DEBUG_TOKEN), or `true` to print a new one to the console.
+  self.FIREBASE_APPCHECK_DEBUG_TOKEN = import.meta.env.VITE_APPCHECK_DEBUG_TOKEN || true;
+}
+export const appCheck = appCheckSiteKey
+  ? initializeAppCheck(app, {
+      provider: new ReCaptchaEnterpriseProvider(appCheckSiteKey),
+      isTokenAutoRefreshEnabled: true,
+    })
+  : null;
 export const db = getFirestore(app);
 export const functions = getFunctions(app, FUNCTIONS_REGION);
 export const storage = getStorage(app);
@@ -40,3 +60,8 @@ export const auth = getAuth(app);
 auth.setPersistence(browserSessionPersistence).catch(() => {
   // Non-fatal — falls back to Firebase's default persistence.
 });
+
+// reCAPTCHA protection for email/password sign-in and sign-up, when it's
+// switched on for the project (scripts/staffAdmin.js auth-recaptcha).
+// Loads the project's settings up front; harmless when it's off.
+initializeRecaptchaConfig(auth).catch(() => {});

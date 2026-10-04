@@ -11,9 +11,12 @@ rules_version = '2';
 //   them. The two client writes allowed are a doctor's own presentational
 //   profile fields and WebRTC signalling between the two call participants.
 //
-// MFA HOOK: when staff TOTP is switched on, add
-//   request.auth.token.firebase.sign_in_second_factor == 'totp'
-// to isAdmin() and isDoctor().
+// Staff second factor (same checks as functions/lib/core.js requireRole):
+// - admin: this sign-in used the authenticator app, with the factor pinned
+//   on adminUsers.mfaFactorUid, and is less than 12 hours old;
+// - doctor: staffSessions/{uid} confirms this exact sign-in (auth_time)
+//   with an emailed code, and hasn't expired.
+// A staff member who hasn't passed it is treated as having no role.
 
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -21,11 +24,32 @@ service cloud.firestore {
     function signedIn() { return request.auth != null; }
     function myUid() { return request.auth.uid; }
     function role() { return request.auth.token.get('role', ''); }
-    function staffActive() {
-      return get(/databases/$(database)/documents/adminUsers/$(myUid())).data.status == 'active';
+    function staffDoc() {
+      return get(/databases/$(database)/documents/adminUsers/$(myUid())).data;
     }
-    function isAdmin() { return signedIn() && role() == 'admin' && staffActive(); }
-    function isDoctor() { return signedIn() && role() == 'doctor' && staffActive(); }
+    function staffActive() { return staffDoc().status == 'active'; }
+    function authAgeSeconds() {
+      return request.time.toMillis() / 1000 - request.auth.token.auth_time;
+    }
+    function adminSecondFactor() {
+      let fb = request.auth.token.get('firebase', {});
+      return fb.get('sign_in_second_factor', '') == 'totp'
+        && fb.get('second_factor_identifier', '') == staffDoc().get('mfaFactorUid', '-')
+        && authAgeSeconds() < 43200;
+    }
+    function doctorSecondFactor() {
+      let path = /databases/$(database)/documents/staffSessions/$(myUid());
+      return exists(path)
+        && get(path).data.get('verified', false) == true
+        && get(path).data.get('authTime', 0) == request.auth.token.auth_time
+        && get(path).data.expiresAt > request.time;
+    }
+    function isAdmin() {
+      return signedIn() && role() == 'admin' && staffActive() && adminSecondFactor();
+    }
+    function isDoctor() {
+      return signedIn() && role() == 'doctor' && staffActive() && doctorSecondFactor();
+    }
     function isPatient() { return signedIn() && role() == 'patient'; }
 
     // ---------------- identity ----------------
@@ -106,8 +130,11 @@ service cloud.firestore {
     // UIDs. Only those two can read it; the doctor may write only `offer`,
     // the patient only `answer`. Each side adds only its own ICE candidates.
     match /calls/{consultationId} {
+      // The doctor must be a verified doctor session (second factor done).
       function party(c) {
-        return signedIn() && (myUid() == c.doctorUid || myUid() == c.patientUid);
+        return signedIn()
+          && ((myUid() == c.doctorUid && isDoctor())
+              || (myUid() == c.patientUid && isPatient()));
       }
       function callData() {
         return get(/databases/$(database)/documents/calls/$(consultationId)).data;
@@ -135,13 +162,13 @@ service cloud.firestore {
 
       match /offerCandidates/{candidateId} {
         allow read: if party(callData());
-        allow create: if signedIn() && myUid() == callData().doctorUid
+        allow create: if isDoctor() && myUid() == callData().doctorUid
                       && request.resource.data.size() <= 6;
         allow update, delete: if false;
       }
       match /answerCandidates/{candidateId} {
         allow read: if party(callData());
-        allow create: if signedIn() && myUid() == callData().patientUid
+        allow create: if isPatient() && myUid() == callData().patientUid
                       && request.resource.data.size() <= 6;
         allow update, delete: if false;
       }
@@ -202,6 +229,7 @@ service cloud.firestore {
       allow write: if false; // setCallRecordingEnabled
     }
 
-    // paymentRefs, rateLimits and anything else: no client access.
+    // paymentRefs, rateLimits, staffSessions, mail and anything else: no
+    // client access.
   }
 }

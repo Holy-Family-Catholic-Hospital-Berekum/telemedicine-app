@@ -13,10 +13,10 @@
 // and the patient details they held. Recordings are separate and are kept
 // until an admin deletes them.
 
-const { onCall } = require("firebase-functions/v2/https");
 const { defineSecret } = require("firebase-functions/params");
 const logger = require("firebase-functions/logger");
 const {
+  onCall,
   db,
   FieldValue,
   Timestamp,

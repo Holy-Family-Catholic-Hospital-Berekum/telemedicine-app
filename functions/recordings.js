@@ -28,10 +28,10 @@
 // itself for that (see the deploy notes).
 
 const crypto = require("crypto");
-const { onCall } = require("firebase-functions/v2/https");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const logger = require("firebase-functions/logger");
 const {
+  onCall,
   admin,
   db,
   Timestamp,

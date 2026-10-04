@@ -6,8 +6,8 @@
 //
 // index.js re-exports updateLegalDocument.
 
-const { onCall, HttpsError } = require("firebase-functions/v2/https");
-const { db, FieldValue, requireRole } = require("./lib/core");
+const { HttpsError } = require("firebase-functions/v2/https");
+const { onCall, db, FieldValue, requireRole } = require("./lib/core");
 
 const DOC_LABELS = { terms: "Terms of service", privacy: "Privacy policy" };
 const ID_RE = /^[a-z0-9-]{1,60}$/;
