@@ -286,6 +286,7 @@ export default function ProfileTab({ doctor, onToast }) {
             <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-full bg-[#F5F8FA]">
               {safePhotoUrl(form.photoURL) ? (
                 <img
+                  // deepcode ignore DOMXSS: safePhotoUrl() only returns https://firebasestorage.googleapis.com/ URLs (an <img> src can't run script).
                   src={safePhotoUrl(form.photoURL)}
                   alt=""
                   className="h-full w-full object-cover"
@@ -495,6 +496,7 @@ export default function ProfileTab({ doctor, onToast }) {
             <div className="h-14 w-14 shrink-0 overflow-hidden rounded-full bg-[#F5F8FA]">
               {safePhotoUrl(form.photoURL) ? (
                 <img
+                  // deepcode ignore DOMXSS: safePhotoUrl() only returns https://firebasestorage.googleapis.com/ URLs (an <img> src can't run script).
                   src={safePhotoUrl(form.photoURL)}
                   alt=""
                   className="h-full w-full object-cover"

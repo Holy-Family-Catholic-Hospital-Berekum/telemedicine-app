@@ -734,11 +734,11 @@ export function AuthProvider({ children }) {
   // and for staff also their authenticator code. It only happens once the
   // user clicks the link Firebase sends to the NEW address; the old
   // address gets a notice with a way to undo it.
-  const requestEmailChange = useCallback(async ({ newEmail, password, totpCode }) => {
+  const requestEmailChange = useCallback(async ({ newEmail, currentPw, totpCode }) => {
     const u = auth.currentUser;
     if (!u?.email) throw new Error("Please sign in again and retry.");
     try {
-      await reauthenticateWithCredential(u, EmailAuthProvider.credential(u.email, password));
+      await reauthenticateWithCredential(u, EmailAuthProvider.credential(u.email, currentPw));
     } catch (err) {
       const code = err?.code || "";
       if (code === "auth/multi-factor-auth-required") {

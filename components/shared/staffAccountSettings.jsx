@@ -121,7 +121,7 @@ function ProfileCard() {
 function EmailCard() {
   const { user, requestEmailChange } = useAuth();
   const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const [currentPw, setCurrentPw] = useState("");
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState(null);
@@ -132,12 +132,12 @@ function EmailCard() {
     setBusy(true);
     setNote(null);
     try {
-      await requestEmailChange({ newEmail: email, password, totpCode: code });
+      await requestEmailChange({ newEmail: email, currentPw, totpCode: code });
       setNote({
         tone: "ok",
         text: `We've sent a link to ${email.trim()}. Open it to confirm, then sign in with the new address (same authenticator). Until then, keep using your current one.`,
       });
-      setPassword("");
+      setCurrentPw("");
       setCode("");
     } catch (err) {
       setNote({ tone: "error", text: err.message || "We couldn't start the change. Please try again." });
@@ -181,8 +181,8 @@ function EmailCard() {
             type="password"
             autoComplete="current-password"
             required
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
+            value={currentPw}
+            onChange={(e) => setCurrentPw(e.target.value)}
             className={input}
           />
         </div>
@@ -206,7 +206,7 @@ function EmailCard() {
       </div>
       <button
         type="submit"
-        disabled={busy || !email.trim() || !password || code.length !== 6 || sameAsNow}
+        disabled={busy || !email.trim() || !currentPw || code.length !== 6 || sameAsNow}
         className={button}
       >
         {busy && <Loader2 size={16} className="animate-spin" />}

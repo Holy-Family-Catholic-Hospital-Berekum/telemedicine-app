@@ -85,6 +85,7 @@ exports.releaseSlotHolds = onSchedule("every 15 minutes", async () => {
       if (slot?.status !== "held") return;
       // Keep the hold if its booking has been paid in the meantime.
       if (slot.bookingId) {
+        // deepcode ignore Sqli: Firestore document ID, not SQL; bookingId read from a server-written slot.
         const b = await tx.get(db.collection("bookings").doc(slot.bookingId));
         if (b.exists && b.data().status !== "awaiting_payment") return;
       }

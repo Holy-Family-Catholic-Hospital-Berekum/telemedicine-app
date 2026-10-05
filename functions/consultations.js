@@ -208,6 +208,7 @@ exports.startVideoCall = onCall(async (request) => {
       tx.update(db.collection("bookings").doc(current.bookingId), bookingUpdates);
     }
     if (roomDeviceRef) {
+      // deepcode ignore Sqli: Firestore document ID, not SQL; room device id checked against /^[A-Za-z0-9]{1,40}$/ in verifyRoomDevice.
       tx.update(roomDeviceRef, { lastUsedAt: serverTime(), lastUsedByUid: caller.uid });
     }
     audit(tx, {

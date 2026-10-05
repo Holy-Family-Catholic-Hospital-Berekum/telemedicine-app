@@ -31,7 +31,8 @@ function text(value, max, label) {
 }
 
 function validate(data) {
-  if (!DOC_LABELS[data?.docId]) {
+  // Own keys only: "constructor", "__proto__" etc. must not count as documents.
+  if (typeof data?.docId !== "string" || !Object.hasOwn(DOC_LABELS, data.docId)) {
     throw new HttpsError("invalid-argument", "Unknown document.");
   }
   const intro = text(data.intro, LIMITS.intro, "The introduction");
@@ -70,6 +71,7 @@ exports.updateLegalDocument = onCall(async (request) => {
 
   const ref = db.collection("legalDocs").doc(docId);
   const version = await db.runTransaction(async (tx) => {
+    // deepcode ignore Sqli: Firestore document ID, not SQL; docId must be an own key of DOC_LABELS (terms | privacy).
     const snap = await tx.get(ref);
     const previous = snap.exists ? snap.data().version || 0 : 0;
     const next = previous + 1;

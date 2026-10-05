@@ -288,8 +288,10 @@ async function claimForFinalizing(recordingId, expectDoctorUid) {
     if (rec.status !== "recording") return false;
     // All reads before any write.
     const callRef = db.collection("calls").doc(rec.consultationId);
+    // deepcode ignore Sqli: Firestore document ID, not SQL; consultationId read from the server-written recording.
     const callSnap = await tx.get(callRef);
     tx.update(recordingRef(recordingId), { status: "finalizing", updatedAt: serverTime() });
+    // deepcode ignore Sqli: Firestore document ID, not SQL; consultationId read from the server-written recording.
     if (callSnap.exists) tx.update(callRef, { recordingActive: false });
     return true;
   });

@@ -114,6 +114,7 @@ async function verifyPaystackTransaction(reference, key) {
 async function recordPaymentIssue(paystackData, { reason, bookingId = null, patientUid = null }) {
   const ref = db.collection("paymentIssues").doc(paystackData.reference);
   const created = await db.runTransaction(async (tx) => {
+    // deepcode ignore Sqli: Firestore document ID, not SQL; payment reference must match REFERENCE_RE (no '/'), other IDs are server-written.
     const snap = await tx.get(ref);
     if (snap.exists) return false;
     tx.set(ref, {
@@ -171,9 +172,11 @@ async function checkAttempts(bookingRef, booking, { strict = false } = {}) {
     }
     if (i === 0) latestStatus = tx?.status || null;
     if (tx?.status === "success") {
+      // deepcode ignore Sqli: Firestore document ID, not SQL; booking id comes from the server-written paymentRefs document.
       const result = await markBookingPaid(bookingRef, tx, "verify_api");
       if (result.status === "paid") return "paid";
       if (result.status === "rejected") {
+        // deepcode ignore Sqli: Firestore document ID, not SQL; reference validated by REFERENCE_RE; IDs are server-written.
         await recordPaymentIssue(tx, {
           reason: "amount_mismatch",
           bookingId: bookingRef.id,
@@ -182,6 +185,7 @@ async function checkAttempts(bookingRef, booking, { strict = false } = {}) {
         return "rejected";
       }
       if (result.duplicate) {
+        // deepcode ignore Sqli: Firestore document ID, not SQL; reference validated by REFERENCE_RE; IDs are server-written.
         await recordPaymentIssue(tx, {
           reason: "duplicate_payment",
           bookingId: bookingRef.id,
@@ -231,6 +235,7 @@ function paymentIsAcceptable(paystackData, booking) {
  */
 async function markBookingPaid(bookingRef, paystackData, via) {
   return db.runTransaction(async (tx) => {
+    // deepcode ignore Sqli: Firestore document ID, not SQL; booking id comes from the server-written paymentRefs document.
     const snap = await tx.get(bookingRef);
     if (!snap.exists) return { changed: false, status: "missing" };
 
@@ -254,6 +259,7 @@ async function markBookingPaid(bookingRef, paystackData, via) {
     let slotOk = false;
     if (booking.slotId) {
       slotRef = db.collection("availableSlots").doc(booking.slotId);
+      // deepcode ignore Sqli: Firestore document ID, not SQL; slot id read from the server-written booking.
       const slotSnap = await tx.get(slotRef);
       const slot = slotSnap.exists ? slotSnap.data() : null;
       slotOk =
@@ -265,6 +271,7 @@ async function markBookingPaid(bookingRef, paystackData, via) {
 
     const amountPaid = Number(paystackData.amount) / 100; // pesewas -> GHS
 
+    // deepcode ignore Sqli: Firestore document ID, not SQL; booking id comes from the server-written paymentRefs document.
     tx.update(bookingRef, {
       status: "paid",
       paidAt: serverTime(),
@@ -447,6 +454,7 @@ exports.createBookingDraft = onCall({ secrets: [PAYSTACK_SECRET_KEY] }, async (r
 
     let doctorName = null;
     if (doctorUid) {
+      // deepcode ignore Sqli: Firestore document ID, not SQL; doctorUid passed docId() (/^[A-Za-z0-9_-]+$/) or came from a server-written slot.
       const docSnap = await tx.get(db.collection("doctorProfiles").doc(doctorUid));
       const profile = docSnap.exists ? docSnap.data() : null;
       if (
@@ -758,11 +766,13 @@ exports.resolvePaymentIssue = onCall(async (request) => {
   const note = str(request.data?.note, { field: "Note", max: 300, min: 3 });
   const ref = db.collection("paymentIssues").doc(reference);
   await db.runTransaction(async (tx) => {
+    // deepcode ignore Sqli: Firestore document ID, not SQL; reference validated by isOurReference (REFERENCE_RE, no '/').
     const snap = await tx.get(ref);
     if (!snap.exists) throw new HttpsError("not-found", "Payment issue not found.");
     if (snap.data().status !== "refund_due") {
       throw new HttpsError("failed-precondition", "This one is already resolved.");
     }
+    // deepcode ignore Sqli: Firestore document ID, not SQL; reference validated by isOurReference (REFERENCE_RE, no '/').
     tx.update(ref, {
       status: "refunded",
       resolvedByUid: caller.uid,

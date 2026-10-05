@@ -81,11 +81,14 @@ exports.sendAppointmentReminders = onSchedule(
           const fresh = await tx.get(doc.ref);
           const c = fresh.exists ? fresh.data() : null;
           if (!c || !["scheduled", "in_progress"].includes(c.status)) return 0;
+          // deepcode ignore Sqli: Firestore document ID, not SQL; the consultation is read back by its own reference.
           const due = dueReminders(c, Date.now());
           if (due.length === 0) return 0;
 
           const [bookingSnap, doctorSnap] = await Promise.all([
+            // deepcode ignore Sqli: Firestore document ID, not SQL; bookingId read from a server-written consultation.
             tx.get(db.collection("bookings").doc(c.bookingId)),
+            // deepcode ignore Sqli: Firestore document ID, not SQL; doctorUid read from a server-written consultation.
             tx.get(db.collection("adminUsers").doc(c.doctorUid)),
           ]);
           const booking = bookingSnap.exists ? bookingSnap.data() : {};

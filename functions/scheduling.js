@@ -47,7 +47,9 @@ const MAX_RESCHEDULES = 10;
 /** Reads (inside `tx`) and checks an active, listed doctor for `type`. */
 async function activeDoctor(tx, doctorUid, type) {
   const [staffSnap, profileSnap] = await Promise.all([
+    // deepcode ignore Sqli: Firestore document ID, not SQL; doctorUid passed docId() (/^[A-Za-z0-9_-]+$/) or was read from a server-written doc.
     tx.get(db.collection("adminUsers").doc(doctorUid)),
+    // deepcode ignore Sqli: Firestore document ID, not SQL; doctorUid passed docId() (/^[A-Za-z0-9_-]+$/) or was read from a server-written doc.
     tx.get(db.collection("doctorProfiles").doc(doctorUid)),
   ]);
   const staff = staffSnap.exists ? staffSnap.data() : null;
@@ -83,6 +85,7 @@ function checkFutureTime(date) {
 
 /** Throws if the doctor already has a consultation near `when`. */
 async function assertNoClash(tx, doctorUid, when, ignoreConsultationId) {
+  // deepcode ignore Sqli: Firestore document ID, not SQL; doctorUid passed docId() (/^[A-Za-z0-9_-]+$/); this is an equality filter.
   const snap = await tx.get(
     db
       .collection("consultations")
@@ -243,6 +246,7 @@ exports.createAvailableSlot = onCall(async (request) => {
   const ref = db.collection("availableSlots").doc();
   await db.runTransaction(async (tx) => {
     const doctor = await activeDoctor(tx, doctorUid, type);
+    // deepcode ignore Sqli: Firestore document ID, not SQL; doctorUid passed docId(); date matched DATE_RE (YYYY-MM-DD).
     const sameDay = await tx.get(
       db
         .collection("availableSlots")
@@ -341,7 +345,9 @@ exports.requestReschedule = onCall(async (request) => {
       throw new HttpsError("failed-precondition", "This booking isn't scheduled yet.");
     }
     const [consultationSnap, refundSnap] = await Promise.all([
+      // deepcode ignore Sqli: Firestore document ID, not SQL; consultationId read from the patient's server-written booking.
       tx.get(db.collection("consultations").doc(booking.consultationId)),
+      // deepcode ignore Sqli: Firestore document ID, not SQL; consultationId read from the patient's server-written booking.
       tx.get(db.collection("refundRequests").doc(booking.consultationId)),
     ]);
     // A missed consultation can be moved: one the patient, or the doctor,
@@ -425,6 +431,7 @@ exports.rescheduleConsultation = onCall(async (request) => {
     const doctorUid = d.doctorUid ? docId(d.doctorUid, "Doctor") : booking.doctorUid;
 
     const consultationRef = db.collection("consultations").doc(booking.consultationId);
+    // deepcode ignore Sqli: Firestore document ID, not SQL; consultationId read from the server-written booking.
     const consultationSnap = await tx.get(consultationRef);
     if (!consultationSnap.exists) throw new HttpsError("not-found", "Consultation not found.");
     const consultation = consultationSnap.data();
@@ -440,6 +447,7 @@ exports.rescheduleConsultation = onCall(async (request) => {
     await assertNoClash(tx, doctorUid, when, booking.consultationId);
     const previousDoctorSnap =
       consultation.doctorUid && consultation.doctorUid !== doctorUid
+        // deepcode ignore Sqli: Firestore document ID, not SQL; doctorUid read from the server-written consultation.
         ? await tx.get(db.collection("adminUsers").doc(consultation.doctorUid))
         : null;
 
@@ -453,6 +461,7 @@ exports.rescheduleConsultation = onCall(async (request) => {
     };
     // A missed call starts again from scratch at the new time: nobody has
     // joined, and the reminders go out again. Call consent is kept.
+    // deepcode ignore Sqli: Firestore document ID, not SQL; consultationId read from the server-written booking.
     tx.update(consultationRef, {
       scheduledTime,
       doctorUid,

@@ -1,0 +1,76 @@
+name: Secure AI Vibe Coding Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+# Least privilege: the job only needs to read the repo.
+permissions:
+  contents: read
+
+# Cancel older runs of the same branch/PR when a new commit lands.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  security-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      # 1. Fetch the code (full history so secret scanners can read past commits)
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # 2. TruffleHog secret scan.
+      #    No base/head: the action picks the right commit range for push vs PR
+      #    events itself, which avoids the "BASE and HEAD are the same" error on main.
+      - name: Run TruffleHog Secret Scan
+        uses: trufflesecurity/trufflehog@0186870afd2c4a90def791d80260923ba583d076 # v3.98.0
+        with:
+          extra_args: --only-verified
+
+      # 3. Node environment
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 20
+          cache: "npm"
+
+      # 4. Install dependencies (lockfile required) and lint
+      - name: Install Dependencies & Run ESLint
+        run: |
+          npm ci
+          npm run lint
+
+      # 5. Semgrep static analysis (fails the job on findings)
+      - name: Run Semgrep OSS
+        run: |
+          python3 -m pip install --quiet semgrep
+          semgrep scan --config=auto --error
+
+      # 6. Snyk dependency scan. Secrets aren't available to fork PRs, so skip there.
+      - name: Run Snyk Security Scan
+        if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+        uses: snyk/actions/node@b075801f26076be9bb50521154cafab73f44da0c # master @ 2026-09-29
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          args: --severity-threshold=high
+
+      # 7. GitGuardian secret scan (same fork-PR caveat as Snyk)
+      - name: Run GitGuardian Scan
+        if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+        uses: GitGuardian/ggshield-action@7f66d3be9c59a821dcf4f45ee5d929203a1a0b90 # v1.55.0
+        env:
+          GITHUB_PUSH_BEFORE_SHA: ${{ github.event.before }}
+          GITHUB_PUSH_BASE_SHA: ${{ github.event.base }}
+          GITHUB_PULL_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          GITHUB_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITGUARDIAN_API_KEY: ${{ secrets.GITGUARDIAN_API_KEY }}

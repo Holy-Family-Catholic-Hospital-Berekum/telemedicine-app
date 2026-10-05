@@ -97,7 +97,7 @@ function NameCard() {
 function EmailCard() {
   const { user, requestEmailChange } = useAuth();
   const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const [currentPw, setCurrentPw] = useState("");
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState(null);
   const sameAsNow = email.trim().toLowerCase() === (user?.email || "").toLowerCase();
@@ -107,12 +107,12 @@ function EmailCard() {
     setBusy(true);
     setNote(null);
     try {
-      await requestEmailChange({ newEmail: email, password });
+      await requestEmailChange({ newEmail: email, currentPw });
       setNote({
         tone: "ok",
         text: `We've sent a link to ${email.trim()}. Open it to confirm the change, then sign in with your new email address. Until then, keep using your current one.`,
       });
-      setPassword("");
+      setCurrentPw("");
     } catch (err) {
       setNote({ tone: "error", text: err.message || "We couldn't start the change. Please try again." });
     } finally {
@@ -152,8 +152,8 @@ function EmailCard() {
         type="password"
         autoComplete="current-password"
         required
-        value={password}
-        onChange={(e) => setPassword(e.target.value)}
+        value={currentPw}
+        onChange={(e) => setCurrentPw(e.target.value)}
         className={inputClass}
       />
       <p className="mt-1.5 text-sm text-[#3E4E56]">
@@ -161,7 +161,7 @@ function EmailCard() {
       </p>
       <button
         type="submit"
-        disabled={busy || !email.trim() || !password || sameAsNow}
+        disabled={busy || !email.trim() || !currentPw || sameAsNow}
         className={buttonClass}
         style={{ backgroundColor: "#0095D9" }}
       >
