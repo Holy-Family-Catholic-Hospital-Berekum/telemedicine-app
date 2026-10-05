@@ -302,7 +302,7 @@ export default function Footer() {
             </nav>
           </div>
 
-          <p className="mt-4 text-center text-[14px] text-white/90 sm:text-left">
+          <p className="mt-4 text-center text-[14px] text-white/90">
             Developed with{" "}
             <span role="img" aria-label="love" className="text-[#FF6B6B]">
               ♥
