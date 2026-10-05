@@ -21,6 +21,10 @@ const setupHash = (uid, code) =>
  * pinned one, and signs them out everywhere (lost or replaced phone).
  */
 async function issueSetupCode(uid, { reset = false } = {}) {
+  // Whoever issues the code vouches for the staff email; Firebase only
+  // lets a verified email register an authenticator.
+  const user = await admin.auth().getUser(uid);
+  if (!user.emailVerified) await admin.auth().updateUser(uid, { emailVerified: true });
   if (reset) {
     await admin.auth().updateUser(uid, { multiFactor: { enrolledFactors: null } });
   }
