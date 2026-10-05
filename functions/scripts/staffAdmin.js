@@ -39,8 +39,13 @@
 //       Enforces the sign-up page's password rules on Firebase's side too
 //       (10+ characters, upper and lower case, a number and a symbol).
 //   node scripts/staffAdmin.js auth-recaptcha
-//       Turns on reCAPTCHA Enterprise protection for email/password sign-in
-//       and sign-up (blocks scripted password guessing).
+//       Puts reCAPTCHA Enterprise on email/password sign-in and sign-up in
+//       AUDIT mode: every request is scored, nothing is blocked.
+//       Don't switch it to ENFORCE: on 5 Oct 2026 enforcement blocked a
+//       genuine admin sign-in (shown as "Invalid email or password") while
+//       a request with no reCAPTCHA token got through, which suggests the
+//       score rule works the opposite way to Google's docs. Only revisit
+//       with a throwaway test account and someone ready to switch it back.
 
 const { initializeApp } = require("firebase-admin/app");
 const { getFirestore, FieldValue } = require("firebase-admin/firestore");
@@ -157,13 +162,13 @@ async function passwordPolicy() {
 async function authRecaptcha() {
   await admin.auth().projectConfigManager().updateProjectConfig({
     recaptchaConfig: {
-      emailPasswordEnforcementState: "ENFORCE",
+      emailPasswordEnforcementState: "AUDIT",
       // Block the most bot-like traffic; Google's score runs 0 (bot) to 1 (human).
       managedRules: [{ endScore: 0.3, action: "BLOCK" }],
       useAccountDefender: false,
     },
   });
-  console.log("reCAPTCHA Enterprise protection is enforced for email/password sign-in and sign-up.");
+  console.log("reCAPTCHA Enterprise is scoring email/password sign-in and sign-up (audit mode, nothing blocked).");
 }
 
 async function syncClaims() {

@@ -20,6 +20,7 @@ computer signed in to the Google Cloud CLI as a project Owner
 | Idle sign-out | Staff after 30 min, patients after 60 min. Never during a video call. | Website |
 | Two-admin recording deletion | One admin requests, a *different* admin approves; nothing is deleted before that. Requests expire after 72 h. | `recordings.js` |
 | Password policy | 10+ characters, upper and lower case, number, symbol. | Firebase Authentication |
+| Sign-in reCAPTCHA (audit) | Every email/password sign-in and sign-up is scored by reCAPTCHA; nothing is blocked (see "Still to do"). | Firebase Authentication |
 | Email enumeration protection | Sign-in doesn't reveal which emails have accounts. | Firebase Authentication |
 | Rate limits | Per-account limits on every function that could be abused; forged payment webhooks are audited at most 10/hour per sender. | `lib/core.js rateLimit` |
 | Backups | Point-in-time recovery (any minute, last 7 days) + daily backup kept 7 days + database delete protection. | Firestore |
@@ -141,11 +142,14 @@ dashboard. Their hospital admin account is enough.
      and `REPLY_TO` in `mailConfig.js`, run
      `firebase functions:secrets:set RESEND_API_KEY`, and deploy functions.
      That switches on appointment emails and reminders.
-3. **Confirm sign-in reCAPTCHA is blocking bots.** It's switched to
-   *Enforce* and linked to the site key, but a test sign-in without a
-   reCAPTCHA token was still answered normally. After some real sign-ins,
-   check Authentication → Settings → **Fraud Defense** → *Assessment count*
-   rises above 0, then re-test.
+3. **Sign-in reCAPTCHA stays in audit mode** (it scores sign-ins but
+   blocks nothing). On 5 Oct 2026, enforce mode blocked a genuine admin
+   sign-in, which showed up as "Invalid email or password", while a request
+   with no reCAPTCHA token got through. Don't switch it to enforce on the
+   live site. If you revisit it, test with a throwaway account and keep
+   someone ready to run `node scripts/staffAdmin.js auth-recaptcha` (which
+   sets audit) to undo it. Password guessing is still limited by Firebase's
+   built-in throttling, the password policy and the staff authenticator.
 4. **Replace the placeholders** in `components/shared/contact.js`: the
    hospital phone number and the WhatsApp support number.
 5. **Paystack live keys** at go-live: the live secret key via
