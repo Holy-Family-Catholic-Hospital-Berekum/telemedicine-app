@@ -17,10 +17,18 @@
 //       before claims existed can still sign in.
 //
 //   node scripts/staffAdmin.js reset-mfa someone@hospital.org
-//       Admin lost their authenticator: removes their enrolled factors and
-//       the pinned one, signs them out everywhere. They set up a new
-//       authenticator at their next sign-in. Verify who is asking first
-//       (in person or by a call to a known number), never by email alone.
+//       Lost or replaced phone: removes their authenticator, signs them out
+//       everywhere and prints a new one-time SETUP CODE. Verify who is
+//       asking first (in person or by a call to a known number), never by
+//       email alone. Doctors can also be reset by an admin (Users tab).
+//
+//   node scripts/staffAdmin.js issue-setup-code someone@hospital.org
+//       Prints a new setup code without removing anything (the old one
+//       expired before they used it).
+//
+// Setup codes: an authenticator only counts once it's registered with the
+// setup code (lib/staffSetup.js). Give the code to the person face to
+// face or by phone, never by email. It expires after 72 hours.
 //
 // One-off project hardening (needs the Identity Platform upgrade; see
 // SECURITY_SETUP.md). Each prints what it changed:
@@ -41,6 +49,8 @@ const { getAuth } = require("firebase-admin/auth");
 const PROJECT_ID = process.env.GCLOUD_PROJECT || "telemedicine-hfch";
 initializeApp({ projectId: PROJECT_ID });
 const db = getFirestore();
+// After initializeApp, so lib/core reuses this app.
+const { issueSetupCode } = require("../lib/staffSetup");
 const admin = { auth: () => getAuth() };
 
 async function makeAdmin(email, name) {
@@ -82,22 +92,24 @@ async function makeAdmin(email, name) {
     timestamp: FieldValue.serverTimestamp(),
   });
   await admin.auth().revokeRefreshTokens(user.uid);
+  const code = await issueSetupCode(user.uid);
   console.log(
-    `${email} is now an admin. They must sign in again on the staff page, where ` +
-      "they'll be asked to set up an authenticator app straight away. Do it now: " +
-      "until they have, anyone with their password could set one up instead.",
+    `${email} is now an admin. Setup code (give it in person, valid 72 hours): ${code}\n` +
+      "At their next staff sign-in they set up an authenticator app and enter this code.",
   );
+}
+
+async function issueCode(email) {
+  if (!email) throw new Error("Usage: issue-setup-code <email>");
+  const user = await admin.auth().getUserByEmail(email.trim().toLowerCase());
+  const code = await issueSetupCode(user.uid);
+  console.log(`${email}: setup code (give it in person, valid 72 hours): ${code}`);
 }
 
 async function resetMfa(email) {
   if (!email) throw new Error("Usage: reset-mfa <email>");
   const user = await admin.auth().getUserByEmail(email.trim().toLowerCase());
-  await admin.auth().updateUser(user.uid, { multiFactor: { enrolledFactors: null } });
-  await db.collection("adminUsers").doc(user.uid).set(
-    { mfaFactorUid: FieldValue.delete(), mfaPinnedAt: FieldValue.delete(), updatedAt: FieldValue.serverTimestamp() },
-    { merge: true },
-  );
-  await admin.auth().revokeRefreshTokens(user.uid);
+  const code = await issueSetupCode(user.uid, { reset: true });
   await db.collection("auditLog").add({
     actorId: "script",
     actorRole: "system",
@@ -109,7 +121,10 @@ async function resetMfa(email) {
     result: "success",
     timestamp: FieldValue.serverTimestamp(),
   });
-  console.log(`${email}: authenticator removed and signed out everywhere. They set up a new one at next sign-in.`);
+  console.log(
+    `${email}: authenticator removed and signed out everywhere.\n` +
+      `New setup code (give it in person, valid 72 hours): ${code}`,
+  );
 }
 
 async function enableTotp() {
@@ -181,6 +196,7 @@ const COMMANDS = {
   "make-admin": () => makeAdmin(args[0], args.slice(1).join(" ")),
   "sync-claims": () => syncClaims(),
   "reset-mfa": () => resetMfa(args[0]),
+  "issue-setup-code": () => issueCode(args[0]),
   "enable-totp": () => enableTotp(),
   "password-policy": () => passwordPolicy(),
   "auth-recaptcha": () => authRecaptcha(),

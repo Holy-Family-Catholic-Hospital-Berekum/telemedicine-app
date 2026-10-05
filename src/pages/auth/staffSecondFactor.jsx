@@ -1,16 +1,17 @@
 // staffSecondFactor.jsx
 //
 // The second step of a staff sign-in (see authContext note 5):
-//   kind "totp"        admin: code from the authenticator app
-//   kind "totp_enroll" admin without an authenticator: set one up now
-//   kind "email_code"  doctor: code emailed for this sign-in
+//   kind "totp"        code from the authenticator app (admins, doctors)
+//   kind "totp_enroll" no authenticator yet: set one up now
+//   kind "setup_code"  first sign-in with a new authenticator: the one-time
+//                      setup code that links it to the account
 // Rendered by signIn.jsx in place of the password form.
 
 import { useEffect, useRef, useState } from "react";
 import QRCode from "qrcode";
 import { useAuth } from "../../context/authContext.jsx";
 import HealthcarePreloader from "../../components/common/healthcarePreloader.jsx";
-import { IconAlert, IconCheckCircle, IconLock } from "../../components/auth/icons.jsx";
+import { IconAlert, IconLock } from "../../components/auth/icons.jsx";
 
 function CodeInput({ value, onChange, label }) {
   return (
@@ -68,7 +69,7 @@ function CancelLink({ onCancel }) {
   );
 }
 
-/** Admin with an authenticator: enter its code. */
+/** Staff with an authenticator: enter its code. */
 function TotpCode({ step, onSignedIn, onCancel }) {
   const { completeTotpSignIn } = useAuth();
   const [code, setCode] = useState("");
@@ -104,7 +105,7 @@ function TotpCode({ step, onSignedIn, onCancel }) {
   );
 }
 
-/** Admin without an authenticator: set one up, then sign in again. */
+/** Staff without an authenticator: set one up, then sign in again. */
 function TotpEnroll({ onEnrolled, onCancel }) {
   const { startTotpEnrollment, finishTotpEnrollment } = useAuth();
   const [setup, setSetup] = useState(null); // { secret, key, qrUrl }
@@ -153,7 +154,7 @@ function TotpEnroll({ onEnrolled, onCancel }) {
       <div className="auth-card-head">
         <h2>Set up your authenticator</h2>
         <p>
-          Admin accounts need an authenticator app (Google Authenticator,
+          Staff accounts need an authenticator app (Google Authenticator,
           Microsoft Authenticator or similar) on a phone only you use.
         </p>
       </div>
@@ -187,66 +188,58 @@ function TotpEnroll({ onEnrolled, onCancel }) {
   );
 }
 
-/** Doctor: code from the email. */
-function EmailCode({ step, onSignedIn, onCancel }) {
-  const { submitStaffCode, resendStaffCode } = useAuth();
+/** First sign-in with a new authenticator: the one-time setup code. */
+function SetupCode({ onSignedIn, onCancel }) {
+  const { submitSetupCode } = useAuth();
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [note, setNote] = useState("");
+  const clean = code.toUpperCase().replace(/[^A-Z0-9]/g, "");
 
   async function submit(e) {
     e.preventDefault();
     setBusy(true);
     setError("");
-    setNote("");
     try {
-      onSignedIn(await submitStaffCode(code));
+      onSignedIn(await submitSetupCode(clean));
     } catch (err) {
-      setError(err.message || "That code didn't work.");
-      setCode("");
+      setError(err.message || "That setup code didn't work.");
     } finally {
       setBusy(false);
-    }
-  }
-
-  async function resend() {
-    setError("");
-    setNote("");
-    try {
-      const data = await resendStaffCode();
-      setNote(data?.status === "ok" ? "" : "A new code is on its way. Use the newest email.");
-    } catch (err) {
-      setError(err?.message || "We couldn't send a new code. Wait a few minutes and try again.");
     }
   }
 
   return (
     <form onSubmit={submit} noValidate>
       <div className="auth-card-head">
-        <h2>Check your email</h2>
-        <p>We sent a 6-digit sign-in code to {step.sentTo || "your email"}. It expires in 10 minutes.</p>
+        <h2>Enter your setup code</h2>
+        <p>
+          One last step to link your authenticator app to your account. Use the
+          setup code IT (admins) or an admin (doctors) gave you. You only need
+          it this once.
+        </p>
       </div>
       <Alert error={error} />
-      {note && (
-        <div className="auth-alert success" role="status">
-          <IconCheckCircle size={15} />
-          <span>{note}</span>
+      <div className="auth-field">
+        <label htmlFor="setup-code">Setup code</label>
+        <div className="auth-input-wrap">
+          <IconLock size={15} />
+          <input
+            id="setup-code"
+            type="text"
+            autoComplete="off"
+            autoCapitalize="characters"
+            spellCheck={false}
+            autoFocus
+            placeholder="ABCDE-FGHJK"
+            maxLength={11}
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
+            style={{ letterSpacing: "0.15em", fontSize: 18, textTransform: "uppercase" }}
+          />
         </div>
-      )}
-      <CodeInput value={code} onChange={setCode} label="6-digit code" />
-      <SubmitButton busy={busy} disabled={code.length !== 6}>Verify and sign in</SubmitButton>
-      <p className="auth-switch">
-        No email?{" "}
-        <button
-          type="button"
-          onClick={resend}
-          style={{ background: "none", border: "none", color: "var(--auth-secondary)", cursor: "pointer", padding: 0 }}
-        >
-          Send a new code
-        </button>{" "}
-        (check spam too)
-      </p>
+      </div>
+      <SubmitButton busy={busy} disabled={clean.length !== 10}>Finish and sign in</SubmitButton>
       <CancelLink onCancel={onCancel} />
     </form>
   );
@@ -262,5 +255,5 @@ export default function StaffSecondFactor({ step, onSignedIn, onDone }) {
   if (step.kind === "totp_enroll") {
     return <TotpEnroll onEnrolled={() => onDone("enrolled")} onCancel={cancel} />;
   }
-  return <EmailCode step={step} onSignedIn={onSignedIn} onCancel={cancel} />;
+  return <SetupCode onSignedIn={onSignedIn} onCancel={cancel} />;
 }

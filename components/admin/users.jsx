@@ -13,7 +13,11 @@
 // hospital's staffAdmin script, never from the app.
 //
 // Doctors are created by createDoctorAccount (server). The doctor then
-// receives Firebase's password-reset email to set their own password.
+// receives Firebase's password-reset email to set their own password, and
+// the admin is shown a one-time SETUP CODE to hand over in person: the
+// doctor needs it once, to link their authenticator app at first sign-in.
+// "Authenticator" on a doctor's row issues a new code (first setup) or
+// resets a lost authenticator (staffAuth.js resetStaffAuthenticator).
 
 import { useMemo, useState } from "react";
 import ConfirmDialog from "./confirmDialog.jsx";
@@ -153,8 +157,9 @@ function CreateDoctorModal({ onClose, onCreate }) {
       <div className="admin-modal" onClick={(e) => e.stopPropagation()}>
         <h3>Create a doctor account</h3>
         <p className="sub">
-          The doctor is emailed a link to set their own password — no separate
-          approval step once you submit this.
+          The doctor is emailed a link to set their own password. You'll then
+          see a one-time setup code to give them in person, for linking their
+          authenticator app.
         </p>
 
         {error && (
@@ -268,15 +273,58 @@ function CreateDoctorModal({ onClose, onCreate }) {
   );
 }
 
+/** Shows a one-time setup code once; it isn't stored anywhere readable. */
+function SetupCodeDialog({ shown, onClose }) {
+  return (
+    <div className="admin-modal-backdrop" role="dialog" aria-modal="true">
+      <div className="admin-modal">
+        <h3>Setup code for {shown.name}</h3>
+        <p className="sub">
+          Give this code to {shown.name} in person or by phone, never by
+          email or message. They enter it once, at their first sign-in, to
+          link their authenticator app. It expires in 72 hours. It won't be
+          shown again.
+        </p>
+        <p
+          style={{
+            fontFamily: "JetBrains Mono, monospace",
+            fontSize: 28,
+            fontWeight: 700,
+            letterSpacing: "0.12em",
+            textAlign: "center",
+            margin: "18px 0",
+            userSelect: "all",
+          }}
+        >
+          {shown.code}
+        </p>
+        <ol className="sub" style={{ paddingLeft: 20, lineHeight: 1.6 }}>
+          <li>They sign in on the staff page with their email and password.</li>
+          <li>They scan the QR code with Google or Microsoft Authenticator.</li>
+          <li>They sign in again with the app's code, then enter this setup code.</li>
+        </ol>
+        <div className="admin-modal-actions">
+          <button className="btn btn-primary" onClick={onClose}>
+            I've noted it down
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Users({
   users,
   currentAdminId,
   onCreateDoctor,
+  onDoctorAuthenticator,
   onDeactivate,
   onReactivate,
 }) {
   const [subtab, setSubtab] = useState("all");
   const [creatingDoctor, setCreatingDoctor] = useState(false);
+  const [shownCode, setShownCode] = useState(null); // { name, code }
+  const [authFor, setAuthFor] = useState(null); // doctor whose authenticator to reset/issue
   const [deactivating, setDeactivating] = useState(null);
   const [reactivating, setReactivating] = useState(null);
 
@@ -419,6 +467,15 @@ export default function Users({
                     <td>
                       {isActionable(u) ? (
                         <div className="admin-row-actions">
+                          {u.role === "doctor" && u.status === "active" && (
+                            <button
+                              className="btn btn-outline"
+                              onClick={() => setAuthFor(u)}
+                              title={u.mfaFactorUid ? "Authenticator linked" : "No authenticator linked yet"}
+                            >
+                              {u.mfaFactorUid ? "Reset authenticator" : "Setup code"}
+                            </button>
+                          )}
                           {u.status === "active" ? (
                             <button
                               className="btn btn-outline"
@@ -454,9 +511,43 @@ export default function Users({
       {creatingDoctor && (
         <CreateDoctorModal
           onClose={() => setCreatingDoctor(false)}
-          onCreate={onCreateDoctor}
+          onCreate={async (form) => {
+            const result = await onCreateDoctor(form);
+            if (result?.setupCode) setShownCode({ name: form.name, code: result.setupCode });
+            return result;
+          }}
         />
       )}
+
+      {authFor && (
+        <ConfirmDialog
+          title={
+            authFor.mfaFactorUid
+              ? `Reset ${authFor.name}'s authenticator?`
+              : `Issue a setup code for ${authFor.name}?`
+          }
+          body={
+            authFor.mfaFactorUid
+              ? "Only do this if they lost or replaced their phone, and you've confirmed it's really them (in person or on a number you already have). Their current authenticator stops working, they're signed out everywhere, and you'll get a new setup code to give them."
+              : "You'll get a one-time code to give them in person, so they can link their authenticator app. Any earlier code stops working."
+          }
+          confirmLabel={authFor.mfaFactorUid ? "Reset and show code" : "Show setup code"}
+          tone={authFor.mfaFactorUid ? "danger" : undefined}
+          onConfirm={async () => {
+            const target = authFor;
+            setAuthFor(null);
+            try {
+              const result = await onDoctorAuthenticator(target, Boolean(target.mfaFactorUid));
+              if (result?.setupCode) setShownCode({ name: target.name, code: result.setupCode });
+            } catch {
+              // the admin shell shows the error banner
+            }
+          }}
+          onClose={() => setAuthFor(null)}
+        />
+      )}
+
+      {shownCode && <SetupCodeDialog shown={shownCode} onClose={() => setShownCode(null)} />}
 
       {deactivating && (
         <ConfirmDialog

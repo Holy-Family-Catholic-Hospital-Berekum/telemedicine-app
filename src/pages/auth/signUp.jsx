@@ -126,7 +126,7 @@ export default function SignUp() {
   return (
     <div className="auth-root">
       <AuthAside
-        heading="Sign Up to quality healthcare"
+        heading="Your health, our priority"
         body="Sign up to book a consultation with Holy Family Catholic Hospital's telemedicine service."
         points={ASIDE_POINTS}
       />

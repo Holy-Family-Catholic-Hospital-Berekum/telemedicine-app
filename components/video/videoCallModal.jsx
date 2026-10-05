@@ -14,6 +14,7 @@ import {
 import { useWebRTCCall } from "./useWebRTCCall";
 import hospitalLogo from "../../src/assets/logo.png";
 import { functions } from "../../src/firebase";
+import { useAuth } from "../../src/context/authContext.jsx";
 
 const callReportCapture = httpsCallable(functions, "reportCaptureAttempt");
 
@@ -91,7 +92,12 @@ export default function VideoCallModal({
     hangUp,
   } = useWebRTCCall({ consultationId, role, patientSeq, onEnded: onClose });
 
+  const { holdSession } = useAuth();
   const [now, setNow] = useState(() => new Date());
+
+  // No idle sign-out while the call is on screen (people talk without
+  // touching the mouse); the normal timer resumes when it closes.
+  useEffect(() => holdSession(), [holdSession]);
   const [captureWarning, setCaptureWarning] = useState(false);
 
   // Keeps the watermark's time current.

@@ -207,52 +207,7 @@ function doctorContent(kind, data, when) {
  *         otherJoined? }
  * Returns { subject, text, html }.
  */
-/**
- * Doctor sign-in code. No links (so it can't be imitated by a phishing
- * email that asks people to click), and the code isn't in the subject, so
- * it doesn't show on a locked phone's notifications.
- */
-function renderStaffCodeEmail(data) {
-  const name = data.doctorName ? String(data.doctorName).trim() : "Doctor";
-  const subject = `Your ${HOSPITAL_NAME} sign-in code`;
-  const lines = [
-    `Hello ${name},`,
-    "",
-    "Use this code to finish signing in to the doctor portal:",
-    "",
-    String(data.code),
-    "",
-    `It expires in ${data.minutes} minutes and works once, on the sign-in where you asked for it.`,
-    "",
-    "If you didn't just try to sign in, someone may know your password. Don't share this code with anyone (hospital staff will never ask for it), change your password, and tell the hospital's IT team.",
-    "",
-    HOSPITAL_NAME,
-    HOSPITAL_TOWN,
-  ];
-  const html = `<!doctype html>
-<html lang="en">
-<body style="margin:0;padding:0;background:#f5f7f8;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f5f7f8;">
-<tr><td align="center" style="padding:24px 12px;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;background:#ffffff;border-radius:8px;font-family:Arial,Helvetica,sans-serif;color:#12242c;">
-<tr><td style="padding:24px 28px 8px;font-size:18px;font-weight:bold;color:#0b6ba0;">${escapeHtml(HOSPITAL_NAME)}</td></tr>
-<tr><td style="padding:8px 28px 24px;font-size:15px;line-height:1.5;">
-<p style="margin:0 0 12px;">Hello ${escapeHtml(name)},</p>
-<p style="margin:0 0 16px;">Use this code to finish signing in to the doctor portal:</p>
-<p style="margin:0 0 16px;font-size:32px;font-weight:bold;letter-spacing:8px;font-family:Consolas,monospace;">${escapeHtml(data.code)}</p>
-<p style="margin:0 0 12px;">It expires in ${escapeHtml(data.minutes)} minutes and works once, on the sign-in where you asked for it.</p>
-<p style="margin:0;color:#8a2626;">If you didn't just try to sign in, someone may know your password. Don't share this code with anyone (hospital staff will never ask for it), change your password, and tell the hospital's IT team.</p>
-</td></tr>
-</table>
-</td></tr>
-</table>
-</body>
-</html>`;
-  return { subject, text: lines.join("\n"), html };
-}
-
 function renderEmail(kind, data) {
-  if (kind === "staff_login_code") return renderStaffCodeEmail(data);
   const when = new Date(data.scheduledAt);
   const forDoctor = kind.startsWith("doctor_");
   const { subject, intro, rows, paragraphs } = forDoctor

@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
-import { collection, limit, orderBy, query } from "firebase/firestore";
+import { collection, limit, orderBy, query, where } from "firebase/firestore";
 
 import { db } from "../../src/firebase";
+import { useAuth } from "../../src/context/authContext.jsx";
 import { TYPE_LABELS, formatDateTime } from "../../src/constants";
 import { useFirestoreCollection } from "./hooks/useFirestoreCollection.js";
 import { IconSearch, IconTrash, IconAlert } from "./icons.jsx";
@@ -9,7 +10,10 @@ import { IconSearch, IconTrash, IconAlert } from "./icons.jsx";
 // Call recordings, admin only (rules deny everyone else). Nothing here can
 // read the files directly: play and download ask getRecordingUrl for a
 // 10-minute signed link, which requires a reason and is written to the
-// audit log. Deleting is permanent and also audited.
+// audit log. Deleting needs two admins: one requests it (with a reason),
+// a different admin approves it, and only then are the files deleted
+// (recordings.js requestRecordingDeletion / decideDeletionRequest).
+// Requests expire after 72 hours. Every step is audited.
 
 const LIST_LIMIT = 300;
 
@@ -75,6 +79,129 @@ function ReasonDialog({ title, body, confirmLabel, tone, requireTyped, busy, err
         </div>
       </div>
     </div>
+  );
+}
+
+/** Deletion requests waiting for a second admin. */
+function PendingDeletions({ callAdmin, onMessage }) {
+  const { user } = useAuth();
+  const pendingQuery = useMemo(
+    () => query(collection(db, "deletionRequests"), where("status", "==", "pending")),
+    [],
+  );
+  const { data: pending } = useFirestoreCollection(pendingQuery);
+  const [deciding, setDeciding] = useState(null); // { request, decision }
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  // When the tab was opened; good enough to hide expired requests.
+  const [openedAt] = useState(() => Date.now());
+
+  const live = pending
+    .filter((r) => !r.expiresAt || new Date(r.expiresAt).getTime() > openedAt)
+    .sort((a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0));
+  if (live.length === 0) return null;
+
+  async function decide(note) {
+    setBusy(true);
+    setError(null);
+    try {
+      const data = await callAdmin("decideDeletionRequest", {
+        requestId: deciding.request.id,
+        decision: deciding.decision,
+        note,
+      });
+      onMessage(
+        data.status === "done"
+          ? `Approved. ${data.deleted} recording${data.deleted === 1 ? "" : "s"} deleted.`
+          : "Deletion request rejected.",
+      );
+      setDeciding(null);
+    } catch {
+      setError("That didn't go through. See the message above.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const describe = (r) =>
+    r.kind === "before"
+      ? `${r.target?.count ?? "?"} recording(s) made before ${formatDateTime(r.target?.before)}`
+      : `Recording of consultation ${r.target?.consultationId || r.target?.recordingId} (${formatDateTime(r.target?.startedAt)})`;
+
+  return (
+    <section className="admin-panel">
+      <div className="admin-panel-head">
+        <div>
+          <h2>Deletions waiting for approval ({live.length})</h2>
+          <p>A recording is deleted only when a second admin approves. Requests expire after 72 hours.</p>
+        </div>
+      </div>
+      <div className="admin-panel-body">
+        <table className="admin-table">
+          <thead>
+            <tr>
+              <th>What</th>
+              <th>Requested by</th>
+              <th>Reason</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {live.map((r) => {
+              const mine = r.requestedByUid === user?.uid;
+              return (
+                <tr key={r.id}>
+                  <td>{describe(r)}</td>
+                  <td>
+                    {r.requestedByName || "Admin"}
+                    <div className="admin-cell-sub">{formatDateTime(r.createdAt)}</div>
+                  </td>
+                  <td className="admin-cell-sub">{r.reason}</td>
+                  <td>
+                    {mine ? (
+                      <span className="admin-cell-sub">Waiting for another admin</span>
+                    ) : (
+                      <div className="admin-row-actions">
+                        <button
+                          className="btn btn-outline danger"
+                          onClick={() => setDeciding({ request: r, decision: "approve" })}
+                        >
+                          Approve deletion
+                        </button>
+                        <button
+                          className="btn btn-outline"
+                          onClick={() => setDeciding({ request: r, decision: "reject" })}
+                        >
+                          Reject
+                        </button>
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {deciding && (
+        <ReasonDialog
+          title={deciding.decision === "approve" ? "Approve and delete permanently?" : "Reject this request?"}
+          body={
+            deciding.decision === "approve"
+              ? `${describe(deciding.request)}. Requested by ${deciding.request.requestedByName || "another admin"}: "${deciding.request.reason}". This cannot be undone.`
+              : describe(deciding.request)
+          }
+          confirmLabel={deciding.decision === "approve" ? "Approve and delete" : "Reject"}
+          tone={deciding.decision === "approve" ? "danger" : undefined}
+          requireTyped={deciding.decision === "approve" ? "DELETE" : undefined}
+          busy={busy}
+          error={error}
+          onConfirm={decide}
+          onClose={() => !busy && setDeciding(null)}
+        />
+      )}
+    </section>
   );
 }
 
@@ -157,20 +284,18 @@ export default function RecordingsPanel({ callAdmin }) {
     }
     if (action.kind === "delete") {
       return run(async () => {
-        await callAdmin("deleteRecording", { recordingId: r.id, reason });
-        setMessage("Recording deleted.");
+        await callAdmin("requestRecordingDeletion", { kind: "single", recordingId: r.id, reason });
+        setMessage("Deletion requested. Another admin must approve it before the recording is deleted.");
       });
     }
     if (action.kind === "bulk") {
       return run(async () => {
-        const data = await callAdmin("deleteRecordingsBefore", {
+        await callAdmin("requestRecordingDeletion", {
+          kind: "before",
           before: `${bulkBefore}T00:00:00Z`,
           reason,
         });
-        setMessage(
-          `${data.deleted} recording${data.deleted === 1 ? "" : "s"} deleted.` +
-            (data.capped ? " There may be more: run it again to continue." : ""),
-        );
+        setMessage("Deletion requested. Another admin must approve it before anything is deleted.");
       });
     }
     return undefined;
@@ -179,7 +304,8 @@ export default function RecordingsPanel({ callAdmin }) {
   async function startBulk() {
     setMessage(null);
     try {
-      const data = await callAdmin("deleteRecordingsBefore", {
+      const data = await callAdmin("requestRecordingDeletion", {
+        kind: "before",
         before: `${bulkBefore}T00:00:00Z`,
         dryRun: true,
       });
@@ -209,6 +335,8 @@ export default function RecordingsPanel({ callAdmin }) {
           {message}
         </div>
       )}
+
+      <PendingDeletions callAdmin={callAdmin} onMessage={setMessage} />
 
       <section className="admin-panel">
         <div className="admin-panel-head">
@@ -323,7 +451,10 @@ export default function RecordingsPanel({ callAdmin }) {
         <div className="admin-panel-head">
           <div>
             <h2>Delete older recordings</h2>
-            <p>Permanently deletes every finished recording made before the chosen date.</p>
+            <p>
+              Asks to delete every finished recording made before the chosen
+              date. Nothing is deleted until another admin approves.
+            </p>
           </div>
         </div>
         <div className="admin-panel-body" style={{ display: "flex", gap: 12, alignItems: "center", padding: "16px 22px" }}>
@@ -336,7 +467,7 @@ export default function RecordingsPanel({ callAdmin }) {
             onChange={(e) => setBulkBefore(e.target.value)}
           />
           <button className="btn btn-outline danger" disabled={!bulkBefore} onClick={startBulk}>
-            <IconTrash size={14} /> Find and delete…
+            <IconTrash size={14} /> Find and request deletion…
           </button>
         </div>
       </section>
@@ -349,16 +480,16 @@ export default function RecordingsPanel({ callAdmin }) {
               : action.kind === "download"
                 ? "Download this recording?"
                 : action.kind === "delete"
-                  ? "Delete this recording permanently?"
-                  : `Delete ${action.count} recording${action.count === 1 ? "" : "s"} permanently?`
+                  ? "Request deletion of this recording?"
+                  : `Request deletion of ${action.count} recording${action.count === 1 ? "" : "s"}?`
           }
           body={
             action.kind === "bulk"
-              ? `Every finished recording made before ${bulkBefore} will be deleted${
-                  action.capped ? " (the first 500 now; run again for more)" : ""
-                }. This cannot be undone.`
+              ? `Every finished recording made before ${bulkBefore}${
+                  action.capped ? " (up to 500 at a time)" : ""
+                }. Another admin must approve; once they do, it cannot be undone.`
               : action.kind === "delete"
-                ? `${action.recording.patientName || "Patient"} with ${action.recording.doctorName || "doctor"}, ${formatDateTime(action.recording.startedAt)}. This cannot be undone.`
+                ? `${action.recording.patientName || "Patient"} with ${action.recording.doctorName || "doctor"}, ${formatDateTime(action.recording.startedAt)}. Another admin must approve; once they do, it cannot be undone.`
                 : `${action.recording.patientName || "Patient"} with ${action.recording.doctorName || "doctor"}, ${formatDateTime(action.recording.startedAt)}.${
                     action.kind === "download"
                       ? " A downloaded copy leaves the platform's protections: store it securely."
@@ -366,10 +497,10 @@ export default function RecordingsPanel({ callAdmin }) {
                   }`
           }
           confirmLabel={
-            action.kind === "play" ? "Play" : action.kind === "download" ? "Download" : "Delete permanently"
+            action.kind === "play" ? "Play" : action.kind === "download" ? "Download" : "Request deletion"
           }
           tone={action.kind === "delete" || action.kind === "bulk" ? "danger" : undefined}
-          requireTyped={action.kind === "bulk" || action.kind === "delete" ? "DELETE" : undefined}
+          requireTyped={undefined}
           busy={busy}
           error={actionError}
           onConfirm={handleConfirm}

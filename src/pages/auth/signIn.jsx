@@ -186,8 +186,8 @@ export default function SignIn({ audience = "patient" }) {
             <div className="auth-alert success" role="status">
               <IconCheckCircle size={15} />
               <span>
-                Your authenticator is set up. Sign in again; you'll be asked
-                for its code.
+                Your authenticator is set up. Sign in again: you'll be asked
+                for its code, then once for your setup code.
               </span>
             </div>
           )}

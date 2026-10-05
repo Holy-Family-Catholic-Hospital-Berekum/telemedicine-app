@@ -268,7 +268,8 @@ exports.createAvailableSlot = onCall(async (request) => {
       startAt: Timestamp.fromDate(startAt),
       endAt: Timestamp.fromDate(endAt),
       status: "open",
-      createdByUid: caller.uid,
+      // No createdByUid: open slots are public, and the audit entry below
+      // already records which admin opened it.
       createdAt: serverTime(),
       updatedAt: serverTime(),
     });

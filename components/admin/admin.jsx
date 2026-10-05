@@ -232,6 +232,9 @@ export default function Admin() {
     }
     return result;
   };
+  // Doctor authenticator: first-time setup code, or reset (lost phone).
+  const handleDoctorAuthenticator = (u, reset) =>
+    callAdmin("resetStaffAuthenticator", { uid: u.id, reset });
   const handleDeactivateUser = (u) =>
     quietly(callAdmin("setAccountStatus", { uid: u.id, status: "deactivated" }));
   const handleReactivateUser = (u) =>
@@ -358,6 +361,7 @@ export default function Admin() {
               users={users}
               currentAdminId={currentAdmin.uid}
               onCreateDoctor={handleCreateDoctor}
+              onDoctorAuthenticator={handleDoctorAuthenticator}
               onDeactivate={handleDeactivateUser}
               onReactivate={handleReactivateUser}
             />

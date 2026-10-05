@@ -81,7 +81,6 @@ export function Donut({ data = [], size = 140, thickness = 18 }) {
   }
 
   const total = data.reduce((s, d) => s + d.value, 0) || 1;
-  let offset = 0;
 
   return (
     <svg
@@ -100,9 +99,12 @@ export function Donut({ data = [], size = 140, thickness = 18 }) {
           stroke="var(--color-surface)"
           strokeWidth={thickness}
         />
-        {data.map((d) => {
+        {data.map((d, i) => {
           const frac = d.value / total;
           const dash = frac * c;
+          // Start of this slice = sum of the slices before it (no mutation
+          // during render).
+          const offset = data.slice(0, i).reduce((sum, x) => sum + (x.value / total) * c, 0);
           const el = (
             <circle
               key={d.label}
@@ -117,7 +119,6 @@ export function Donut({ data = [], size = 140, thickness = 18 }) {
               strokeLinecap="butt"
             />
           );
-          offset += dash;
           return el;
         })}
       </g>

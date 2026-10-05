@@ -13,12 +13,13 @@ npm run dev       # vite dev server
 npm run build     # production build -> dist/
 npm run lint      # eslint . (root config also lints functions/)
 npm run preview
+npm run test:rules   # Firestore/Storage rules tests on the emulators (needs Java 21)
 firebase deploy --only firestore,storage,functions
 ```
 
 Husky pre-commit runs a trufflehog secret scan, then `lint-staged` → `eslint --fix` on staged `*.{js,jsx}`. ESLint includes `eslint-plugin-security`; `functions/**` uses Node globals, CommonJS, and double quotes.
 
-Firebase config: `firebase.json`, `.firebaserc` (project `telemedicine-hfch`), `firestore.rules`, `storage.rules`, `firestore.indexes.json`. `functions/scripts/staffAdmin.js` is run locally (never deployed) to create admins (`make-admin`) and backfill role claims (`sync-claims`).
+Firebase config: `firebase.json`, `.firebaserc` (project `telemedicine-hfch`), `firestore.rules`, `storage.rules`, `firestore.indexes.json`. `functions/scripts/staffAdmin.js` is run locally (never deployed) by a project Owner: `make-admin`, `reset-mfa`, `issue-setup-code`, `sync-claims`, and the one-off `enable-totp`, `password-policy`, `auth-recaptcha`. Day-to-day security procedures (new staff, lost phones, restores, alerts) are in `SECURITY_SETUP.md`.
 
 ## Environment (`.env`, not committed)
 
@@ -49,8 +50,8 @@ Routes in `src/App.jsx`: public `/`, `/privacy`, `/terms`; `PublicOnlyRoute` for
 `authContext.jsx` is the single source of auth state (`useAuth()`). Read its header comment before changing auth.
 - **Role comes from the `role` custom claim**, set only by functions (`registerPatient`, `createDoctorAccount`) and the `staffAdmin` script. The profile doc (`adminUsers/{uid}` for staff, `users/{uid}` for patients) must be `active`. No claim = no access; there is no patient fallback. `ProtectedRoute` fails closed on a null role.
 - `signIn()` takes `audience: "patient" | "staff"`; an account on the wrong page gets the same generic error as a wrong password. Sign-up creates the Auth user then calls `registerPatient` (deletes the Auth user if that fails).
-- Persistence is session-only by default; "Remember me" (patients only) switches to local. Idle timeout 15 min staff / 30 min patients.
-- Staff second factor (setup steps in `SECURITY_SETUP.md`): admins use an authenticator app (Identity Platform TOTP; first factor pinned to `adminUsers.mfaFactorUid`; fresh sign-in every 12 h); doctors get a 6-digit emailed code per sign-in, bound to the token's `auth_time` in `staffSessions/{uid}` (`functions/staffAuth.js`: `confirmStaffSession`, `verifyStaffCode`; auto-confirmed and audited as `staff.mfa_unavailable` until email is configured). Enforced in `requireRole` (core.js) and in `isAdmin()`/`isDoctor()` in both rules files. Sign-in UI: `signIn()` returns `{ step }`, rendered by `src/pages/auth/staffSecondFactor.jsx`; until the step is done the account is held in `pendingStaffRef`, not exposed. Lost authenticator: `staffAdmin.js reset-mfa`.
+- Persistence is session-only by default; "Remember me" (patients only) switches to local. Idle sign-out: staff 30 min, patients 60 min; an open video call holds the session (`holdSession` in authContext, used by `videoCallModal.jsx`).
+- Staff second factor: admins AND doctors use an authenticator app (Identity Platform TOTP). A factor counts only once pinned to `adminUsers.mfaFactorUid`, which needs a one-time setup code (`lib/staffSetup.js`, hash in `adminUsers.mfaSetup`, 72 h, 5 tries) issued by the staffAdmin script (admins) or an admin in the Users tab (doctors, `resetStaffAuthenticator`; `createDoctorAccount` returns one). Fresh sign-in every 12 h. Checked by `assertStaffSecondFactor` in `requireRole` (core.js) and `staffSecondFactor()` in both rules files. `functions/staffAuth.js confirmStaffSession` reports the next step (`totp_enroll`, `totp_signin`, `setup_code`, `setup_expired`, `ok`) and pins the factor. Sign-in UI: `signIn()` returns `{ step }`, rendered by `src/pages/auth/staffSecondFactor.jsx`; until done the account is held in `pendingStaffRef`, not exposed.
 - App Check (reCAPTCHA Enterprise) is initialised in `src/firebase.js`; every callable is defined through `onCall` from `lib/core.js`, which applies `ENFORCE_APP_CHECK` (`functions/lib/securityConfig.js`, off until the console shows verified traffic). Never import `onCall` from firebase-functions directly.
 
 ## Security model (keep this intact)
@@ -59,11 +60,15 @@ Routes in `src/App.jsx`: public `/`, `/privacy`, `/terms`; `PublicOnlyRoute` for
 - Fees are computed on the server (`loadPrices()`, falling back to `DEFAULT_FEES`); no specialist surcharge. Keep `DEFAULT_PRICES` (`src/siteSettings.js`) and `DEFAULT_FEES` (`functions/siteSettings.js`) in sync. Payment is confirmed only by the signed Paystack webhook or verify-by-reference, idempotently. Amounts are whole GHS; ×100 happens only in `paymentIsAcceptable()` and when opening the popup.
 - **Data retention (hospital decision):** booking details (DOB, sex, location, phone) live on `bookings` and `consultations.patientDetails` and are deleted by `markConsultationDone`; unpaid drafts are deleted after 24 h. Kept: `consultationHistory` (doctor, times, outcome, amount — patients see their own), `confirmedPayments`, `consents`, `auditLog`, `recordings`.
 - **Call recording:** controlled only by the admin switch `systemSettings/features.callRecordingEnabled` (`setCallRecordingEnabled`), snapshotted per call in `calls.recordingEnabled`; both sides see REC from `calls.recordingActive`. Recordings carry patient/doctor names and a SHA-256. Admins play/download via 10-minute signed URLs with a reason, and delete singly or by date. All audited. No client can read the files.
+- Recording deletion needs two admins: `requestRecordingDeletion` writes `deletionRequests/{id}` (pending, 72 h), a different admin runs `decideDeletionRequest` (approve deletes, reject closes). Never add a single-admin delete path.
+- Patients must have an active `users/{uid}` profile in the rules (`isPatient()`), so deactivation takes effect immediately.
+- Functions run as `functions-runtime@telemedicine-hfch.iam.gserviceaccount.com` (least privilege; `setGlobalOptions` in core.js). A new Google API used by functions may need a role added to it (see `SECURITY_SETUP.md`).
+- `mirrorAuditLog` copies each `auditLog` entry to Cloud Logging ("AUDIT" lines) → sink `audit-to-locked` → log bucket `audit-locked` (365 days, retention locked); the alert policy *Telemedicine security event* emails on security codes. Keep audit `code`s stable: the alert filter matches them.
 - Consent: booking consent text is versioned; the server stores version + text hash + IP + time in `consents`. Never edit a published version — add a new one in both `consentText.js` files.
 
 ## Firestore collections
 
-`users`, `adminUsers` (admins and doctors), `doctorProfiles` (public), `roomDevices` (admin read; key hashes only), `mail` (outbox, no client access), `refundRequests`, `bookings` (`awaiting_payment` → `paid` → `scheduled`), `consultations` (`scheduled` | `in_progress`; ID `HFC-` + 10 chars), `consultationHistory`, `availableSlots` (`open`/`held`/`booked`/`cancelled`, `startAt`; open ones are publicly readable), `confirmedPayments`, `paymentRefs`, `consents`, `auditLog`, `calls`, `recordings`, `rateLimits`, `siteSettings/public`, `legalDocs/{terms|privacy}`, `systemSettings/features`. Enums: type `OPD`|`SURGICAL`, mode `online`|`in_person`, outcome `completed`|`no_show` (`src/constants.js` ↔ `functions/lib/core.js`).
+`users`, `adminUsers` (admins and doctors; `mfaFactorUid`, `mfaSetup`), `doctorProfiles` (public), `roomDevices` (admin read; key hashes only), `mail` (outbox, no client access), `refundRequests`, `deletionRequests` (admin read), `bookings` (`awaiting_payment` → `paid` → `scheduled`), `consultations` (`scheduled` | `in_progress`; ID `HFC-` + 10 chars), `consultationHistory`, `availableSlots` (`open`/`held`/`booked`/`cancelled`, `startAt`; open ones are publicly readable), `confirmedPayments`, `paymentRefs`, `consents`, `auditLog`, `calls`, `recordings`, `rateLimits`, `siteSettings/public`, `legalDocs/{terms|privacy}`, `systemSettings/features`. Enums: type `OPD`|`SURGICAL`, mode `online`|`in_person`, outcome `completed`|`no_show` (`src/constants.js` ↔ `functions/lib/core.js`).
 
 ## Current state / gotchas
 
@@ -76,9 +81,9 @@ Routes in `src/App.jsx`: public `/`, `/privacy`, `/terms`; `PublicOnlyRoute` for
 - Screen capture can't be blocked in a browser. The call screen deters it: a watermark with the viewer's name and time over the remote video, right-click/PiP/drag off, and screenshot/recording shortcuts it can see show a warning and are audited (`reportCaptureAttempt`, `consultation.capture_attempt`). The hospital recording draws the raw video, so it has no watermark.
 - New bookings are refused while any earlier payment attempt is unconfirmed (`checkAttempts(..., { strict: true })`). Patients consent once per consultation before their first video join (`consents` type `video_consultation`, versioned in both `consentText.js` files).
 - Terms/privacy built-in text (`components/admin/legalDefaults.js`) is edited in place while pre-launch (stays "version 1"); keep the terms in step with refund/reschedule/email behaviour.
-- Idle sign-out is 60 minutes for every role; staff routes redirect to `STAFF_LOGIN_PATH`. The video room opens 30 minutes before (`CALL_UNLOCK_MINUTES` ↔ `JOIN_OPENS_MINUTES_BEFORE`).
+- Staff routes redirect to `STAFF_LOGIN_PATH`. The video room opens 30 minutes before (`CALL_UNLOCK_MINUTES` ↔ `JOIN_OPENS_MINUTES_BEFORE`).
 - Times are hospital time (Africa/Accra = UTC+0). The scheduling modal sends the `datetime-local` value with `Z`; slot times are UTC.
 - Signed URLs need the functions service account to hold "Service Account Token Creator" on itself; Storage rules use cross-service Firestore reads (accept the console prompt on first deploy).
-- CSP and security headers are in `vercel.json` (keep reCAPTCHA, Paystack and Firebase origins in it). Not done yet: backups/PITR, emulator tests for rules.
+- CSP and security headers are in `vercel.json` (keep reCAPTCHA, Paystack and Firebase origins in it). Firestore has point-in-time recovery (7 days), a daily backup schedule (7 days) and delete protection. Rules tests: `tests/rules/rules.test.mjs` — add one whenever a rule changes.
 - `src/siteSettings.js` and `src/legalDocs.js` fall back to bundled defaults (images in `src/assets`/`images/`, legal text in `components/admin/legalDefaults.js`) so public pages render before Firestore responds. Keep that fallback.
 - Code comments may refer to an "architecture doc" by section number; it isn't in the repo.

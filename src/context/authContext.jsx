@@ -33,21 +33,22 @@
 //    indistinguishable from a wrong password). It must never count a
 //    downstream infrastructure failure such as a Firestore read error.
 //
-// 4. Idle timeout. Admin/doctor sessions sign out after a short idle
-//    window; patients get a longer one. This satisfies "session tokens
-//    expire and require re-authentication after a period of inactivity"
-//    (6.2) at the app level, on top of Firebase's own token refresh.
+// 4. Idle timeout: staff (admin, doctor) after 30 minutes without
+//    activity, patients after 60. A video call holds the session open
+//    (holdSession) so nobody is signed out mid-consultation for not
+//    touching the mouse.
 //
 // 5. Staff second factor (functions/staffAuth.js, enforced by
-//    functions/lib/core.js requireRole and the Security Rules):
-//    - Admin: authenticator app (TOTP). With one enrolled, the password
-//      step throws auth/multi-factor-auth-required; signIn() returns
+//    functions/lib/core.js requireRole and the Security Rules): admins and
+//    doctors use an authenticator app (TOTP).
+//    - With one enrolled, the password step throws
+//      auth/multi-factor-auth-required; signIn() returns
 //      { step: "totp", resolver } and completeTotpSignIn() finishes it.
-//      Without one, signIn() returns { step: "totp_enroll" }: the admin
-//      must set one up (startTotpEnrollment / finishTotpEnrollment) and
-//      then sign in again with it.
-//    - Doctor: signIn() returns { step: "email_code" } after the server
-//      emails a code; submitStaffCode() finishes it.
+//    - Without one, signIn() returns { step: "totp_enroll" }: set one up
+//      (startTotpEnrollment / finishTotpEnrollment), then sign in with it.
+//    - The first sign-in with a new authenticator returns
+//      { step: "setup_code" }: submitSetupCode() sends the one-time code
+//      from IT / an admin, which pins that authenticator to the account.
 //    Until the second step is done the account is held back
 //    (pendingStaffRef): no user, no profile, no role in the app. On page
 //    reload a staff session that isn't confirmed is signed out.
@@ -127,14 +128,13 @@ const callRegisterPatient = httpsCallable(functions, "registerPatient");
 const callUpdatePatientProfile = httpsCallable(functions, "updatePatientProfile");
 const callSyncAccountEmail = httpsCallable(functions, "syncAccountEmail");
 const callConfirmStaffSession = httpsCallable(functions, "confirmStaffSession");
-const callVerifyStaffCode = httpsCallable(functions, "verifyStaffCode");
 
 const AuthContext = createContext(null);
 
 // Idle-timeout windows, in minutes. Staff sessions are tighter since
 // they can see patient bookings and payment data.
 // Hospital decision: one hour of inactivity signs out every role.
-const IDLE_TIMEOUT_MINUTES = { admin: 60, doctor: 60, patient: 60 };
+const IDLE_TIMEOUT_MINUTES = { admin: 30, doctor: 30, patient: 60 };
 
 // Roles allowed to sign in through the staff page.
 const STAFF_ROLES = ["admin", "doctor"];
@@ -209,6 +209,8 @@ export function AuthProvider({ children }) {
   // A staff account that passed the password step but not yet its second
   // factor: { uid, profile }. Kept out of React state until it does.
   const pendingStaffRef = useRef(null);
+  // Open video calls holding the session (see holdSession).
+  const sessionHoldsRef = useRef(0);
 
   const clearIdleTimer = useCallback(() => {
     if (idleTimer.current) clearTimeout(idleTimer.current);
@@ -218,12 +220,15 @@ export function AuthProvider({ children }) {
     (role) => {
       clearIdleTimer();
       const minutes = IDLE_TIMEOUT_MINUTES[role] ?? 60;
-      idleTimer.current = setTimeout(
-        () => {
-          signOut(auth).catch(() => {});
-        },
-        minutes * 60 * 1000,
-      );
+      const fire = () => {
+        // In a call: check again later instead of signing out.
+        if (sessionHoldsRef.current > 0) {
+          idleTimer.current = setTimeout(fire, minutes * 60 * 1000);
+          return;
+        }
+        signOut(auth).catch(() => {});
+      };
+      idleTimer.current = setTimeout(fire, minutes * 60 * 1000);
     },
     [clearIdleTimer],
   );
@@ -305,7 +310,7 @@ export function AuthProvider({ children }) {
         if (STAFF_ROLES.includes(p.role)) {
           // Page reload: only a session that already passed its second
           // factor carries on. Never send a new code from here.
-          const { data } = await callConfirmStaffSession({ sendCode: false });
+          const { data } = await callConfirmStaffSession({});
           if (data?.status !== "ok") {
             await signOut(auth).catch(() => {});
             return;
@@ -407,16 +412,14 @@ export function AuthProvider({ children }) {
     [scheduleIdleLogout],
   );
 
-  // Asks the server what this staff sign-in still needs (doctors: it
-  // emails a code). Holds the account back until it's done.
+  // Asks the server what this staff sign-in still needs. Holds the account
+  // back until it's done.
   const staffSecondStep = useCallback(
     async (fbUser, p) => {
       let status;
-      let sentTo;
       try {
-        const { data } = await callConfirmStaffSession({ sendCode: true });
+        const { data } = await callConfirmStaffSession({});
         status = data?.status;
-        sentTo = data?.sentTo;
       } catch (err) {
         await signOut(auth).catch(() => {});
         throw new Error(
@@ -431,12 +434,16 @@ export function AuthProvider({ children }) {
         exposeSession(fbUser, p);
         return { user: fbUser, role: p.role };
       }
-      if (status === "totp_enroll" || status === "email_code") {
+      if (status === "totp_enroll" || status === "setup_code") {
         pendingStaffRef.current = { uid: fbUser.uid, profile: p };
-        return { step: status, sentTo };
+        return { step: status };
       }
       await signOut(auth).catch(() => {});
-      throw new Error("Please sign in again and enter the code from your authenticator app.");
+      throw new Error(
+        status === "setup_expired"
+          ? "Your authenticator setup code has expired or hasn't been issued. Ask IT (admins) or an admin (doctors) for a new one."
+          : "Please sign in again and enter the code from your authenticator app.",
+      );
     },
     [exposeSession],
   );
@@ -602,20 +609,29 @@ export function AuthProvider({ children }) {
     await signOut(auth).catch(() => {});
   }, []);
 
-  // Doctor: the 6-digit code from the email.
-  const submitStaffCode = useCallback(
-    async (code) => {
+  // First sign-in with a new authenticator: the one-time setup code from
+  // IT (admins) or an admin (doctors) pins it to the account.
+  const submitSetupCode = useCallback(
+    async (setupCode) => {
       const pending = pendingStaffRef.current;
       const u = auth.currentUser;
       if (!pending || !u || u.uid !== pending.uid) throw new Error("Please sign in again.");
+      let data;
       try {
-        await callVerifyStaffCode({ code: code.trim() });
+        ({ data } = await callConfirmStaffSession({ setupCode: setupCode.trim() }));
       } catch (err) {
         throw new Error(
           err?.code?.startsWith("functions/") && err.message
             ? err.message
-            : "We couldn't check the code. Please try again.",
+            : "We couldn't check the setup code. Please try again.",
           { cause: err },
+        );
+      }
+      if (data?.status !== "ok") {
+        pendingStaffRef.current = null;
+        await signOut(auth).catch(() => {});
+        throw new Error(
+          "Your setup code has expired. Ask IT (admins) or an admin (doctors) for a new one, then sign in again.",
         );
       }
       pendingStaffRef.current = null;
@@ -625,9 +641,16 @@ export function AuthProvider({ children }) {
     [exposeSession],
   );
 
-  const resendStaffCode = useCallback(async () => {
-    const { data } = await callConfirmStaffSession({ sendCode: true });
-    return data;
+  // Keeps the session open while a video call is on screen; returns the
+  // release function.
+  const holdSession = useCallback(() => {
+    sessionHoldsRef.current += 1;
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      sessionHoldsRef.current = Math.max(0, sessionHoldsRef.current - 1);
+    };
   }, []);
 
   // Back out of a half-finished staff sign-in.
@@ -762,8 +785,8 @@ export function AuthProvider({ children }) {
     completeTotpSignIn,
     startTotpEnrollment,
     finishTotpEnrollment,
-    submitStaffCode,
-    resendStaffCode,
+    submitSetupCode,
+    holdSession,
     cancelStaffSignIn,
   };
 

@@ -70,6 +70,7 @@ We do not sell your information and we do not use it for advertising.`,
         id: "retention",
         title: "How long we keep it",
         body: `- The details you give when booking (date of birth, sex, location and phone number) are permanently deleted once your consultation is closed. Unpaid bookings are deleted after 24 hours.
+- To protect against data loss, we keep encrypted backups of our database for 7 days. Information deleted from the platform can remain in these backups until they expire, at most 7 days later, and is only used to restore the service after a fault.
 - A short record of each consultation (doctor, date, start and end time, outcome and amount paid) is kept so you and the hospital can see your history.
 - A record that you agreed to this policy, and when, is kept as proof of your consent.
 - Consultation recordings are kept only as long as needed for the purposes above; authorised administrators delete them when they are no longer needed.
@@ -79,6 +80,8 @@ We do not sell your information and we do not use it for advertising.`,
         id: "security",
         title: "How we protect it",
         body: `- Role-based access, so patients, doctors and administrators only see what they are allowed to.
+- Hospital staff sign in with a password and a code from an authenticator app on their own phone.
+- Deleting a consultation recording needs two administrators: one to ask and another to approve.
 - Email verification before you can book.
 - Automatic sign-out after an hour of inactivity.
 - Doctors hold online consultations only from the hospital's telemedicine room.

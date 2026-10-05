@@ -22,7 +22,7 @@ const { setGlobalOptions } = require("firebase-functions/v2");
 const { HttpsError, onCall: rawOnCall } = require("firebase-functions/v2/https");
 const {
   ENFORCE_APP_CHECK,
-  ADMIN_SESSION_MAX_HOURS,
+  STAFF_SESSION_MAX_HOURS,
 } = require("./securityConfig");
 
 if (!getApps().length) initializeApp();
@@ -35,7 +35,12 @@ const admin = { auth: () => getAuth(), storage: () => getStorage() };
 // europe-west1 sits inside. Keep in step with FUNCTIONS_REGION in
 // src/firebase.js.
 const REGION = "europe-west1";
-setGlobalOptions({ region: REGION, maxInstances: 10 });
+// Functions run as a dedicated least-privilege service account (Firestore,
+// Storage, Auth admin, secrets, logging, invoking its own scheduled jobs
+// and triggers, and signing its own URLs), not the default compute account
+// with project-wide Editor. Roles: SECURITY_SETUP.md, "Service accounts".
+const RUNTIME_SERVICE_ACCOUNT = "functions-runtime@telemedicine-hfch.iam.gserviceaccount.com";
+setGlobalOptions({ region: REGION, maxInstances: 10, serviceAccount: RUNTIME_SERVICE_ACCOUNT });
 
 const db = getFirestore();
 const serverTime = () => FieldValue.serverTimestamp();
@@ -80,28 +85,23 @@ function profileRef(uid, role) {
 }
 
 /**
- * Staff second factor, checked on every staff call (and mirrored in
- * firestore.rules / storage.rules):
- *
- * Admin: this sign-in used the authenticator app (TOTP), with the one
- *   factor pinned to the account (adminUsers.mfaFactorUid — a factor added
- *   later by someone else doesn't count), and happened within
- *   ADMIN_SESSION_MAX_HOURS.
- * Doctor: staffSessions/{uid} says this exact sign-in (the token's
- *   auth_time) was confirmed with an emailed code (staffAuth.js) and
- *   hasn't expired. Another sign-in with the same password, elsewhere,
- *   has a different auth_time and gets nothing.
+ * Staff second factor, checked on every admin and doctor call (and
+ * mirrored in isAdmin()/isDoctor() in firestore.rules and storage.rules):
+ * this sign-in used the authenticator app (TOTP), the factor is the one
+ * pinned to the account with a setup code (adminUsers.mfaFactorUid; an
+ * authenticator someone else adds later doesn't count, see staffAuth.js),
+ * and the sign-in is less than STAFF_SESSION_MAX_HOURS old.
  */
 const MFA_REQUIRED = { reason: "mfa_required" };
 
-function assertAdminSecondFactor(token, profile) {
+function assertStaffSecondFactor(token, profile) {
   const fb = token.firebase || {};
   const ageSeconds = Date.now() / 1000 - Number(token.auth_time || 0);
   if (
     fb.sign_in_second_factor !== "totp" ||
     !profile.mfaFactorUid ||
     fb.second_factor_identifier !== profile.mfaFactorUid ||
-    !(ageSeconds < ADMIN_SESSION_MAX_HOURS * 3600)
+    !(ageSeconds < STAFF_SESSION_MAX_HOURS * 3600)
   ) {
     throw new HttpsError(
       "permission-denied",
@@ -109,17 +109,6 @@ function assertAdminSecondFactor(token, profile) {
       MFA_REQUIRED,
     );
   }
-}
-
-async function doctorSessionVerified(uid, token) {
-  const snap = await db.collection("staffSessions").doc(uid).get();
-  const s = snap.exists ? snap.data() : null;
-  return Boolean(
-    s &&
-      s.verified === true &&
-      s.authTime === Number(token.auth_time) &&
-      (s.expiresAt?.toMillis?.() ?? 0) > Date.now(),
-  );
 }
 
 /**
@@ -151,14 +140,7 @@ async function requireRole(request, roles) {
     );
   }
   const profile = snap.data();
-  if (role === "admin") assertAdminSecondFactor(auth.token, profile);
-  if (role === "doctor" && !(await doctorSessionVerified(auth.uid, auth.token))) {
-    throw new HttpsError(
-      "permission-denied",
-      "Please sign in again and enter the code we email you.",
-      MFA_REQUIRED,
-    );
-  }
+  if (STAFF_ROLES.includes(role)) assertStaffSecondFactor(auth.token, profile);
   return { uid: auth.uid, role, profile, token: auth.token };
 }
 
@@ -387,8 +369,7 @@ function deleteTree(ref) {
 
 module.exports = {
   onCall,
-  assertAdminSecondFactor,
-  doctorSessionVerified,
+  assertStaffSecondFactor,
   profileRef,
   admin,
   db,

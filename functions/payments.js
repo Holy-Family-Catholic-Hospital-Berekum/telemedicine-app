@@ -640,13 +640,21 @@ exports.paystackWebhook = onRequest(
       return;
     }
     if (!signatureMatches(req.rawBody, req.headers["x-paystack-signature"], secretKey())) {
-      logger.warn("Rejected webhook with bad or missing signature");
-      await audit(null, {
-        action: "Rejected a payment webhook with a bad signature",
-        code: "webhook.signature_invalid",
-        category: "security",
-        result: "denied",
-      }).catch(() => {});
+      logger.warn("Rejected webhook with bad or missing signature", { ip: req.ip });
+      // Audit at most 10 forged requests per hour per sender, so a flood
+      // can't bury the audit log (the rest are still in the function logs).
+      const sender = String(req.ip || "unknown").replace(/[^A-Za-z0-9.:-]/g, "_").slice(0, 64);
+      const shouldAudit = await rateLimit(`ip-${sender}`, "webhookForgedAudit", { max: 10, windowSeconds: 3600 })
+        .then(() => true, () => false);
+      if (shouldAudit) {
+        await audit(null, {
+          action: "Rejected a payment webhook with a bad signature",
+          code: "webhook.signature_invalid",
+          category: "security",
+          result: "denied",
+          meta: { ip: req.ip || null, userAgent: null },
+        }).catch(() => {});
+      }
       res.status(401).send("Invalid signature");
       return;
     }

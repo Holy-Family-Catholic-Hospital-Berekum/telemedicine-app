@@ -31,6 +31,7 @@ const {
   sha256,
 } = require("./lib/core");
 const { AGE_DECLARATION_TEXT, CURRENT_AGE_DECLARATION } = require("./lib/consentText");
+const { issueSetupCode } = require("./lib/staffSetup");
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -265,7 +266,9 @@ exports.createDoctorAccount = onCall(async (request) => {
     user = await admin.auth().createUser({
       email,
       displayName: name,
-      emailVerified: false,
+      // The admin vouches for the address; an authenticator can only be
+      // set up on a verified email.
+      emailVerified: true,
       disabled: false,
     });
   } catch (err) {
@@ -322,7 +325,10 @@ exports.createDoctorAccount = onCall(async (request) => {
     throw err;
   }
 
-  return { uid: user.uid, email };
+  // Handed to the doctor in person: needed once, at their first sign-in,
+  // to register their authenticator app (staffAuth.js).
+  const setupCode = await issueSetupCode(user.uid);
+  return { uid: user.uid, email, setupCode };
 });
 
 /* ------------------------------------------------------------------ */

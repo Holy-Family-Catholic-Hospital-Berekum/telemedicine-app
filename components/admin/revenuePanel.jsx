@@ -40,13 +40,15 @@ const RANGES = [
 export default function RevenuePanel({ payments }) {
   const [range, setRange] = useState("7");
   const [settlementTotal, setSettlementTotal] = useState("");
+  // When the tab was opened: the "last N days" window is relative to it.
+  const [openedAt] = useState(() => Date.now());
 
   const rows = useMemo(() => {
     if (range === "all") return payments;
     const days = parseInt(range, 10);
-    const cutoff = Date.now() - days * 86400000;
+    const cutoff = openedAt - days * 86400000;
     return payments.filter((p) => new Date(p.paidAt).getTime() >= cutoff);
-  }, [payments, range]);
+  }, [payments, range, openedAt]);
 
   const total = rows.reduce((s, p) => s + p.amount, 0);
 

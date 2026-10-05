@@ -29,10 +29,11 @@ const legalDocs = require("./legalDocs");
 const refunds = require("./refunds");
 const roomDevices = require("./roomDevices");
 const staffAuth = require("./staffAuth");
+const auditMirror = require("./auditMirror");
 
-// Staff sign-in second factor (admin authenticator app, doctor email code)
+// Staff sign-in second factor (authenticator app for admins and doctors)
 exports.confirmStaffSession = staffAuth.confirmStaffSession;
-exports.verifyStaffCode = staffAuth.verifyStaffCode;
+exports.resetStaffAuthenticator = staffAuth.resetStaffAuthenticator;
 
 // Accounts
 exports.registerPatient = accounts.registerPatient;
@@ -72,8 +73,8 @@ exports.setCallRecordingMode = recordings.setCallRecordingMode;
 exports.startRecording = recordings.startRecording;
 exports.finalizeRecording = recordings.finalizeRecording;
 exports.getRecordingUrl = recordings.getRecordingUrl;
-exports.deleteRecording = recordings.deleteRecording;
-exports.deleteRecordingsBefore = recordings.deleteRecordingsBefore;
+exports.requestRecordingDeletion = recordings.requestRecordingDeletion;
+exports.decideDeletionRequest = recordings.decideDeletionRequest;
 exports.recoverStaleRecordings = recordings.recoverStaleRecordings;
 
 // Site content (admin Control Panel)
@@ -81,6 +82,9 @@ exports.updateConsultationPrices = siteSettings.updateConsultationPrices;
 exports.updateSiteImages = siteSettings.updateSiteImages;
 exports.updateDoctorSelection = siteSettings.updateDoctorSelection;
 exports.updateLegalDocument = legalDocs.updateLegalDocument;
+
+// Tamper-proof copy of the audit log (Cloud Logging -> locked bucket)
+exports.mirrorAuditLog = auditMirror.mirrorAuditLog;
 
 // Scheduled housekeeping
 exports.cleanupExpiredBookings = maintenance.cleanupExpiredBookings;

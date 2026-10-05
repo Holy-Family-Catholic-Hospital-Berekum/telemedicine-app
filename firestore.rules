@@ -11,12 +11,12 @@ rules_version = '2';
 //   them. The two client writes allowed are a doctor's own presentational
 //   profile fields and WebRTC signalling between the two call participants.
 //
-// Staff second factor (same checks as functions/lib/core.js requireRole):
-// - admin: this sign-in used the authenticator app, with the factor pinned
-//   on adminUsers.mfaFactorUid, and is less than 12 hours old;
-// - doctor: staffSessions/{uid} confirms this exact sign-in (auth_time)
-//   with an emailed code, and hasn't expired.
-// A staff member who hasn't passed it is treated as having no role.
+// Staff second factor (same check as functions/lib/core.js requireRole):
+// admins and doctors must have signed in with their authenticator app,
+// using the factor pinned on adminUsers.mfaFactorUid, less than 12 hours
+// ago. A staff member who hasn't is treated as having no role.
+// Patients must have an active users/{uid} profile, so deactivation cuts
+// off their reads at once (not when their ID token next expires).
 
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -31,31 +31,29 @@ service cloud.firestore {
     function authAgeSeconds() {
       return request.time.toMillis() / 1000 - request.auth.token.auth_time;
     }
-    function adminSecondFactor() {
+    function staffSecondFactor() {
       let fb = request.auth.token.get('firebase', {});
       return fb.get('sign_in_second_factor', '') == 'totp'
         && fb.get('second_factor_identifier', '') == staffDoc().get('mfaFactorUid', '-')
         && authAgeSeconds() < 43200;
     }
-    function doctorSecondFactor() {
-      let path = /databases/$(database)/documents/staffSessions/$(myUid());
-      return exists(path)
-        && get(path).data.get('verified', false) == true
-        && get(path).data.get('authTime', 0) == request.auth.token.auth_time
-        && get(path).data.expiresAt > request.time;
-    }
     function isAdmin() {
-      return signedIn() && role() == 'admin' && staffActive() && adminSecondFactor();
+      return signedIn() && role() == 'admin' && staffActive() && staffSecondFactor();
     }
     function isDoctor() {
-      return signedIn() && role() == 'doctor' && staffActive() && doctorSecondFactor();
+      return signedIn() && role() == 'doctor' && staffActive() && staffSecondFactor();
     }
-    function isPatient() { return signedIn() && role() == 'patient'; }
+    function isPatient() {
+      return signedIn() && role() == 'patient'
+        && get(/databases/$(database)/documents/users/$(myUid())).data.get('status', '') == 'active';
+    }
 
     // ---------------- identity ----------------
 
     match /users/{userId} {
-      allow read: if (isPatient() && myUid() == userId) || isAdmin();
+      // A patient may read their own profile even when deactivated (that's
+      // how the app learns it is deactivated); nothing else.
+      allow read: if (signedIn() && role() == 'patient' && myUid() == userId) || isAdmin();
       allow write: if false; // registerPatient, setAccountStatus
     }
 
@@ -200,13 +198,18 @@ service cloud.firestore {
       allow read: if isAdmin();
       allow write: if false; // registerRoomDevice, revokeRoomDevice
     }
+    // Recording deletions waiting for a second admin (recordings.js).
+    match /deletionRequests/{requestId} {
+      allow read: if isAdmin();
+      allow write: if false; // requestRecordingDeletion, decideDeletionRequest
+    }
     match /auditLog/{entryId} {
       allow read: if isAdmin();
       allow write: if false;
     }
     match /consents/{consentId} {
       allow read: if isAdmin()
-                  || (signedIn() && resource.data.subjectUid == myUid());
+                  || (isPatient() && resource.data.subjectUid == myUid());
       allow write: if false;
     }
 
@@ -229,7 +232,6 @@ service cloud.firestore {
       allow write: if false; // setCallRecordingEnabled
     }
 
-    // paymentRefs, rateLimits, staffSessions, mail and anything else: no
-    // client access.
+    // paymentRefs, rateLimits, mail and anything else: no client access.
   }
 }

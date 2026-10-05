@@ -10,8 +10,11 @@
 //   startRecording           doctor's browser asks to record; server decides
 //   finalizeRecording        doctor's browser has uploaded every segment
 //   getRecordingUrl          admin plays or downloads (reason required, audited)
-//   deleteRecording          admin deletes one recording (audited)
-//   deleteRecordingsBefore   admin deletes everything older than a date
+//   requestRecordingDeletion admin asks to delete one recording, or every
+//                            recording older than a date (audited)
+//   decideDeletionRequest    a DIFFERENT admin approves (the deletion runs
+//                            then) or rejects; requests expire after
+//                            DELETION_REQUEST_HOURS
 //   recoverStaleRecordings   hourly: finishes recordings a crash left open
 //
 // How a recording is made: the doctor's browser composites both video
@@ -412,87 +415,191 @@ async function deleteOne(recordingId, rec) {
   };
 }
 
-/** data: { recordingId, reason } */
-exports.deleteRecording = onCall(async (request) => {
-  const caller = await requireRole(request, ["admin"]);
-  const recordingId = docId(request.data?.recordingId, "Recording");
-  const reason = str(request.data?.reason, { field: "Reason", max: 300, min: 3 });
+/*
+ * Two-admin rule: no single admin can delete recordings. One admin files a
+ * request (deletionRequests/{id}, readable by admins), another approves it,
+ * and only then are the files deleted. A request expires unapproved after
+ * DELETION_REQUEST_HOURS. Every step is audited with both admins' IDs.
+ */
+const DELETION_REQUEST_HOURS = 72;
 
-  const snap = await recordingRef(recordingId).get();
-  if (!snap.exists) throw new HttpsError("not-found", "Recording not found.");
-  const rec = snap.data();
-  if (["recording", "finalizing"].includes(rec.status)) {
-    throw new HttpsError("failed-precondition", "This recording is still being saved.");
-  }
+function finishedOnly(docs) {
+  return docs.filter((doc) => !["recording", "finalizing"].includes(doc.data().status));
+}
 
-  const gone = await deleteOne(recordingId, rec);
-  // The entry is the certificate of deletion: IDs and hash, no content.
-  await audit(null, {
-    actorId: caller.uid,
-    actorRole: "admin",
-    action: "Deleted a call recording",
-    code: "recording.deleted",
-    category: "recording",
-    targetType: "recording",
-    targetId: recordingId,
-    patientUid: rec.patientUid,
-    reason,
-    details: gone,
-    meta: requestMeta(request),
-  });
-  return { deleted: 1 };
-});
+function olderThanQuery(before) {
+  return db
+    .collection("recordings")
+    .where("startedAt", "<", Timestamp.fromDate(before))
+    .orderBy("startedAt", "asc")
+    .limit(MAX_BULK_DELETE);
+}
 
 /**
- * data: { before: ISO date, reason, dryRun?: boolean }
- * Deletes finished recordings that started before `before`. Call with
- * dryRun first to show the admin how many will go.
+ * data: { kind: "single", recordingId, reason }
+ *     | { kind: "before", before: ISO date, reason, dryRun?: boolean }
+ * dryRun (before only) just returns how many recordings it would cover.
  */
-exports.deleteRecordingsBefore = onCall(
-  { timeoutSeconds: 540 },
-  async (request) => {
-    const caller = await requireRole(request, ["admin"]);
-    const d = request.data || {};
+exports.requestRecordingDeletion = onCall(async (request) => {
+  const caller = await requireRole(request, ["admin"]);
+  const d = request.data || {};
+  const kind = d.kind === "before" ? "before" : "single";
+  await rateLimit(caller.uid, "requestRecordingDeletion", { max: 30, windowSeconds: 3600 });
+
+  let target;
+  if (kind === "single") {
+    const recordingId = docId(d.recordingId, "Recording");
+    const snap = await recordingRef(recordingId).get();
+    if (!snap.exists) throw new HttpsError("not-found", "Recording not found.");
+    const rec = snap.data();
+    if (["recording", "finalizing"].includes(rec.status)) {
+      throw new HttpsError("failed-precondition", "This recording is still being saved.");
+    }
+    target = {
+      recordingId,
+      consultationId: rec.consultationId || null,
+      startedAt: rec.startedAt || null,
+      patientUid: rec.patientUid || null,
+    };
+  } else {
     const before = isoDateTime(d.before, "Date");
     if (before.getTime() > Date.now()) {
       throw new HttpsError("invalid-argument", "Choose a date in the past.");
     }
-    const query = db
-      .collection("recordings")
-      .where("startedAt", "<", Timestamp.fromDate(before))
-      .orderBy("startedAt", "asc")
-      .limit(MAX_BULK_DELETE);
+    const snap = await olderThanQuery(before).get();
+    const count = finishedOnly(snap.docs).length;
+    if (d.dryRun === true) return { count, capped: snap.size === MAX_BULK_DELETE };
+    if (count === 0) throw new HttpsError("failed-precondition", "No finished recordings before that date.");
+    target = { before: Timestamp.fromDate(before), count };
+  }
 
-    const snap = await query.get();
-    const finished = snap.docs.filter(
-      (doc) => !["recording", "finalizing"].includes(doc.data().status),
-    );
-
-    if (d.dryRun === true) {
-      return { count: finished.length, capped: snap.size === MAX_BULK_DELETE };
+  const reason = str(d.reason, { field: "Reason", max: 300, min: 3 });
+  const ref = db.collection("deletionRequests").doc();
+  await db.runTransaction(async (tx) => {
+    if (kind === "single") {
+      const dup = await tx.get(
+        db.collection("deletionRequests")
+          .where("status", "==", "pending")
+          .where("target.recordingId", "==", target.recordingId)
+          .limit(1),
+      );
+      if (!dup.empty) {
+        throw new HttpsError("already-exists", "A deletion request for this recording is already waiting for approval.");
+      }
     }
+    tx.set(ref, {
+      kind,
+      target,
+      reason,
+      status: "pending",
+      requestedByUid: caller.uid,
+      requestedByName: caller.profile.name || null,
+      createdAt: serverTime(),
+      expiresAt: Timestamp.fromMillis(Date.now() + DELETION_REQUEST_HOURS * 3600 * 1000),
+    });
+    audit(tx, {
+      actorId: caller.uid,
+      actorRole: "admin",
+      action: kind === "single"
+        ? "Requested deletion of a call recording (needs a second admin)"
+        : `Requested deletion of ${target.count} call recordings (needs a second admin)`,
+      code: "recording.deletion_requested",
+      category: "recording",
+      targetType: "deletion_request",
+      targetId: ref.id,
+      patientUid: target.patientUid || null,
+      reason,
+      meta: requestMeta(request),
+    });
+  });
+  return { requestId: ref.id };
+});
 
-    const reason = str(d.reason, { field: "Reason", max: 300, min: 3 });
-    const deleted = [];
-    for (const doc of finished) {
+/** data: { requestId, decision: "approve" | "reject", note? } */
+exports.decideDeletionRequest = onCall({ timeoutSeconds: 540 }, async (request) => {
+  const caller = await requireRole(request, ["admin"]);
+  const d = request.data || {};
+  const requestId = docId(d.requestId, "Request");
+  const approve = d.decision === "approve";
+  const note = str(d.note, { field: "Note", max: 300, optional: true });
+  const ref = db.collection("deletionRequests").doc(requestId);
+  const meta = requestMeta(request);
+
+  // Claim the request first, so two approvals can't both run it.
+  const req = await db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists) throw new HttpsError("not-found", "Request not found.");
+    const r = snap.data();
+    if (r.status !== "pending") throw new HttpsError("failed-precondition", "This request has already been handled.");
+    if ((r.expiresAt?.toMillis?.() ?? 0) < Date.now()) {
+      tx.update(ref, { status: "expired", decidedAt: serverTime() });
+      return { ...r, status: "expired" };
+    }
+    if (r.requestedByUid === caller.uid) {
+      throw new HttpsError(
+        "permission-denied",
+        "Another admin must approve or reject a deletion you requested.",
+      );
+    }
+    tx.update(ref, {
+      status: approve ? "approved" : "rejected",
+      decidedByUid: caller.uid,
+      decidedByName: caller.profile.name || null,
+      decisionNote: note,
+      decidedAt: serverTime(),
+    });
+    if (!approve) {
+      audit(tx, {
+        actorId: caller.uid,
+        actorRole: "admin",
+        action: "Rejected a recording deletion request",
+        code: "recording.deletion_rejected",
+        category: "recording",
+        targetType: "deletion_request",
+        targetId: requestId,
+        reason: note,
+        details: { requestedByUid: r.requestedByUid },
+        meta,
+      });
+    }
+    return r;
+  });
+  if (req.status === "expired") {
+    throw new HttpsError("failed-precondition", "This request expired. Ask for it again if it's still needed.");
+  }
+  if (!approve) return { status: "rejected" };
+
+  // Approved: delete now. The audit entries are the certificate of
+  // deletion (IDs and hashes, no content) and name both admins.
+  const deleted = [];
+  if (req.kind === "single") {
+    const snap = await recordingRef(req.target.recordingId).get();
+    if (snap.exists && !["recording", "finalizing"].includes(snap.data().status)) {
+      deleted.push(await deleteOne(snap.id, snap.data()));
+    }
+  } else {
+    const snap = await olderThanQuery(toDate(req.target.before)).get();
+    for (const doc of finishedOnly(snap.docs)) {
       try {
         deleted.push(await deleteOne(doc.id, doc.data()));
       } catch (err) {
-        logger.error("Bulk delete: one recording failed", { recordingId: doc.id, err });
+        logger.error("Approved bulk delete: one recording failed", { recordingId: doc.id, err });
       }
     }
-    await audit(null, {
-      actorId: caller.uid,
-      actorRole: "admin",
-      action: `Deleted ${deleted.length} call recordings older than ${before.toISOString().slice(0, 10)}`,
-      code: "recording.bulk_deleted",
-      category: "recording",
-      targetType: "recording",
-      targetId: `before ${before.toISOString().slice(0, 10)}`,
-      reason,
-      details: { recordings: deleted },
-      meta: requestMeta(request),
-    });
-    return { deleted: deleted.length, capped: snap.size === MAX_BULK_DELETE };
-  },
-);
+  }
+  await ref.update({ status: "done", deletedCount: deleted.length, doneAt: serverTime() });
+  await audit(null, {
+    actorId: caller.uid,
+    actorRole: "admin",
+    action: `Approved and carried out deletion of ${deleted.length} call recording${deleted.length === 1 ? "" : "s"}`,
+    code: req.kind === "single" ? "recording.deleted" : "recording.bulk_deleted",
+    category: "recording",
+    targetType: "deletion_request",
+    targetId: requestId,
+    patientUid: req.target.patientUid || null,
+    reason: req.reason,
+    details: { requestedByUid: req.requestedByUid, approvedByUid: caller.uid, recordings: deleted },
+    meta,
+  });
+  return { status: "done", deleted: deleted.length };
+});
