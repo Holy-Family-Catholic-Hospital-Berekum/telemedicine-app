@@ -174,7 +174,12 @@ export default function SignIn({ audience = "patient" }) {
           {staffStep ? (
             <StaffSecondFactor
               step={staffStep}
-              onSignedIn={({ role }) => navigate(resolveRedirect(role), { replace: true })}
+              onSignedIn={({ role }) => {
+                // Only a fully signed-in staff account (with a role) leaves
+                // this page; anything else stays on the sign-in steps.
+                if (role) navigate(resolveRedirect(role), { replace: true });
+              }}
+              onStep={(next) => setStaffStep(next)}
               onDone={(outcome) => {
                 setStaffStep(null);
                 setEnrolledNote(outcome === "enrolled");

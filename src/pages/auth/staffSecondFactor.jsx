@@ -70,7 +70,7 @@ function CancelLink({ onCancel }) {
 }
 
 /** Staff with an authenticator: enter its code. */
-function TotpCode({ step, onSignedIn, onCancel }) {
+function TotpCode({ step, onSignedIn, onStep, onCancel }) {
   const { completeTotpSignIn } = useAuth();
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
@@ -82,7 +82,10 @@ function TotpCode({ step, onSignedIn, onCancel }) {
     setError("");
     try {
       const result = await completeTotpSignIn({ resolver: step.resolver, hintUid: step.hintUid, code });
-      onSignedIn(result);
+      // First sign-in with a new authenticator: the server asks for the
+      // setup code next. The account isn't signed in until that's done.
+      if (result.step) onStep({ kind: result.step });
+      else onSignedIn(result);
     } catch (err) {
       setError(err.message || "That code didn't work.");
       setCode("");
@@ -245,13 +248,15 @@ function SetupCode({ onSignedIn, onCancel }) {
   );
 }
 
-export default function StaffSecondFactor({ step, onSignedIn, onDone }) {
+export default function StaffSecondFactor({ step, onSignedIn, onStep, onDone }) {
   const { cancelStaffSignIn } = useAuth();
   const cancel = async () => {
     await cancelStaffSignIn();
     onDone();
   };
-  if (step.kind === "totp") return <TotpCode step={step} onSignedIn={onSignedIn} onCancel={cancel} />;
+  if (step.kind === "totp") {
+    return <TotpCode step={step} onSignedIn={onSignedIn} onStep={onStep} onCancel={cancel} />;
+  }
   if (step.kind === "totp_enroll") {
     return <TotpEnroll onEnrolled={() => onDone("enrolled")} onCancel={cancel} />;
   }
