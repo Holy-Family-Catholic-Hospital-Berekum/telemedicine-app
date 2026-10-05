@@ -114,6 +114,19 @@ describe("admins need their pinned authenticator", () => {
   });
 });
 
+describe("staff read their own profile (the sign-in page needs this)", () => {
+  test("admin right after the authenticator step", async () => {
+    await assertSucceeds(get(admin(), "adminUsers/admin1"));
+  });
+  test("admin before setting up an authenticator", async () => {
+    await assertSucceeds(get(admin({ secondFactor: false }), "adminUsers/admin1"));
+  });
+  test("doctor reads their own, not another's", async () => {
+    await assertSucceeds(get(doctor({ secondFactor: false }), "adminUsers/doc1"));
+    await assertFails(get(doctor({ secondFactor: false }), "adminUsers/doc2"));
+  });
+});
+
 describe("doctors need their pinned authenticator", () => {
   test("pinned TOTP doctor reads their own consultation", async () => {
     await assertSucceeds(get(doctor(), "consultations/c1"));
