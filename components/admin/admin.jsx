@@ -11,6 +11,7 @@ import { useWeeklyMetrics } from "./hooks/useWeeklyMetrics.js";
 import { useOutcomeBreakdown } from "./hooks/useOutcomeBreakdown.js";
 
 import Sidebar from "./sidebar.jsx";
+import StaffAccountSettings from "../shared/staffAccountSettings.jsx";
 import OverviewPanel from "./overviewPanel.jsx";
 import BookingsPanel from "./bookingsPanel.jsx";
 import HistoryPanel from "./historyPanel.jsx";
@@ -27,6 +28,10 @@ import { IconBell, IconRefresh } from "./icons.jsx";
 import "./admin.css";
 
 const TAB_TITLES = {
+  account: {
+    title: "My account",
+    sub: "Your name and the email you sign in with",
+  },
   overview: {
     title: "Overview",
     sub: "Today at a glance across bookings, payments and consultations",
@@ -387,6 +392,10 @@ export default function Admin() {
           )}
 
           {tab === "control" && <ControlPanel />}
+
+          {tab === "account" && (
+            <StaffAccountSettings />
+          )}
         </div>
       </main>
     </div>

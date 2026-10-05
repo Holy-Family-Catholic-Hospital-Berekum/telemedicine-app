@@ -27,7 +27,7 @@ export default function SensitiveDetails({ details }) {
       >
         <span className="flex items-center gap-1.5">
           <Lock size={12} strokeWidth={2} />
-          Clinical details — visible only to you
+          Clinical details
         </span>
         <ChevronDown
           size={14}

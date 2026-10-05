@@ -39,6 +39,7 @@ exports.resetStaffAuthenticator = staffAuth.resetStaffAuthenticator;
 exports.registerPatient = accounts.registerPatient;
 exports.updatePatientProfile = accounts.updatePatientProfile;
 exports.syncAccountEmail = accounts.syncAccountEmail;
+exports.updateStaffProfile = accounts.updateStaffProfile;
 exports.createDoctorAccount = accounts.createDoctorAccount;
 exports.setAccountStatus = accounts.setAccountStatus;
 

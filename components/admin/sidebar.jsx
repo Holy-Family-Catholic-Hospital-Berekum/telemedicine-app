@@ -8,6 +8,7 @@ import {
   IconChart,
   IconUsers, // ASSUMPTION: swap for whatever icon your icons.jsx actually exports for this
   IconSettings, // NEW — used for the Control Panel tab, added to icons.jsx.
+  IconUserCheck,
   IconLogout,
 } from "./icons.jsx";
 
@@ -25,6 +26,8 @@ const NAV_ITEMS = [
   // NEW — site content admins can change without a code deploy: home page
   // photo, consultation prices, BrandAside slideshow, sign-in/sign-up photo.
   { key: "control", label: "Control Panel", icon: IconSettings },
+  // The signed-in admin's own name and sign-in email.
+  { key: "account", label: "My Account", icon: IconUserCheck },
 ];
 
 export default function Sidebar({

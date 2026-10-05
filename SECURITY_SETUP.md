@@ -25,7 +25,7 @@ computer signed in to the Google Cloud CLI as a project Owner
 | Rate limits | Per-account limits on every function that could be abused; forged payment webhooks are audited at most 10/hour per sender. | `lib/core.js rateLimit` |
 | Backups | Point-in-time recovery (any minute, last 7 days) + daily backup kept 7 days + database delete protection. | Firestore |
 | Tamper-proof audit copy | Every audit entry is copied to the `audit-locked` log bucket (365 days). | `mirrorAuditLog` → log sink `audit-to-locked` |
-| Security alerts | Email to the security contact on: failed/refused staff sign-in steps, authenticator resets, screenshot attempts, forged payment webhooks, recording deletion requests and deletions, missing recordings. | Cloud Monitoring policy *Telemedicine security event* |
+| Security alerts | Email to the security contact on: failed/refused staff sign-in steps, authenticator resets, staff sign-in email changes, screenshot attempts, forged payment webhooks, recording deletion requests and deletions, missing recordings. | Cloud Monitoring policy *Telemedicine security event* |
 | Least-privilege functions | Functions run as `functions-runtime@…` with only the roles listed below. | `lib/core.js` |
 | App Check | Requests carry proof they come from the real site (reCAPTCHA Enterprise). Monitoring now; enforce later (see "Still to do"). | Firestore, Storage, functions |
 | API key restriction | The public web key only works from the hospital's sites. | Google Cloud credentials |

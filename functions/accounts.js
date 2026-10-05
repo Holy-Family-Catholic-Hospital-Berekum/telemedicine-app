@@ -5,8 +5,11 @@
 //   registerPatient     patient finishes sign-up (profile, claim, consent,
 //                       adult age declaration)
 //   updatePatientProfile patient changes their name (dashboard Settings)
-//   syncAccountEmail    copies a patient's newly verified sign-in email to
-//                       their profile and open bookings
+//   updateStaffProfile  admin or doctor changes their name; doctors also
+//                       their department (kept in step with the public
+//                       directory and upcoming appointments)
+//   syncAccountEmail    copies a newly verified sign-in email to the
+//                       profile (patients: also open bookings)
 //   createDoctorAccount admin creates a doctor (Auth user, claim, profiles)
 //   setAccountStatus    admin deactivates or reactivates a patient/doctor
 //
@@ -190,14 +193,76 @@ exports.updatePatientProfile = onCall(async (request) => {
 });
 
 /**
- * No data. A patient changes their sign-in email in the browser
+ * data: { name, department? (doctors) }
+ * Updates adminUsers; for a doctor also the public directory entry
+ * (doctorProfiles name / roleTitle) and the doctor name on consultations
+ * and bookings that are still open, so patients see the current name.
+ * Closed history keeps the name it was recorded with.
+ */
+exports.updateStaffProfile = onCall(async (request) => {
+  const caller = await requireRole(request, ["admin", "doctor"]);
+  const d = request.data || {};
+  const name = str(d.name, { field: "Full name", max: 100, min: 2 });
+  const department = caller.role === "doctor"
+    ? str(d.department, { field: "Department", max: 80, min: 2 })
+    : null;
+  await rateLimit(caller.uid, "updateStaffProfile", { max: 10, windowSeconds: 86400 });
+
+  const batch = db.batch();
+  batch.update(db.collection("adminUsers").doc(caller.uid), {
+    name,
+    ...(department ? { department } : {}),
+    updatedAt: serverTime(),
+  });
+  if (caller.role === "doctor") {
+    batch.set(
+      db.collection("doctorProfiles").doc(caller.uid),
+      { name, roleTitle: department, updatedAt: serverTime() },
+      { merge: true },
+    );
+    const open = await db
+      .collection("consultations")
+      .where("doctorUid", "==", caller.uid)
+      .where("status", "in", ["scheduled", "in_progress"])
+      .limit(200)
+      .get();
+    for (const c of open.docs) {
+      batch.update(c.ref, { doctorName: name });
+      const bookingId = c.data().bookingId;
+      if (bookingId) {
+        batch.update(db.collection("bookings").doc(bookingId), {
+          doctorName: name,
+          doctorDepartment: department,
+        });
+      }
+    }
+  }
+  audit(batch, {
+    actorId: caller.uid,
+    actorRole: caller.role,
+    action: caller.role === "doctor" ? "Changed their name or department" : "Changed their name",
+    code: "staff.profile_changed",
+    category: "account",
+    targetType: "user",
+    targetId: caller.uid,
+    meta: requestMeta(request),
+  });
+  await batch.commit();
+  await admin.auth().updateUser(caller.uid, { displayName: name }).catch(() => {});
+  return { ok: true, name, department };
+});
+
+/**
+ * No data. A user changes their sign-in email in the browser
  * (verifyBeforeUpdateEmail: the change happens only once they click the
- * link sent to the new address). After that, this copies the verified
- * address from their ID token to the profile and to bookings still in
- * progress, so appointment emails go to the new address.
+ * link sent to the new address; staff also need their authenticator code).
+ * After that, this copies the verified address from their ID token to the
+ * profile, and for patients to bookings still in progress, so emails go
+ * to the new address. A staff email change is a security event (it's how
+ * an account is recovered) and raises an alert.
  */
 exports.syncAccountEmail = onCall(async (request) => {
-  const caller = await requireRole(request, ["patient"]);
+  const caller = await requireRole(request, ["patient", "admin", "doctor"]);
   const email = String(caller.token.email || "").toLowerCase();
   if (!email || caller.token.email_verified !== true) {
     throw new HttpsError("failed-precondition", "Your new email address isn't verified yet.");
@@ -207,23 +272,29 @@ exports.syncAccountEmail = onCall(async (request) => {
   }
   await rateLimit(caller.uid, "syncAccountEmail", { max: 10, windowSeconds: 86400 });
 
-  const open = await db
-    .collection("bookings")
-    .where("patientUid", "==", caller.uid)
-    .where("status", "in", ["awaiting_payment", "paid", "scheduled"])
-    .get();
   const batch = db.batch();
-  batch.update(db.collection("users").doc(caller.uid), { email, updatedAt: serverTime() });
-  open.docs.forEach((d) => batch.update(d.ref, { email }));
+  if (caller.role === "patient") {
+    const open = await db
+      .collection("bookings")
+      .where("patientUid", "==", caller.uid)
+      .where("status", "in", ["awaiting_payment", "paid", "scheduled"])
+      .get();
+    batch.update(db.collection("users").doc(caller.uid), { email, updatedAt: serverTime() });
+    open.docs.forEach((d) => batch.update(d.ref, { email }));
+  } else {
+    batch.update(db.collection("adminUsers").doc(caller.uid), { email, updatedAt: serverTime() });
+  }
+  const staff = caller.role !== "patient";
   audit(batch, {
     actorId: caller.uid,
-    actorRole: "patient",
+    actorRole: caller.role,
     action: "Changed their email address",
-    code: "account.email_changed",
-    category: "account",
+    code: staff ? "staff.email_changed" : "account.email_changed",
+    category: staff ? "security" : "account",
     targetType: "user",
     targetId: caller.uid,
-    patientUid: caller.uid,
+    patientUid: staff ? null : caller.uid,
+    details: staff ? { previousEmail: caller.profile.email || null } : null,
     meta: requestMeta(request),
   });
   await batch.commit();

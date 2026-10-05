@@ -11,12 +11,14 @@ import {
   UserRound,
   MonitorCheck,
   MonitorX,
+  Settings,
 } from "lucide-react";
 import StatTile from "./ui/statTile";
 import ConsultationCard from "./ui/consultationCard";
 import MarkDoneModal from "./ui/markDoneModal";
 import ProfileTab from "./docProfileTab";
 import LogoutButton from "./logoutButton";
+import StaffAccountSettings from "../shared/staffAccountSettings.jsx";
 // REMOVED: import { currentDoctor } from "./docMockData";
 // ASSUMPTION: this file lives at src/components/doctor/DoctorDashboard.jsx,
 // matching the "../../src/assets/logo.png" import already below — so
@@ -37,6 +39,7 @@ import { getRoomDevice } from "../../src/roomDevice";
 const TABS = [
   { id: "schedule", label: "Schedule", icon: CalendarDays },
   { id: "profile", label: "My profile", icon: UserRound },
+  { id: "account", label: "Account", icon: Settings },
 ];
 
 // Calendar day in hospital time.
@@ -385,6 +388,8 @@ export default function DoctorDashboard() {
         {activeTab === "profile" && (
           <ProfileTab doctor={doctor} onToast={showToast} />
         )}
+
+        {activeTab === "account" && <StaffAccountSettings />}
       </main>
 
       {markDoneTarget && (

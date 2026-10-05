@@ -127,6 +127,7 @@ import { CURRENT_AGE_DECLARATION } from "../consentText.js";
 const callRegisterPatient = httpsCallable(functions, "registerPatient");
 const callUpdatePatientProfile = httpsCallable(functions, "updatePatientProfile");
 const callSyncAccountEmail = httpsCallable(functions, "syncAccountEmail");
+const callUpdateStaffProfile = httpsCallable(functions, "updateStaffProfile");
 const callConfirmStaffSession = httpsCallable(functions, "confirmStaffSession");
 
 const AuthContext = createContext(null);
@@ -261,6 +262,7 @@ export function AuthProvider({ children }) {
           name: data.name || fbUser.displayName || "Staff",
           // null rather than "" so the UI can tell "not set" from empty.
           department: data.department || null,
+          email: data.email || null,
         }
       : {
           uid: fbUser.uid,
@@ -716,23 +718,56 @@ export function AuthProvider({ children }) {
     return data.name;
   }, []);
 
-  // Changing the sign-in email needs the current password (a fresh
-  // sign-in), and only happens once the patient clicks the link Firebase
-  // sends to the NEW address; the old address gets a notice with a way to
-  // undo it. Until then nothing changes.
-  const requestEmailChange = useCallback(async ({ newEmail, password }) => {
+  // Staff: name (and a doctor's department). Returns the saved values.
+  const updateStaffProfile = useCallback(async ({ name, department }) => {
+    const { data } = await callUpdateStaffProfile({
+      name: name.trim(),
+      ...(department !== undefined ? { department: department.trim() } : {}),
+    });
+    setProfile((p) =>
+      p ? { ...p, name: data.name, ...(data.department ? { department: data.department } : {}) } : p,
+    );
+    return data;
+  }, []);
+
+  // Changing the sign-in email needs a fresh sign-in: the current password,
+  // and for staff also their authenticator code. It only happens once the
+  // user clicks the link Firebase sends to the NEW address; the old
+  // address gets a notice with a way to undo it.
+  const requestEmailChange = useCallback(async ({ newEmail, password, totpCode }) => {
     const u = auth.currentUser;
     if (!u?.email) throw new Error("Please sign in again and retry.");
     try {
       await reauthenticateWithCredential(u, EmailAuthProvider.credential(u.email, password));
     } catch (err) {
       const code = err?.code || "";
-      throw new Error(
-        code === "auth/too-many-requests"
-          ? "Too many attempts. Please wait a few minutes and try again."
-          : "Your current password is incorrect.",
-        { cause: err },
-      );
+      if (code === "auth/multi-factor-auth-required") {
+        // Staff: finish the fresh sign-in with the authenticator code.
+        const resolver = getMultiFactorResolver(auth, err);
+        const hint = resolver.hints.find((h) => h.factorId === TotpMultiFactorGenerator.FACTOR_ID);
+        if (!hint || !totpCode) {
+          throw new Error("Enter the code from your authenticator app.", { cause: err });
+        }
+        try {
+          await resolver.resolveSignIn(
+            TotpMultiFactorGenerator.assertionForSignIn(hint.uid, totpCode.trim()),
+          );
+        } catch (mfaErr) {
+          throw new Error(
+            mfaErr?.code === "auth/invalid-verification-code"
+              ? "That authenticator code isn't right. Try the current one."
+              : "We couldn't confirm your authenticator code. Please try again.",
+            { cause: mfaErr },
+          );
+        }
+      } else {
+        throw new Error(
+          code === "auth/too-many-requests"
+            ? "Too many attempts. Please wait a few minutes and try again."
+            : "Your current password is incorrect.",
+          { cause: err },
+        );
+      }
     }
     try {
       await verifyBeforeUpdateEmail(u, newEmail.trim(), {
@@ -751,11 +786,11 @@ export function AuthProvider({ children }) {
     }
   }, []);
 
-  // After a confirmed email change, copy the new address to the patient's
-  // profile and open bookings (where appointment emails are sent).
+  // After a confirmed email change, copy the new address to the profile
+  // (patients: also open bookings, where appointment emails are sent).
   useEffect(() => {
     const u = firebaseUser;
-    if (!u || profile?.role !== "patient" || !u.email || !u.emailVerified) return;
+    if (!u || !profile?.role || !u.email || !u.emailVerified) return;
     if (u.email.toLowerCase() === (profile.email || "").toLowerCase()) return;
     let cancelled = false;
     callSyncAccountEmail()
@@ -781,6 +816,7 @@ export function AuthProvider({ children }) {
     resendVerificationEmail,
     refreshEmailVerified,
     updatePatientName,
+    updateStaffProfile,
     requestEmailChange,
     completeTotpSignIn,
     startTotpEnrollment,
