@@ -216,47 +216,49 @@ export default function Dashboard() {
             background: "linear-gradient(100deg, #F88535 0%, #0095D9 100%)",
           }}
         >
-          <div className="mx-auto max-w-4xl px-5 sm:px-8 h-[68px] flex items-center justify-between gap-3">
-            <div className="flex items-center gap-3 min-w-0">
+          {/* Phones: greeting first (truncates), hospital name on its own
+              smaller line, icon-only buttons with 44px tap targets. Labels
+              appear from the sm breakpoint up. */}
+          <div className="mx-auto flex h-16 max-w-4xl items-center justify-between gap-2 px-4 sm:h-[68px] sm:gap-3 sm:px-8">
+            <div className="flex min-w-0 items-center gap-2.5 sm:gap-3">
               <img
                 src={logo}
-                alt="Holy Family Catholic Hospital"
-                className="h-10 w-10 rounded-full shrink-0 ring-2 ring-white/40"
+                alt=""
+                className="h-9 w-9 shrink-0 rounded-full ring-2 ring-white/40 sm:h-10 sm:w-10"
               />
-              <span className="min-w-0 leading-tight">
-                <span className="block text-[15px] uppercase tracking-wide text-white/85 sm:hidden">
+              <div className="min-w-0 leading-tight">
+                <p className="truncate text-[17px] font-semibold">Hi, {firstName}</p>
+                <p className="truncate text-[13px] text-white/90 sm:text-[14px]">
                   Holy Family Catholic Hospital
-                </span>
-                <span className="hidden sm:block text-[16px] text-white/85">
-                  Holy Family Catholic Hospital
-                </span>
-                <span className="block text-[17px] font-semibold truncate">
-                  Hi, {firstName}
-                </span>
-              </span>
+                </p>
+              </div>
             </div>
 
-            <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+            <div className="flex shrink-0 items-center gap-1 sm:gap-2">
               <a
                 href="/"
-                className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium text-white hover:bg-white/15 transition"
+                aria-label="Home"
+                title="Home"
+                className="flex h-11 w-11 items-center justify-center gap-1.5 rounded-full text-sm font-medium text-white transition hover:bg-white/15 sm:h-auto sm:w-auto sm:px-3 sm:py-2"
               >
-                <HomeIcon size={14} strokeWidth={1.75} />
-                <span>Home</span>
+                <HomeIcon size={20} strokeWidth={1.9} className="sm:h-4 sm:w-4" />
+                <span className="hidden sm:inline">Home</span>
               </a>
               <button
                 type="button"
                 onClick={handleSignOut}
-                className="flex items-center gap-1.5 rounded-full border border-white/40 px-3 py-1.5 text-xs font-medium text-white hover:bg-white/15 transition"
+                aria-label="Sign out"
+                title="Sign out"
+                className="flex h-11 w-11 items-center justify-center gap-1.5 rounded-full text-sm font-medium text-white transition hover:bg-white/15 sm:h-auto sm:w-auto sm:border sm:border-white/50 sm:px-3 sm:py-2"
               >
-                <LogOut size={14} strokeWidth={1.75} />
-                <span>Sign out</span>
+                <LogOut size={20} strokeWidth={1.9} className="sm:h-4 sm:w-4" />
+                <span className="hidden sm:inline">Sign out</span>
               </button>
             </div>
           </div>
         </header>
 
-        <main className="mx-auto max-w-4xl px-5 sm:px-8 py-6 sm:py-8 min-h-[calc(100dvh-68px+5rem)] w-full">
+        <main className="mx-auto max-w-4xl px-5 sm:px-8 py-6 sm:py-8 min-h-[calc(100dvh-64px+5rem)] w-full">
           {/* Two big, plain tabs. */}
           <nav className="grid grid-cols-2 gap-2 rounded-xl bg-[#F1F5F8] p-1.5" aria-label="Dashboard">
             {[

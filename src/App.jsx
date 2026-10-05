@@ -14,11 +14,18 @@ import Unauthorized from "./pages/auth/unauthorized";
 import { STAFF_LOGIN_PATH } from "./staffRoute";
 
 // Larger, easier-to-read type on every page patients use (src/index.css).
+// Every patient page also gets the WhatsApp "Chat with us" button.
 function PatientPage({ children }) {
-  return <div className="patient-ui">{children}</div>;
+  return (
+    <div className="patient-ui">
+      {children}
+      <WhatsAppSupport />
+    </div>
+  );
 }
 import Privacy from "./pages/privacy";
 import Terms from "./pages/terms";
+import WhatsAppSupport from "../components/shared/whatsAppSupport";
 
 // Where signed-out staff are sent: the hidden staff sign-in page.
 const STAFF_HOME = STAFF_LOGIN_PATH || "/";
