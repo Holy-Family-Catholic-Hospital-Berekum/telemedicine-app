@@ -301,6 +301,22 @@ export default function Footer() {
               </Link>
             </nav>
           </div>
+
+          <p className="mt-4 text-center text-[14px] text-white/90 sm:text-left">
+            Developed with{" "}
+            <span role="img" aria-label="love" className="text-[#FF6B6B]">
+              ♥
+            </span>{" "}
+            by{" "}
+            <a
+              href="https://azumah-ernest.vercel.app"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-medium text-white underline underline-offset-2 transition-colors hover:text-white/80"
+            >
+              Azumah Mpopiin Ernest
+            </a>
+          </p>
         </div>
       </div>
     </footer>
