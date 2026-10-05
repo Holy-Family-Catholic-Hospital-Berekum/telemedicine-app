@@ -5,7 +5,9 @@
 
 import { useState } from "react";
 
-export function usePagination(items, pageSize = 25, resetKey = "") {
+export function usePagination(list, pageSize = 25, resetKey = "") {
+  // Tolerate a list that isn't there yet (null / undefined) as empty.
+  const items = Array.isArray(list) ? list : [];
   const [state, setState] = useState({ page: 1, key: resetKey });
   // A new resetKey (search, filter, tab) starts again from page 1.
   const page = state.key === resetKey ? state.page : 1;

@@ -258,7 +258,8 @@ export default function BookingsPanel({
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [slots, queries.slots, doctors]);
-  const pager = usePagination(filteredRows, 25, `${subtab}|${queries[subtab] ?? ""}`);
+  // On the "slots" subtab there are no booking rows (filteredRows is null).
+  const pager = usePagination(filteredRows ?? [], 25, `${subtab}|${queries[subtab] ?? ""}`);
   const slotPager = usePagination(filteredSlots, 25, queries.slots);
 
   const SEARCH_PLACEHOLDER = {
