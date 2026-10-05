@@ -1,6 +1,8 @@
 import { useMemo, useState } from "react";
 import { IconShield, IconSearch } from "./icons.jsx";
 import { TYPE_LABELS, MODE_LABELS, OUTCOME_LABELS, formatDateTime } from "../../src/constants";
+import { Pagination, LoadOlder } from "../shared/pagination.jsx";
+import { usePagination } from "../shared/usePagination.js";
 
 // Consultation history, written by markConsultationDone. It survives the
 // deletion of the booking details, so it holds no date of birth, sex,
@@ -28,7 +30,7 @@ const FILTERS = [
   { key: "in_person", label: "In person" },
 ];
 
-export default function HistoryPanel({ history }) {
+export default function HistoryPanel({ history, window: win }) {
   const [mode, setMode] = useState("all");
   const [query, setQuery] = useState("");
 
@@ -49,6 +51,7 @@ export default function HistoryPanel({ history }) {
   );
 
   const completed = rows.filter((h) => h.outcome === "completed").length;
+  const pager = usePagination(rows, 25, `${mode}|${query}`);
 
   return (
     <>
@@ -112,7 +115,7 @@ export default function HistoryPanel({ history }) {
                 </tr>
               </thead>
               <tbody>
-                {rows.map((h) => (
+                {pager.pageItems.map((h) => (
                   <tr key={h.id}>
                     <td>
                       <span className="code-chip expired">
@@ -150,8 +153,10 @@ export default function HistoryPanel({ history }) {
                 ))}
               </tbody>
             </table>
+            <Pagination {...pager} noun="sessions" />
           </div>
         )}
+        {win && <LoadOlder {...win} onLoadMore={win.loadMore} noun="sessions" />}
       </section>
     </>
   );

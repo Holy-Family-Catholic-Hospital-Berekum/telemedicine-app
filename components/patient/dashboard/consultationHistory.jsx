@@ -5,17 +5,29 @@ import {
   formatTime,
 } from "../../../src/constants";
 import RefundRequest from "./refundRequest";
+import { Pagination, LoadOlder } from "../../shared/pagination.jsx";
+import { usePagination } from "../../shared/usePagination.js";
 
 // Closed consultations. Shows only what's kept after a consultation
 // closes: doctor, date, start and end time, mode, outcome and amount paid.
-export default function ConsultationHistory({ consultations = [], refunds = {}, defaultPhone, onRefundRequested }) {
+export default function ConsultationHistory({
+  consultations = [],
+  refunds = {},
+  defaultPhone,
+  onRefundRequested,
+  canLoadMore = false,
+  loadingMore = false,
+  onLoadMore,
+}) {
+  const pager = usePagination(consultations, 10);
   if (!consultations.length) {
     return <p className="text-sm text-black/75">No past consultations yet.</p>;
   }
 
   return (
+    <div>
     <div className="space-y-2.5">
-      {consultations.map((consultation) => (
+      {pager.pageItems.map((consultation) => (
         <div
           key={consultation.id}
           className="rounded-md border border-black/10 bg-white px-4 py-3.5"
@@ -73,6 +85,16 @@ export default function ConsultationHistory({ consultations = [], refunds = {}, 
           )}
         </div>
       ))}
+    </div>
+    <Pagination {...pager} noun="consultations" size="lg" />
+    <LoadOlder
+      canLoadMore={canLoadMore}
+      loading={loadingMore}
+      onLoadMore={onLoadMore}
+      loaded={consultations.length}
+      noun="consultations"
+      size="lg"
+    />
     </div>
   );
 }

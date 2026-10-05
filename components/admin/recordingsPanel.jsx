@@ -5,7 +5,10 @@ import { db } from "../../src/firebase";
 import { useAuth } from "../../src/context/authContext.jsx";
 import { TYPE_LABELS, formatDateTime } from "../../src/constants";
 import { useFirestoreCollection } from "./hooks/useFirestoreCollection.js";
+import { useWindowedCollection } from "./hooks/useWindowedCollection.js";
 import { IconSearch, IconTrash, IconAlert } from "./icons.jsx";
+import { Pagination, LoadOlder } from "../shared/pagination.jsx";
+import { usePagination } from "../shared/usePagination.js";
 
 // Call recordings, admin only (rules deny everyone else). Nothing here can
 // read the files directly: play and download ask getRecordingUrl for a
@@ -15,7 +18,9 @@ import { IconSearch, IconTrash, IconAlert } from "./icons.jsx";
 // (recordings.js requestRecordingDeletion / decideDeletionRequest).
 // Requests expire after 72 hours. Every step is audited.
 
-const LIST_LIMIT = 300;
+const LIST_STEP = 300;
+const recordingsWindow = (n) =>
+  query(collection(db, "recordings"), orderBy("startedAt", "desc"), limit(n));
 
 const STATUS_LABEL = {
   recording: "Recording",
@@ -206,11 +211,9 @@ function PendingDeletions({ callAdmin, onMessage }) {
 }
 
 export default function RecordingsPanel({ callAdmin }) {
-  const recordingsQuery = useMemo(
-    () => query(collection(db, "recordings"), orderBy("startedAt", "desc"), limit(LIST_LIMIT)),
-    [],
-  );
-  const { data: recordings, loading, error } = useFirestoreCollection(recordingsQuery);
+  const recordingsWin = useWindowedCollection(recordingsWindow, LIST_STEP);
+  const { data: recordings, error } = recordingsWin;
+  const loading = recordingsWin.loading && recordingsWin.loaded === 0;
 
   const [search, setSearch] = useState("");
   const [from, setFrom] = useState("");
@@ -240,6 +243,7 @@ export default function RecordingsPanel({ callAdmin }) {
         .includes(q);
     });
   }, [recordings, search, from, to]);
+  const pager = usePagination(rows, 25, `${search}|${from}|${to}`);
 
   function close() {
     setAction(null);
@@ -344,7 +348,7 @@ export default function RecordingsPanel({ callAdmin }) {
             <h2>Call recordings</h2>
             <p>
               {rows.length} shown
-              {recordings.length === LIST_LIMIT ? ` (latest ${LIST_LIMIT})` : ""}
+              {recordingsWin.canLoadMore ? " (latest loaded)" : ""}
             </p>
           </div>
           <div className="admin-search">
@@ -385,7 +389,7 @@ export default function RecordingsPanel({ callAdmin }) {
                 </tr>
               </thead>
               <tbody>
-                {rows.map((r) => {
+                {pager.pageItems.map((r) => {
                   const ready = r.status === "available" || r.status === "partial";
                   const busyStatus = r.status === "recording" || r.status === "finalizing";
                   return (
@@ -443,8 +447,10 @@ export default function RecordingsPanel({ callAdmin }) {
                 })}
               </tbody>
             </table>
+            <Pagination {...pager} noun="recordings" />
           </div>
         )}
+        <LoadOlder {...recordingsWin} onLoadMore={recordingsWin.loadMore} noun="recordings" />
       </section>
 
       <section className="admin-panel">

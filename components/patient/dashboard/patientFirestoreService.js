@@ -12,6 +12,7 @@ import {
   where,
   orderBy,
   getDocs,
+  limit,
 } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
 
@@ -101,12 +102,16 @@ export async function fetchAvailableSlots() {
  * Closed consultations. Holds only doctor, times, type/mode, outcome and
  * amount: the personal details are deleted when a consultation closes.
  */
-export async function fetchConsultationHistory(patientUid) {
+export const HISTORY_STEP = 50;
+
+/** The patient's latest `max` closed consultations (newest first). */
+export async function fetchConsultationHistory(patientUid, max = HISTORY_STEP) {
   const snap = await getDocs(
     query(
       collection(db, "consultationHistory"),
       where("patientUid", "==", patientUid),
       orderBy("endedAt", "desc"),
+      limit(max),
     ),
   );
   return snap.docs.map((d) => {

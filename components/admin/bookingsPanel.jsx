@@ -10,6 +10,8 @@ import {
   IconPlus,
   IconX,
 } from "./icons.jsx";
+import { Pagination, LoadOlder } from "../shared/pagination.jsx";
+import { usePagination } from "../shared/usePagination.js";
 
 // Inline to avoid assuming icons.jsx exports these — move into icons.jsx
 // alongside the others if you'd rather keep icon imports centralized.
@@ -162,6 +164,7 @@ export default function BookingsPanel({
   bookings,
   doctors,
   slots,
+  window: win,
   onSchedule,
   onReschedule,
   onMarkDone,
@@ -255,6 +258,8 @@ export default function BookingsPanel({
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [slots, queries.slots, doctors]);
+  const pager = usePagination(filteredRows, 25, `${subtab}|${queries[subtab] ?? ""}`);
+  const slotPager = usePagination(filteredSlots, 25, queries.slots);
 
   const SEARCH_PLACEHOLDER = {
     toSchedule: "Search by patient, phone, or booking ID…",
@@ -337,7 +342,7 @@ export default function BookingsPanel({
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredSlots.map((s) => (
+                  {slotPager.pageItems.map((s) => (
                     <tr key={s.id}>
                       <td>
                         <CopyableId
@@ -378,6 +383,7 @@ export default function BookingsPanel({
                   ))}
                 </tbody>
               </table>
+              <Pagination {...slotPager} noun="slots" />
             </div>
           )
         ) : rows.length === 0 ? (
@@ -401,7 +407,7 @@ export default function BookingsPanel({
                 </tr>
               </thead>
               <tbody>
-                {filteredRows.map((b) => (
+                {pager.pageItems.map((b) => (
                   <tr key={b.bookingId}>
                     <td>
                       <div className="admin-cell-name">{b.patientName}</div>
@@ -525,7 +531,11 @@ export default function BookingsPanel({
                 ))}
               </tbody>
             </table>
+            <Pagination {...pager} noun="bookings" />
           </div>
+        )}
+        {win && subtab !== "slots" && (
+          <LoadOlder {...win} onLoadMore={win.loadMore} noun="bookings" />
         )}
       </section>
 

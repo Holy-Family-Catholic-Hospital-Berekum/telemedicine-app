@@ -9,6 +9,7 @@ import {
   CalendarDays,
   Settings as SettingsIcon,
   CalendarPlus,
+  History as HistoryIcon,
 } from "lucide-react";
 import { useAuth } from "../../../src/context/authContext.jsx";
 import HealthcarePreloader from "../../../src/components/common/healthcarePreloader.jsx";
@@ -21,6 +22,7 @@ import {
   fetchMyBookings,
   fetchAvailableSlots,
   fetchConsultationHistory,
+  HISTORY_STEP,
   fetchMyRefundRequests,
 } from "./patientFirestoreService";
 
@@ -45,6 +47,8 @@ export default function Dashboard() {
   const [bookings, setBookings] = useState(null);
   const [slots, setSlots] = useState([]);
   const [history, setHistory] = useState(null);
+  const [historyMax, setHistoryMax] = useState(HISTORY_STEP);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const [refunds, setRefunds] = useState({}); // consultationId -> request
   // { bookingId, patientSeq } for the call that's open, if any.
   const [activeCall, setActiveCall] = useState(null);
@@ -106,6 +110,18 @@ export default function Dashboard() {
     } finally {
       setConsentBusy(false);
     }
+  }
+
+  function loadOlderHistory() {
+    const next = historyMax + HISTORY_STEP;
+    setHistoryLoading(true);
+    fetchConsultationHistory(user.uid, next)
+      .then((data) => {
+        setHistory(data ?? []);
+        setHistoryMax(next);
+      })
+      .catch(() => {})
+      .finally(() => setHistoryLoading(false));
   }
 
   function reloadRefunds() {
@@ -259,25 +275,27 @@ export default function Dashboard() {
         </header>
 
         <main className="mx-auto max-w-4xl px-5 sm:px-8 py-6 sm:py-8 min-h-[calc(100dvh-64px+5rem)] w-full">
-          {/* Two big, plain tabs. */}
-          <nav className="grid grid-cols-2 gap-2 rounded-xl bg-[#F1F5F8] p-1.5" aria-label="Dashboard">
+          {/* Three big, plain tabs (short labels on phones). */}
+          <nav className="grid grid-cols-3 gap-1.5 rounded-xl bg-[#F1F5F8] p-1.5 sm:gap-2" aria-label="Dashboard">
             {[
-              { id: "appointments", label: "My appointments", icon: CalendarDays },
-              { id: "settings", label: "Settings", icon: SettingsIcon },
+              { id: "appointments", label: "My appointments", short: "Appointments", icon: CalendarDays },
+              { id: "history", label: "Past consultations", short: "History", icon: HistoryIcon },
+              { id: "settings", label: "Settings", short: "Settings", icon: SettingsIcon },
             ].map((t) => (
               <button
                 key={t.id}
                 type="button"
                 onClick={() => setTab(t.id)}
                 aria-current={tab === t.id ? "page" : undefined}
-                className={`flex items-center justify-center gap-2 rounded-lg px-3 py-3 text-base font-semibold transition ${
+                className={`flex min-w-0 flex-col items-center justify-center gap-1 rounded-lg px-1.5 py-2.5 text-[15px] font-semibold transition sm:flex-row sm:gap-2 sm:px-3 sm:py-3 sm:text-base ${
                   tab === t.id
                     ? "bg-white text-[#12242C] shadow-sm"
                     : "text-[#3E4E56] hover:text-[#12242C]"
                 }`}
               >
-                <t.icon size={18} strokeWidth={2} />
-                {t.label}
+                <t.icon size={18} strokeWidth={2} className="shrink-0" />
+                <span className="truncate sm:hidden">{t.short}</span>
+                <span className="hidden truncate sm:inline">{t.label}</span>
               </button>
             ))}
           </nav>
@@ -286,6 +304,30 @@ export default function Dashboard() {
             <div className="mt-8">
               <PatientSettings />
             </div>
+          ) : tab === "history" ? (
+            <section className="mt-8">
+              <h2 className="text-xl font-semibold">Past consultations</h2>
+              <p className="mt-1 text-base text-black/70">
+                Closed consultations: doctor, times and amount paid. The
+                personal details you gave when booking are deleted once a
+                consultation closes.
+              </p>
+              <div className="mt-4">
+                {history === null ? (
+                  <p className="text-base text-black/70">Loading…</p>
+                ) : (
+                  <ConsultationHistory
+                    consultations={history}
+                    refunds={refunds}
+                    defaultPhone={profile?.phone}
+                    onRefundRequested={reloadRefunds}
+                    canLoadMore={history.length >= historyMax}
+                    loadingMore={historyLoading}
+                    onLoadMore={loadOlderHistory}
+                  />
+                )}
+              </div>
+            </section>
           ) : (
             <div className="mt-8 space-y-10">
               {liveBookings.length > 0 && (
@@ -382,26 +424,6 @@ export default function Dashboard() {
                 </section>
               )}
 
-              <section>
-                <h2 className="text-xl font-semibold">Past consultations</h2>
-                <p className="mt-1 text-base text-black/70">
-                  Closed consultations: doctor, times and amount paid. The
-                  personal details you gave when booking are deleted once a
-                  consultation closes.
-                </p>
-                <div className="mt-4">
-                  {history === null ? (
-                    <p className="text-base text-black/70">Loading…</p>
-                  ) : (
-                    <ConsultationHistory
-                      consultations={history}
-                      refunds={refunds}
-                      defaultPhone={profile?.phone}
-                      onRefundRequested={reloadRefunds}
-                    />
-                  )}
-                </div>
-              </section>
             </div>
           )}
         </main>

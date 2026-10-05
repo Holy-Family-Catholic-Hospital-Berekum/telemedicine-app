@@ -7,6 +7,7 @@ import { db, functions, auth } from "../../src/firebase";
 import { useAuth } from "../../src/context/authContext.jsx";
 import { callableMessage } from "../../src/constants";
 import { useFirestoreCollection } from "./hooks/useFirestoreCollection.js";
+import { useWindowedCollection } from "./hooks/useWindowedCollection.js";
 import { useWeeklyMetrics } from "./hooks/useWeeklyMetrics.js";
 import { useOutcomeBreakdown } from "./hooks/useOutcomeBreakdown.js";
 
@@ -70,8 +71,22 @@ const TAB_TITLES = {
   },
 };
 
-const RECENT_LOG_LIMIT = 200;
-const HISTORY_LIMIT = 500;
+// Collections that grow without limit are loaded as a window of the most
+// recent records (useWindowedCollection), which the admin can extend with
+// "Load older". Panels paginate whatever is loaded.
+const WINDOW = 500;
+const bookingsWindow = (n) =>
+  query(
+    collection(db, "bookings"),
+    // Paid and scheduled bookings only: unpaid drafts never reach admin.
+    where("status", "in", ["paid", "scheduled"]),
+    orderBy("createdAt", "desc"),
+    limit(n),
+  );
+const patientsWindow = (n) => query(collection(db, "users"), orderBy("createdAt", "desc"), limit(n));
+const historyWindow = (n) =>
+  query(collection(db, "consultationHistory"), orderBy("endedAt", "desc"), limit(n));
+const auditWindow = (n) => query(collection(db, "auditLog"), orderBy("timestamp", "desc"), limit(n));
 
 export default function Admin() {
   const [tab, setTab] = useState("overview");
@@ -87,38 +102,11 @@ export default function Admin() {
     [user, profile],
   );
 
-  // Paid and scheduled bookings only: unpaid drafts never reach admin.
-  const bookingsQuery = useMemo(
-    () =>
-      query(
-        collection(db, "bookings"),
-        where("status", "in", ["paid", "scheduled"]),
-        orderBy("createdAt", "desc"),
-      ),
-    [],
-  );
-  const usersQuery = useMemo(
-    () => query(collection(db, "users"), orderBy("createdAt", "desc")),
-    [],
-  );
   const staffQuery = useMemo(
     () => query(collection(db, "adminUsers"), orderBy("createdAt", "desc")),
     [],
   );
   const profilesQuery = useMemo(() => query(collection(db, "doctorProfiles")), []);
-  const paymentsQuery = useMemo(
-    () => query(collection(db, "confirmedPayments"), orderBy("paidAt", "desc")),
-    [],
-  );
-  const historyQuery = useMemo(
-    () =>
-      query(
-        collection(db, "consultationHistory"),
-        orderBy("endedAt", "desc"),
-        limit(HISTORY_LIMIT),
-      ),
-    [],
-  );
   const slotsQuery = useMemo(
     () =>
       query(
@@ -134,33 +122,24 @@ export default function Admin() {
     () => query(collection(db, "availableSlots"), where("date", "==", todayDate)),
     [todayDate],
   );
-  const auditQuery = useMemo(
-    () =>
-      query(
-        collection(db, "auditLog"),
-        orderBy("timestamp", "desc"),
-        limit(RECENT_LOG_LIMIT),
-      ),
-    [],
-  );
-
-  const {
-    data: bookingDocs,
-    loading: bookingsLoading,
-    error: bookingsError,
-  } = useFirestoreCollection(bookingsQuery);
+  const bookingsWin = useWindowedCollection(bookingsWindow, WINDOW);
+  const { data: bookingDocs, error: bookingsError } = bookingsWin;
+  // "Loading" only before the first rows arrive, not while loading older ones.
+  const bookingsLoading = bookingsWin.loading && bookingsWin.loaded === 0;
   const bookings = useMemo(
     () => bookingDocs.map((b) => ({ ...b, bookingId: b.id })),
     [bookingDocs],
   );
-  const { data: patientUsers } = useFirestoreCollection(usersQuery);
+  const patientsWin = useWindowedCollection(patientsWindow, WINDOW);
+  const patientUsers = patientsWin.data;
   const { data: staffUsers } = useFirestoreCollection(staffQuery);
   const { data: doctorProfiles } = useFirestoreCollection(profilesQuery);
-  const { data: payments } = useFirestoreCollection(paymentsQuery);
-  const { data: history } = useFirestoreCollection(historyQuery);
+  const historyWin = useWindowedCollection(historyWindow, WINDOW);
+  const history = historyWin.data;
   const { data: slots } = useFirestoreCollection(slotsQuery);
   const { data: todaySlots } = useFirestoreCollection(todaySlotsQuery);
-  const { data: audit } = useFirestoreCollection(auditQuery);
+  const auditWin = useWindowedCollection(auditWindow, WINDOW);
+  const audit = auditWin.data;
 
   const users = useMemo(
     () => [
@@ -351,6 +330,7 @@ export default function Admin() {
               doctors={doctors}
               slots={slots}
               loading={bookingsLoading}
+              window={bookingsWin}
               onSchedule={handleSchedule}
               onReschedule={handleReschedule}
               onMarkDone={handleMarkDone}
@@ -359,11 +339,12 @@ export default function Admin() {
             />
           )}
 
-          {tab === "history" && <HistoryPanel history={history} />}
+          {tab === "history" && <HistoryPanel history={history} window={historyWin} />}
 
           {tab === "users" && (
             <Users
               users={users}
+              patientsWindow={patientsWin}
               currentAdminId={currentAdmin.uid}
               onCreateDoctor={handleCreateDoctor}
               onDoctorAuthenticator={handleDoctorAuthenticator}
@@ -378,11 +359,11 @@ export default function Admin() {
             <>
               <RefundRequestsPanel callAdmin={callAdmin} />
               <PaymentIssuesPanel callAdmin={callAdmin} />
-              <RevenuePanel payments={payments} />
+              <RevenuePanel />
             </>
           )}
 
-          {tab === "audit" && <AuditPanel entries={audit} />}
+          {tab === "audit" && <AuditPanel entries={audit} window={auditWin} />}
 
           {tab === "metrics" && (
             <MetricsPanel

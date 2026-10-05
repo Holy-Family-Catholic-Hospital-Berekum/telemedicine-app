@@ -34,6 +34,8 @@ import {
   isValidName,
 } from "../../src/utils/validators.js";
 import { callableMessage } from "../../src/constants";
+import { Pagination, LoadOlder } from "../shared/pagination.jsx";
+import { usePagination } from "../shared/usePagination.js";
 
 const ROLE_LABELS = {
   patient: "Patient",
@@ -315,6 +317,7 @@ function SetupCodeDialog({ shown, onClose }) {
 
 export default function Users({
   users,
+  patientsWindow,
   currentAdminId,
   onCreateDoctor,
   onDoctorAuthenticator,
@@ -364,6 +367,8 @@ export default function Users({
       return haystack.includes(q);
     });
   }, [rows, query]);
+
+  const pager = usePagination(filteredRows, 25, `${subtab}|${query}`);
 
   const SEARCH_PLACEHOLDER = {
     all: "Search by name, email, or phone…",
@@ -446,7 +451,7 @@ export default function Users({
                 </tr>
               </thead>
               <tbody>
-                {filteredRows.map((u) => (
+                {pager.pageItems.map((u) => (
                   <tr key={u.id}>
                     <td className="admin-cell-name">
                       {u.name}
@@ -504,7 +509,11 @@ export default function Users({
                 ))}
               </tbody>
             </table>
+            <Pagination {...pager} noun="accounts" />
           </div>
+        )}
+        {patientsWindow && (subtab === "all" || subtab === "patients") && (
+          <LoadOlder {...patientsWindow} onLoadMore={patientsWindow.loadMore} noun="patients" />
         )}
       </section>
 

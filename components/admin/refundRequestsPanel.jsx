@@ -4,6 +4,8 @@ import { collection, orderBy, query, where } from "firebase/firestore";
 import { db } from "../../src/firebase";
 import { TYPE_LABELS, MODE_LABELS, OUTCOME_LABELS, formatDateTime } from "../../src/constants";
 import { useFirestoreCollection } from "./hooks/useFirestoreCollection.js";
+import { Pagination } from "../shared/pagination.jsx";
+import { usePagination } from "../shared/usePagination.js";
 
 // Refund requests from patients (only possible after the appointment day).
 // Each row carries what's needed to refund by hand: the patient, how to
@@ -25,6 +27,7 @@ export default function RefundRequestsPanel({ callAdmin }) {
     [],
   );
   const { data: requests, error } = useFirestoreCollection(requestsQuery);
+  const pager = usePagination(requests, 25);
   const [active, setActive] = useState(null); // { request, decision }
   const [note, setNote] = useState("");
   const [amount, setAmount] = useState("");
@@ -82,7 +85,7 @@ export default function RefundRequestsPanel({ callAdmin }) {
                 </tr>
               </thead>
               <tbody>
-                {requests.map((r) => (
+                {pager.pageItems.map((r) => (
                   <tr key={r.id}>
                     <td>
                       <div className="admin-cell-name">{r.patientName || "—"}</div>
@@ -129,6 +132,7 @@ export default function RefundRequestsPanel({ callAdmin }) {
                 ))}
               </tbody>
             </table>
+            <Pagination {...pager} noun="requests" />
           </div>
         )}
       </section>

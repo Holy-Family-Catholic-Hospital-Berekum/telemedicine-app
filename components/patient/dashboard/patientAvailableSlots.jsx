@@ -1,6 +1,8 @@
 import { Link } from "react-router-dom";
 import { CalendarPlus } from "lucide-react";
 import { TYPE_LABELS, MODE_LABELS, formatDateTime } from "../../../src/constants";
+import { Pagination } from "../../shared/pagination.jsx";
+import { usePagination } from "../../shared/usePagination.js";
 
 /**
  * AvailableSlots
@@ -23,6 +25,7 @@ import { TYPE_LABELS, MODE_LABELS, formatDateTime } from "../../../src/constants
  * into a booking instead of creating a fresh, unrelated one.
  */
 export default function AvailableSlots({ slots }) {
+  const pager = usePagination(slots ?? [], 5);
   if (!slots?.length) return null;
 
   return (
@@ -31,7 +34,7 @@ export default function AvailableSlots({ slots }) {
         Open slots you can book directly
       </h3>
       <div className="mt-2 space-y-2">
-        {slots.map((slot) => {
+        {pager.pageItems.map((slot) => {
           const params = new URLSearchParams({
             slotId: slot.slotId,
             type: slot.type,
@@ -63,6 +66,7 @@ export default function AvailableSlots({ slots }) {
           );
         })}
       </div>
+      <Pagination {...pager} noun="open times" size="lg" />
     </div>
   );
 }

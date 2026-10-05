@@ -1,9 +1,11 @@
 import { useState } from "react";
 import { IconSearch, IconShield } from "./icons.jsx";
+import { Pagination, LoadOlder } from "../shared/pagination.jsx";
+import { usePagination } from "../shared/usePagination.js";
 
 // auditLog collection (section 5). Records that an action happened and who
 // did it — never the patient details from that session.
-export default function AuditPanel({ entries }) {
+export default function AuditPanel({ entries, window: win }) {
   const [query, setQuery] = useState("");
 
   const rows = entries.filter((e) => {
@@ -14,6 +16,7 @@ export default function AuditPanel({ entries }) {
       .toLowerCase()
       .includes(q);
   });
+  const pager = usePagination(rows, 25, query);
 
   return (
     <>
@@ -57,7 +60,7 @@ export default function AuditPanel({ entries }) {
                 </tr>
               </thead>
               <tbody>
-                {rows.map((e) => (
+                {pager.pageItems.map((e) => (
                   <tr key={e.id}>
                     <td>
                       <div className="admin-cell-name">{e.actorId}</div>
@@ -82,8 +85,10 @@ export default function AuditPanel({ entries }) {
                 ))}
               </tbody>
             </table>
+            <Pagination {...pager} noun="entries" />
           </div>
         )}
+        {win && <LoadOlder {...win} onLoadMore={win.loadMore} noun="entries" />}
       </section>
     </>
   );

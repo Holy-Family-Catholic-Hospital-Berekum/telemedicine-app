@@ -5,6 +5,8 @@ import { db } from "../../src/firebase";
 import { formatDateTime } from "../../src/constants";
 import { useFirestoreCollection } from "./hooks/useFirestoreCollection.js";
 import { IconAlert } from "./icons.jsx";
+import { Pagination } from "../shared/pagination.jsx";
+import { usePagination } from "../shared/usePagination.js";
 
 // Payments Paystack took that couldn't be applied to a booking: a second
 // successful attempt on an already-paid booking, a payment that arrived
@@ -29,6 +31,7 @@ export default function PaymentIssuesPanel({ callAdmin }) {
     [],
   );
   const { data: issues, error } = useFirestoreCollection(issuesQuery);
+  const pager = usePagination(issues, 25);
   const [resolving, setResolving] = useState(null);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
@@ -72,7 +75,7 @@ export default function PaymentIssuesPanel({ callAdmin }) {
               </tr>
             </thead>
             <tbody>
-              {issues.map((i) => (
+              {pager.pageItems.map((i) => (
                 <tr key={i.id}>
                   <td className="admin-cell-sub">{formatDateTime(i.createdAt)}</td>
                   <td>
@@ -93,6 +96,7 @@ export default function PaymentIssuesPanel({ callAdmin }) {
               ))}
             </tbody>
           </table>
+          <Pagination {...pager} noun="payments" />
         </div>
       </section>
 

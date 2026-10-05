@@ -1,4 +1,16 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import {
+  Timestamp,
+  collection,
+  count,
+  getAggregateFromServer,
+  orderBy,
+  query,
+  sum,
+  where,
+} from "firebase/firestore";
+import { db } from "../../src/firebase";
+import { useFirestoreCollection } from "./hooks/useFirestoreCollection.js";
 import { IconInfo } from "./icons.jsx"; // ASSUMPTION: swap for whatever icons.jsx exports for an informational (non-warning) banner — see note below
 
 // Revenue is a reporting view now, not a fraud-reconciliation tool.
@@ -24,9 +36,12 @@ import { IconInfo } from "./icons.jsx"; // ASSUMPTION: swap for whatever icons.j
 //   `channel` (card / mobile_money / etc.) is optional — the by-type
 //   breakdown below still works if it's absent, but drop the "Channel"
 //   column if you don't have it.
-// - Field is `paidAt`, matching admin.jsx's
-//   `orderBy("paidAt", "desc")` on this collection — was `confirmedAt`
-//   before, which no longer matches admin.jsx's query.
+// - Field is `paidAt`.
+//
+// SCALE: this panel never downloads every payment ever made. A period
+// (7 / 30 / 90 days) loads only that period's payments; "All time" asks
+// Firestore for the totals (sum and count, overall and per type) without
+// downloading the payments themselves, so it costs the same at any size.
 
 const ghs = (n) =>
   `GHS ${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -34,32 +49,71 @@ const ghs = (n) =>
 const RANGES = [
   { key: "7", label: "Last 7 days" },
   { key: "30", label: "Last 30 days" },
+  { key: "90", label: "Last 90 days" },
   { key: "all", label: "All time" },
 ];
+const TYPES = ["OPD", "SURGICAL"];
 
-export default function RevenuePanel({ payments }) {
+/** All-time totals computed by Firestore (no documents downloaded). */
+function useAllTimeTotals(enabled) {
+  const [totals, setTotals] = useState(null);
+  useEffect(() => {
+    if (!enabled) return undefined;
+    let active = true;
+    const col = collection(db, "confirmedPayments");
+    const agg = (q) => getAggregateFromServer(q, { amount: sum("amount"), count: count() });
+    Promise.all([agg(col), ...TYPES.map((t) => agg(query(col, where("type", "==", t))))])
+      .then(([all, ...perType]) => {
+        if (!active) return;
+        setTotals({
+          total: all.data().amount || 0,
+          count: all.data().count || 0,
+          byType: TYPES.map((t, i) => [t, { amount: perType[i].data().amount || 0, count: perType[i].data().count || 0 }])
+            .filter(([, v]) => v.count > 0),
+        });
+      })
+      .catch(() => active && setTotals({ error: true }));
+    return () => {
+      active = false;
+    };
+  }, [enabled]);
+  return totals;
+}
+
+export default function RevenuePanel() {
   const [range, setRange] = useState("7");
   const [settlementTotal, setSettlementTotal] = useState("");
   // When the tab was opened: the "last N days" window is relative to it.
   const [openedAt] = useState(() => Date.now());
+  const allTime = range === "all";
 
-  const rows = useMemo(() => {
-    if (range === "all") return payments;
-    const days = parseInt(range, 10);
-    const cutoff = openedAt - days * 86400000;
-    return payments.filter((p) => new Date(p.paidAt).getTime() >= cutoff);
-  }, [payments, range, openedAt]);
+  // A period: only that period's payments are loaded.
+  const periodQuery = useMemo(
+    () =>
+      allTime
+        ? null
+        : query(
+          collection(db, "confirmedPayments"),
+          where("paidAt", ">=", Timestamp.fromMillis(openedAt - parseInt(range, 10) * 86400000)),
+          orderBy("paidAt", "desc"),
+        ),
+    [allTime, range, openedAt],
+  );
+  const { data: rows } = useFirestoreCollection(periodQuery);
+  const totals = useAllTimeTotals(allTime);
 
-  const total = rows.reduce((s, p) => s + p.amount, 0);
+  const total = allTime ? (totals?.total ?? 0) : rows.reduce((s, p) => s + p.amount, 0);
+  const paymentCount = allTime ? (totals?.count ?? 0) : rows.length;
 
   const byType = useMemo(() => {
+    if (allTime) return totals?.byType ?? [];
     const m = new Map();
     rows.forEach((p) => {
       const cur = m.get(p.type) ?? { count: 0, amount: 0 };
       m.set(p.type, { count: cur.count + 1, amount: cur.amount + p.amount });
     });
     return [...m.entries()];
-  }, [rows]);
+  }, [rows, allTime, totals]);
 
   const byChannel = useMemo(() => {
     const m = new Map();
@@ -108,13 +162,18 @@ export default function RevenuePanel({ payments }) {
           </div>
         </div>
 
+        {allTime && totals?.error && (
+          <div className="admin-empty" role="alert">
+            Couldn't load the all-time totals. Refresh the page or pick a period.
+          </div>
+        )}
         <div className="summary-grid">
           <div>
             <span className="summary-value">{ghs(total)}</span>
             <span className="summary-label">Total confirmed</span>
           </div>
           <div>
-            <span className="summary-value">{rows.length}</span>
+            <span className="summary-value">{paymentCount}</span>
             <span className="summary-label">Payments</span>
           </div>
           {byType.map(([type, v]) => (
@@ -136,7 +195,11 @@ export default function RevenuePanel({ payments }) {
               <p>Card, mobile money, etc. — over the selected period</p>
             </div>
           </div>
-          {byChannel.length === 0 ? (
+          {allTime ? (
+            <div className="admin-empty">
+              Choose a period to see the breakdown by channel.
+            </div>
+          ) : byChannel.length === 0 ? (
             <div className="admin-empty">
               No payments were confirmed in this period.
             </div>

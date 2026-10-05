@@ -19,6 +19,8 @@ import MarkDoneModal from "./ui/markDoneModal";
 import ProfileTab from "./docProfileTab";
 import LogoutButton from "./logoutButton";
 import StaffAccountSettings from "../shared/staffAccountSettings.jsx";
+import { Pagination } from "../shared/pagination.jsx";
+import { usePagination } from "../shared/usePagination.js";
 // REMOVED: import { currentDoctor } from "./docMockData";
 // ASSUMPTION: this file lives at src/components/doctor/DoctorDashboard.jsx,
 // matching the "../../src/assets/logo.png" import already below — so
@@ -117,6 +119,9 @@ export default function DoctorDashboard() {
       upcomingList: sorted.filter((c) => !isSameDay(c.scheduledTime, today)),
     };
   }, [consultations, today]);
+
+  const todayPager = usePagination(todayList, 10);
+  const upcomingPager = usePagination(upcomingList, 10);
 
   const liveCallCount = consultations.filter(
     (c) => c.mode === "online" && c.status === "in_progress",
@@ -349,7 +354,7 @@ export default function DoctorDashboard() {
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {todayList.map((c) => (
+                  {todayPager.pageItems.map((c) => (
                     <ConsultationCard
                       key={c.consultationId}
                       consultation={c}
@@ -359,6 +364,7 @@ export default function DoctorDashboard() {
                       onMarkDone={setMarkDoneTarget}
                     />
                   ))}
+                  <Pagination {...todayPager} noun="consultations" />
                 </div>
               )}
             </section>
@@ -369,7 +375,7 @@ export default function DoctorDashboard() {
                   Upcoming
                 </h2>
                 <div className="space-y-3">
-                  {upcomingList.map((c) => (
+                  {upcomingPager.pageItems.map((c) => (
                     <ConsultationCard
                       key={c.consultationId}
                       consultation={c}
@@ -379,6 +385,7 @@ export default function DoctorDashboard() {
                       onMarkDone={setMarkDoneTarget}
                     />
                   ))}
+                  <Pagination {...upcomingPager} noun="consultations" />
                 </div>
               </section>
             )}
