@@ -12,6 +12,10 @@
 //                         is 0
 //   getNoShowFeeStatus    the page asks whether the fee payment went through
 //
+// A reschedule asked for after the start time goes the same way
+// (scheduling.js requestReschedule -> markNoShow byPatient ->
+// beginNoShowReschedule).
+//
 // Fee payments reuse the booking payment safeguards: a fresh reference per
 // attempt (HFH-xxxxxx-<bookingId>, recorded in paymentRefs with purpose
 // "noshow_fee"), confirmed only by Paystack's verify endpoint (pull here,
@@ -232,7 +236,14 @@ exports.startNoShowReschedule = onCall({ secrets: [PAYSTACK_SECRET_KEY] }, async
   const preferredTime = str(d.preferredTime, { field: "Preferred time", max: 80, optional: true });
   const reason = str(d.reason, { field: "Reason", max: 300, optional: true });
   await rateLimit(caller.uid, "startNoShowReschedule", { max: 20, windowSeconds: 3600 });
+  return beginNoShowReschedule({ caller, bookingId, preferredTime, reason, meta: requestMeta(request) });
+});
 
+/**
+ * Shared by startNoShowReschedule and a late requestReschedule
+ * (scheduling.js). The caller is the booking's verified patient.
+ */
+async function beginNoShowReschedule({ caller, bookingId, preferredTime = null, reason = null, meta = null }) {
   const bookingRef = db.collection("bookings").doc(bookingId);
   const snap = await bookingRef.get();
   const booking = snap.exists ? snap.data() : null;
@@ -268,7 +279,7 @@ exports.startNoShowReschedule = onCall({ secrets: [PAYSTACK_SECRET_KEY] }, async
         targetType: "consultation",
         targetId: booking.consultationId,
         patientUid: caller.uid,
-        meta: requestMeta(request),
+        meta: meta,
       });
     });
     return { status: "requested" };
@@ -307,7 +318,7 @@ exports.startNoShowReschedule = onCall({ secrets: [PAYSTACK_SECRET_KEY] }, async
       phone: booking.phone || "",
     },
   };
-});
+}
 
 /** data: { bookingId } -> { status: "confirmed" | "pending" | "failed" } */
 exports.getNoShowFeeStatus = onCall({ secrets: [PAYSTACK_SECRET_KEY] }, async (request) => {
@@ -326,3 +337,4 @@ exports.getNoShowFeeStatus = onCall({ secrets: [PAYSTACK_SECRET_KEY] }, async (r
 });
 
 exports.markNoShowFeePaid = markNoShowFeePaid;
+exports.beginNoShowReschedule = beginNoShowReschedule;

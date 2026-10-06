@@ -416,7 +416,11 @@ export default function Dashboard() {
                             refund={refunds[booking.consultationId]}
                             defaultPhone={profile?.phone}
                             onRefundRequested={reloadRefunds}
-                            onRescheduled={() => {}}
+                            onRescheduled={(bookingId, result) => {
+                              // A late reschedule turns the booking into a
+                              // missed one (fee); show its new state.
+                              if (!result || result.status === "pay") reloadBookings();
+                            }}
                             onJoined={handleJoined}
                             onRejoinCall={handleRejoinCall}
                             onPaymentConfirmed={reloadBookings}

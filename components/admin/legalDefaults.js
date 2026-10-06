@@ -175,6 +175,7 @@ If you are not happy with how we handle your information, you can complain to Gh
         id: "refunds",
         title: "Cancellations and refunds",
         body: `- If you cannot attend a scheduled appointment, reschedule it from your dashboard before it starts, at no extra cost. This is the quickest way to still see a doctor.
+- Once the appointment time has started, asking to reschedule (without having joined) counts as a missed appointment, and the no-show fee below applies. This does not apply if your doctor has not joined an online consultation within the waiting time.
 - If your consultation is marked as missed (a no-show), you can, within 14 days: book a new time by paying an extra no-show fee, or ask for a refund of what you paid minus a share the hospital keeps for the missed appointment. The fee and the share kept are set by the hospital; the amounts that apply to you are fixed when the consultation is marked as missed and are shown on your dashboard and in the email we send you. If you do neither within 14 days, the booking is closed without a refund.
 - You can only ask for a refund for a scheduled appointment that you did not attend. For an online consultation, that means you never joined the video call. Once you have joined a consultation, it cannot be refunded. If a consultation was not marked as missed and was not held, you can ask for a refund from your dashboard once the day of your appointment has passed.
 - Each consultation can be either rescheduled or refunded, not both.

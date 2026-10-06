@@ -17,6 +17,13 @@
 // from when the doctor joined if that was later. Online, it only applies
 // once the doctor has joined (if the doctor never came, it isn't the
 // patient's no-show). Nobody can mark a no-show before the deadline.
+//
+// Late reschedules (rescheduleCountsAsNoShow): from the start time on, a
+// patient who hasn't joined and asks for a new time is treated as a no-show
+// straight away (markNoShow byPatient), so the no-show fee applies. Not if
+// the doctor is to blame: an online call whose doctor hasn't joined, or
+// joined, only after the waiting time. A reschedule asked for BEFORE the
+// start protects the consultation from being marked a no-show.
 
 const logger = require("firebase-functions/logger");
 const {
@@ -47,13 +54,27 @@ function noShowDeadline(c, waitMinutes) {
   return base + waitMinutes * 60 * 1000;
 }
 
+/** True if a reschedule asked for now counts as a no-show (fee applies). */
+function rescheduleCountsAsNoShow(c, waitMinutes, now = Date.now()) {
+  const start = toDate(c.scheduledTime)?.getTime();
+  if (!start || now < start || c.patientFirstJoinedAt) return false;
+  if (c.mode === "online") {
+    const graceEnd = start + waitMinutes * 60 * 1000;
+    const doctorIn = toDate(c.doctorFirstJoinedAt)?.getTime();
+    if (doctorIn ? doctorIn > graceEnd : now >= graceEnd) return false; // doctor late
+  }
+  return true;
+}
+
 /**
  * actor: { uid, role } ("system" for the automatic job)
+ * byPatient: the patient asked for a new time after the start
+ * (rescheduleCountsAsNoShow); no waiting-time deadline applies.
  * expectDoctorUid: when a doctor acts, the consultation must be theirs.
  * Throws HttpsError if it can't be marked yet. Resolves true if marked,
  * false if it already was.
  */
-async function markNoShow({ consultationId, actor, meta = null, expectDoctorUid = null }) {
+async function markNoShow({ consultationId, actor, meta = null, expectDoctorUid = null, byPatient = false }) {
   const policy = await loadNoShowPolicy();
   const consultationRef = db.collection("consultations").doc(consultationId);
 
@@ -71,24 +92,38 @@ async function markNoShow({ consultationId, actor, meta = null, expectDoctorUid 
     if (c.patientFirstJoinedAt) {
       throw new HttpsError("failed-precondition", "The patient joined this consultation, so it isn't a no-show.");
     }
-    const deadline = noShowDeadline(c, policy.waitMinutes);
-    if (deadline === null) {
-      throw new HttpsError(
-        "failed-precondition",
-        "A no-show can only be marked after the doctor has joined the call and waited for the patient.",
-      );
-    }
-    if (Date.now() < deadline) {
-      const mins = Math.ceil((deadline - Date.now()) / 60000);
-      throw new HttpsError(
-        "failed-precondition",
-        `The patient still has ${mins} minute${mins === 1 ? "" : "s"} to join. A no-show can be marked after that.`,
-      );
-    }
-
     const bookingRef = db.collection("bookings").doc(c.bookingId);
     const bookingSnap = await tx.get(bookingRef);
     const booking = bookingSnap.exists ? bookingSnap.data() : null;
+
+    if (byPatient) {
+      if (!rescheduleCountsAsNoShow(c, policy.waitMinutes)) {
+        throw new HttpsError("failed-precondition", "This consultation can be rescheduled without a fee.");
+      }
+    } else {
+      // The patient asked for a new time before the start: not a no-show.
+      if (booking?.rescheduleRequest?.status === "requested") {
+        if (actor.role === "system") return null;
+        throw new HttpsError(
+          "failed-precondition",
+          "The patient asked to reschedule this consultation before it started, so it isn't a no-show.",
+        );
+      }
+      const deadline = noShowDeadline(c, policy.waitMinutes);
+      if (deadline === null) {
+        throw new HttpsError(
+          "failed-precondition",
+          "A no-show can only be marked after the doctor has joined the call and waited for the patient.",
+        );
+      }
+      if (Date.now() < deadline) {
+        const mins = Math.ceil((deadline - Date.now()) / 60000);
+        throw new HttpsError(
+          "failed-precondition",
+          `The patient still has ${mins} minute${mins === 1 ? "" : "s"} to join. A no-show can be marked after that.`,
+        );
+      }
+    }
     const holdUntil = Timestamp.fromMillis(Date.now() + NO_SHOW_HOLD_DAYS * 86400 * 1000);
     // The policy the patient is held to, fixed at this moment.
     const noShowTerms = {
@@ -127,6 +162,7 @@ async function markNoShow({ consultationId, actor, meta = null, expectDoctorUid 
           noShow: noShowTerms,
           amountPaid: Number(booking.amountPaid || 0),
           holdUntil: holdUntil.toMillis(),
+          byPatient,
         },
         sendBefore: holdUntil.toMillis(),
       });
@@ -134,15 +170,17 @@ async function markNoShow({ consultationId, actor, meta = null, expectDoctorUid 
     audit(tx, {
       actorId: actor.uid,
       actorRole: actor.role,
-      action: actor.role === "system"
-        ? "Marked a consultation as a no-show automatically (patient didn't join in time)"
-        : "Marked a consultation as a no-show",
+      action: byPatient
+        ? "Asked to reschedule after the start time (counts as a no-show)"
+        : actor.role === "system"
+          ? "Marked a consultation as a no-show automatically (patient didn't join in time)"
+          : "Marked a consultation as a no-show",
       code: "consultation.no_show",
       category: "consultation",
       targetType: "consultation",
       targetId: consultationId,
       patientUid: c.patientUid,
-      details: { waitMinutes: policy.waitMinutes },
+      details: { waitMinutes: policy.waitMinutes, byPatient },
       meta,
     });
     return true;
@@ -290,4 +328,4 @@ async function closeConsultation({ consultationId, outcome, actor, meta = null, 
   return closed;
 }
 
-module.exports = { noShowDeadline, markNoShow, closeConsultation, NO_SHOW_HOLD_DAYS };
+module.exports = { noShowDeadline, rescheduleCountsAsNoShow, markNoShow, closeConsultation, NO_SHOW_HOLD_DAYS };

@@ -22,6 +22,7 @@ const {
   MODES,
   HttpsError,
   requireRole,
+  requireVerifiedEmail,
   requestMeta,
   str,
   oneOf,
@@ -35,6 +36,8 @@ const {
 } = require("./lib/core");
 const { queueEmail } = require("./lib/mailQueue");
 const { loadNoShowPolicy } = require("./siteSettings");
+const { PAYSTACK_SECRET_KEY } = require("./lib/paystack");
+const { markNoShow, rescheduleCountsAsNoShow } = require("./lib/consultationLifecycle");
 
 // A doctor can't have two consultations closer together than this.
 const MIN_GAP_MINUTES = 30;
@@ -328,7 +331,12 @@ exports.cancelAvailableSlot = onCall(async (request) => {
 /* ------------------------------------------------------------------ */
 
 /** data: { bookingId, preferredTime?, reason? } */
-exports.requestReschedule = onCall(async (request) => {
+// Before the start: a free request for the hospital to move it. From the
+// start on (patient not joined, doctor not to blame): it counts as a
+// no-show and the patient pays the no-show fee (lib/consultationLifecycle.js
+// rescheduleCountsAsNoShow); resolves like startNoShowReschedule then:
+// { status: "pay", ... } or { status: "requested" }.
+exports.requestReschedule = onCall({ secrets: [PAYSTACK_SECRET_KEY] }, async (request) => {
   const caller = await requireRole(request, ["patient"]);
   const d = request.data || {};
   const bookingId = docId(d.bookingId, "Booking");
@@ -338,7 +346,9 @@ exports.requestReschedule = onCall(async (request) => {
   await rateLimit(caller.uid, "requestReschedule", { max: 5, windowSeconds: 86400 });
 
   const ref = db.collection("bookings").doc(bookingId);
-  await db.runTransaction(async (tx) => {
+  const policy = await loadNoShowPolicy();
+  const meta = requestMeta(request);
+  const late = await db.runTransaction(async (tx) => {
     const snap = await tx.get(ref);
     if (!snap.exists || snap.data().patientUid !== caller.uid) {
       throw new HttpsError("not-found", "Booking not found.");
@@ -364,6 +374,14 @@ exports.requestReschedule = onCall(async (request) => {
         "You've asked for a refund for this consultation, so it can't be rescheduled.",
       );
     }
+    // Too late for a free reschedule (a request made before the start
+    // still stands and can be updated).
+    if (
+      booking.rescheduleRequest?.status !== "requested" &&
+      rescheduleCountsAsNoShow(consultationSnap.data() || {}, policy.waitMinutes)
+    ) {
+      return booking.consultationId;
+    }
     tx.update(ref, {
       rescheduleRequest: {
         status: "requested",
@@ -382,10 +400,23 @@ exports.requestReschedule = onCall(async (request) => {
       targetType: "consultation",
       targetId: booking.consultationId,
       patientUid: caller.uid,
-      meta: requestMeta(request),
+      meta,
     });
+    return null;
   });
-  return { requested: true };
+
+  if (late) {
+    requireVerifiedEmail(caller); // a payment follows
+    await markNoShow({
+      consultationId: late,
+      actor: { uid: caller.uid, role: "patient" },
+      meta,
+      byPatient: true,
+    });
+    const { beginNoShowReschedule } = require("./noShow");
+    return beginNoShowReschedule({ caller, bookingId, preferredTime, reason, meta });
+  }
+  return { requested: true, status: "requested" };
 });
 
 /**

@@ -147,7 +147,9 @@ function patientContent(kind, data, when) {
       const back = ns ? Math.round(paid * (1 - (ns.forfeitPercent || 0) / 100) * 100) / 100 : paid;
       return {
         subject: "You missed your consultation: book a new time or ask for a refund",
-        intro: "You didn't join your consultation in time, so it was marked as missed (a no-show).",
+        intro: data.byPatient
+          ? "You asked for a new time after your consultation had started, so it counts as missed (a no-show)."
+          : "You didn't join your consultation in time, so it was marked as missed (a no-show).",
         rows,
         paragraphs: [
           ns && Number(ns.rescheduleFee) > 0
