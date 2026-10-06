@@ -204,11 +204,19 @@ export default function Admin() {
 
   const quietly = (promise) => promise.catch(() => {});
 
+  // Resolve true/false so the bookings table can show "Scheduling…" on the
+  // row until the server answers (errors still show in the banner).
   const handleSchedule = ({ bookingId, doctorUid, scheduledTime }) =>
-    quietly(callAdmin("scheduleConsultation", { bookingId, doctorUid, scheduledTime }));
+    callAdmin("scheduleConsultation", { bookingId, doctorUid, scheduledTime }).then(
+      () => true,
+      () => false,
+    );
 
   const handleReschedule = (payload) =>
-    quietly(callAdmin("rescheduleConsultation", payload));
+    callAdmin("rescheduleConsultation", payload).then(
+      () => true,
+      () => false,
+    );
 
   const handleMarkDone = (booking, outcome) =>
     quietly(

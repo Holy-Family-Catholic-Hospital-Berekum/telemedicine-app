@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { Loader2 } from "lucide-react";
 import SchedulingModal from "./schedulingModal.jsx";
 import CreateScheduleModal from "./createScheduleModal.jsx";
 import ConfirmDialog from "./confirmDialog.jsx";
@@ -173,6 +174,23 @@ export default function BookingsPanel({
 }) {
   const [subtab, setSubtab] = useState("toSchedule");
   const [activeBooking, setActiveBooking] = useState(null);
+  // Bookings with a schedule / reschedule request still on its way to the
+  // server: { [bookingId]: "schedule" | "reschedule" }. Their button is
+  // disabled and shows progress, so it can't be sent twice.
+  const [busy, setBusy] = useState({});
+  const track = (bookingId, kind, promise) => {
+    setBusy((m) => ({ ...m, [bookingId]: kind }));
+    Promise.resolve(promise).then((ok) => {
+      // A scheduled booking leaves this list when the server confirms;
+      // keep it marked until then so the button can't flash back on.
+      if (ok && kind === "schedule") return;
+      setBusy((m) => {
+        const next = { ...m };
+        delete next[bookingId];
+        return next;
+      });
+    });
+  };
   const [rescheduling, setRescheduling] = useState(null);
   const [closing, setClosing] = useState(null); // { booking, outcome }
   const [creatingSlot, setCreatingSlot] = useState(false);
@@ -496,8 +514,18 @@ export default function BookingsPanel({
                           <button
                             className="btn btn-secondary"
                             onClick={() => setActiveBooking(b)}
+                            disabled={Boolean(busy[b.bookingId])}
+                            aria-busy={busy[b.bookingId] === "schedule"}
                           >
-                            <IconCalendar size={14} /> Schedule
+                            {busy[b.bookingId] === "schedule" ? (
+                              <>
+                                <Loader2 size={14} className="animate-spin" /> Scheduling…
+                              </>
+                            ) : (
+                              <>
+                                <IconCalendar size={14} /> Schedule
+                              </>
+                            )}
                           </button>
                         )}
                         {/* A call one side never joined was missed and can be moved. */}
@@ -506,8 +534,18 @@ export default function BookingsPanel({
                           <button
                             className="btn btn-outline"
                             onClick={() => setRescheduling(b)}
+                            disabled={Boolean(busy[b.bookingId])}
+                            aria-busy={busy[b.bookingId] === "reschedule"}
                           >
-                            <IconPhone size={14} /> Reschedule
+                            {busy[b.bookingId] === "reschedule" ? (
+                              <>
+                                <Loader2 size={14} className="animate-spin" /> Rescheduling…
+                              </>
+                            ) : (
+                              <>
+                                <IconPhone size={14} /> Reschedule
+                              </>
+                            )}
                           </button>
                         )}
                         {subtab === "scheduled" && (
@@ -546,7 +584,7 @@ export default function BookingsPanel({
           doctors={doctors}
           onClose={() => setActiveBooking(null)}
           onConfirm={(payload) => {
-            onSchedule(payload);
+            track(activeBooking.bookingId, "schedule", onSchedule(payload));
             setActiveBooking(null);
           }}
         />
@@ -559,13 +597,21 @@ export default function BookingsPanel({
           reschedule
           onClose={() => setRescheduling(null)}
           onConfirm={({ doctorUid, scheduledTime }) => {
-            onReschedule({ bookingId: rescheduling.bookingId, doctorUid, scheduledTime });
+            track(
+              rescheduling.bookingId,
+              "reschedule",
+              onReschedule({ bookingId: rescheduling.bookingId, doctorUid, scheduledTime }),
+            );
             setRescheduling(null);
           }}
           onDecline={
             rescheduling.rescheduleRequest?.status === "requested"
               ? () => {
-                  onReschedule({ bookingId: rescheduling.bookingId, decline: true });
+                  track(
+                    rescheduling.bookingId,
+                    "reschedule",
+                    onReschedule({ bookingId: rescheduling.bookingId, decline: true }),
+                  );
                   setRescheduling(null);
                 }
               : undefined

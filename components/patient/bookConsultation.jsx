@@ -20,6 +20,13 @@ import {
 } from "../../src/consentText";
 import { usePageMeta } from "../../src/seo.js";
 
+/** "+233241234567" -> "0241234567"; other numbers as stored; none -> "". */
+function localPhone(e164) {
+  if (typeof e164 !== "string") return "";
+  const m = e164.match(/^\+233(\d{9})$/);
+  return m ? `0${m[1]}` : e164;
+}
+
 /** Whole years from a YYYY-MM-DD date of birth to today. */
 function ageFrom(dob) {
   const [y, m, d] = dob.split("-").map(Number);
@@ -443,7 +450,7 @@ export default function BookConsultation() {
   const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(false);
   const { settings } = useSiteSettings();
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
 
   // Heads-up only: an earlier booking with a payment attempt that isn't
   // confirmed yet. createBookingDraft refuses a new booking in that case;
@@ -533,7 +540,9 @@ export default function BookConsultation() {
   const [sex, setSex] = useState("");
   const [town, setTown] = useState("");
   const [area, setArea] = useState("");
-  const [phone, setPhone] = useState("");
+  // Starts with the account's phone number (saved as +233…, shown the
+  // familiar way, 024…); the patient can change it for this booking.
+  const [phone, setPhone] = useState(() => localPhone(profile?.phone));
   // Required before continuing to payment — see handleContinueFromDetails
   // and the "Your information" fieldset in step 0.
   const [consent, setConsent] = useState(false);
