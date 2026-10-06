@@ -88,6 +88,10 @@ const patientsWindow = (n) => query(collection(db, "users"), orderBy("createdAt"
 const historyWindow = (n) =>
   query(collection(db, "consultationHistory"), orderBy("endedAt", "desc"), limit(n));
 const auditWindow = (n) => query(collection(db, "auditLog"), orderBy("timestamp", "desc"), limit(n));
+// Refunds waiting for an admin (badge on the Revenue tab): patient refund
+// requests and payments flagged for a refund (duplicates, late payments).
+const pendingRefundsQuery = query(collection(db, "refundRequests"), where("status", "==", "requested"));
+const refundDueIssuesQuery = query(collection(db, "paymentIssues"), where("status", "==", "refund_due"));
 
 export default function Admin() {
   usePageMeta({ title: "Admin", noindex: true });
@@ -142,6 +146,19 @@ export default function Admin() {
   const { data: todaySlots } = useFirestoreCollection(todaySlotsQuery);
   const auditWin = useWindowedCollection(auditWindow, WINDOW);
   const audit = auditWin.data;
+  const { data: pendingRefunds } = useFirestoreCollection(pendingRefundsQuery);
+  const { data: refundDueIssues } = useFirestoreCollection(refundDueIssuesQuery);
+  const refundsToHandle = pendingRefunds.length + refundDueIssues.length;
+
+  // Who did what: audit entries store account IDs; show people's names.
+  // All staff are loaded; patients only within the loaded window (others
+  // fall back to a short ID).
+  const actorNames = useMemo(() => {
+    const m = new Map();
+    patientUsers.forEach((u) => m.set(u.id, { name: u.name, role: "patient" }));
+    staffUsers.forEach((u) => m.set(u.id, { name: u.name, role: u.role }));
+    return m;
+  }, [staffUsers, patientUsers]);
 
   const users = useMemo(
     () => [
@@ -271,7 +288,7 @@ export default function Admin() {
         active={tab}
         onChange={setTab}
         admin={currentAdmin}
-        pendingCount={toSchedule.length}
+        badges={{ bookings: toSchedule.length, revenue: refundsToHandle }}
         onLogout={signOutUser}
       />
 
@@ -323,6 +340,7 @@ export default function Admin() {
               stats={stats}
               weeklyMetrics={weeklyMetrics}
               recentActivity={audit}
+              names={actorNames}
             />
           )}
 
@@ -365,7 +383,7 @@ export default function Admin() {
             </>
           )}
 
-          {tab === "audit" && <AuditPanel entries={audit} window={auditWin} />}
+          {tab === "audit" && <AuditPanel entries={audit} window={auditWin} names={actorNames} />}
 
           {tab === "metrics" && (
             <MetricsPanel

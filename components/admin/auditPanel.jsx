@@ -1,17 +1,26 @@
 import { useState } from "react";
 import { IconSearch, IconShield } from "./icons.jsx";
+import { actorLabel } from "./actorName.js";
 import { Pagination, LoadOlder } from "../shared/pagination.jsx";
 import { usePagination } from "../shared/usePagination.js";
 
 // auditLog collection (section 5). Records that an action happened and who
 // did it — never the patient details from that session.
-export default function AuditPanel({ entries, window: win }) {
+export default function AuditPanel({ entries, window: win, names }) {
   const [query, setQuery] = useState("");
 
   const rows = entries.filter((e) => {
     const q = query.trim().toLowerCase();
     if (!q) return true;
-    return [e.actorId, e.actorRole, e.action, e.targetId, e.reason]
+    return [
+      actorLabel(e.actorId, names).name,
+      e.actorId,
+      e.actorRole,
+      e.action,
+      e.targetId,
+      e.targetType === "user" ? actorLabel(e.targetId, names).name : "",
+      e.reason,
+    ]
       .join(" ")
       .toLowerCase()
       .includes(q);
@@ -63,8 +72,12 @@ export default function AuditPanel({ entries, window: win }) {
                 {pager.pageItems.map((e) => (
                   <tr key={e.id}>
                     <td>
-                      <div className="admin-cell-name">{e.actorId}</div>
-                      {e.actorRole && <div className="admin-cell-sub">{e.actorRole}</div>}
+                      <div className="admin-cell-name" title={e.actorId}>
+                        {actorLabel(e.actorId, names).name}
+                      </div>
+                      {e.actorRole && e.actorRole !== "system" && (
+                        <div className="admin-cell-sub">{e.actorRole}</div>
+                      )}
                     </td>
                     <td>
                       {e.action}
@@ -76,7 +89,11 @@ export default function AuditPanel({ entries, window: win }) {
                       {e.reason && <div className="admin-cell-sub">Reason: {e.reason}</div>}
                     </td>
                     <td>
-                      <span className="code-chip">{e.targetId}</span>
+                      {e.targetType === "user" && actorLabel(e.targetId, names).known ? (
+                        <span title={e.targetId}>{actorLabel(e.targetId, names).name}</span>
+                      ) : (
+                        <span className="code-chip">{e.targetId}</span>
+                      )}
                     </td>
                     <td className="admin-cell-sub">
                       {e.timestamp ? new Date(e.timestamp).toLocaleString() : "—"}

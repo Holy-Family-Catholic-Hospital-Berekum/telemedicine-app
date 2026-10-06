@@ -34,7 +34,7 @@ export default function Sidebar({
   active,
   onChange,
   admin,
-  pendingCount,
+  badges = {},
   onLogout,
 }) {
   return (
@@ -58,8 +58,14 @@ export default function Sidebar({
           >
             <Icon size={17} />
             {label}
-            {key === "bookings" && pendingCount > 0 && (
-              <span className="admin-nav-badge">{pendingCount}</span>
+            {/* bookings: paid bookings to schedule; revenue: refunds to handle */}
+            {badges[key] > 0 && (
+              <span
+                className="admin-nav-badge"
+                title={key === "revenue" ? "Refunds waiting for an admin" : "Bookings to schedule"}
+              >
+                {badges[key]}
+              </span>
             )}
           </button>
         ))}

@@ -1,4 +1,5 @@
 import StatCard from "./statCard.jsx";
+import { actorLabel } from "./actorName.js";
 import { BarChart } from "./miniCharts.jsx";
 import {
   IconCalendar,
@@ -23,6 +24,7 @@ export default function OverviewPanel({
   stats,
   weeklyMetrics = [],
   recentActivity = [],
+  names,
 }) {
   return (
     <>
@@ -97,6 +99,7 @@ export default function OverviewPanel({
                         {a.action}
                       </div>
                       <div className="activity-meta">
+                        {actorLabel(a.actorId, names).name} ·{" "}
                         {a.timestamp ? new Date(a.timestamp).toLocaleString() : "Just now"}
                       </div>
                     </div>
