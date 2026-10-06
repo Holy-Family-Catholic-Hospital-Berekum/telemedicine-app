@@ -13,10 +13,12 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/authContext.jsx";
 import { IconMail, IconCheckCircle } from "../../components/auth/icons.jsx";
 import "../../styles/auth.css";
+import { usePageMeta } from "../../seo.js";
 
 const POLL_INTERVAL_MS = 4000;
 
 export default function VerifyEmailNotice() {
+  usePageMeta({ title: "Verify your email", noindex: true });
   const {
     user,
     emailVerified,

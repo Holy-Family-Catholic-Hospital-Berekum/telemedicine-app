@@ -27,7 +27,8 @@
 // stop, finalizeRecording stitches the parts into one file and hashes it.
 import { httpsCallable } from "firebase/functions";
 import { ref as storageRef, uploadBytes } from "firebase/storage";
-import { functions, storage } from "../../src/firebase";
+import { functions } from "../../src/firebase";
+import { storage } from "../../src/firebaseStorage";
 
 const CANVAS_WIDTH = 1280;
 const CANVAS_HEIGHT = 720;

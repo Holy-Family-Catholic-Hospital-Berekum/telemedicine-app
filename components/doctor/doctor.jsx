@@ -37,6 +37,7 @@ import VideoCallModal from "../video/videoCallModal";
 import hospitalLogo from "../../src/assets/logo.png";
 import { callableMessage, HOSPITAL_TIME_ZONE } from "../../src/constants";
 import { getRoomDevice } from "../../src/roomDevice";
+import { usePageMeta } from "../../src/seo.js";
 
 const TABS = [
   { id: "schedule", label: "Schedule", icon: CalendarDays },
@@ -53,6 +54,7 @@ function isSameDay(a, b) {
 }
 
 export default function DoctorDashboard() {
+  usePageMeta({ title: "Doctor portal", noindex: true });
   // ---- All hooks live here, unconditionally, before any early return
   // below — the auth guard only affects what gets rendered, never which
   // hooks run, since React requires the same hooks in the same order on

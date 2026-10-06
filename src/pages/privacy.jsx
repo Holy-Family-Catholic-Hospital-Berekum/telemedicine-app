@@ -1,4 +1,5 @@
 import LegalPage from "../legalPage.jsx";
+import { usePageMeta } from "../seo.js";
 
 /**
  * privacy.jsx
@@ -10,6 +11,12 @@ import LegalPage from "../legalPage.jsx";
  * Built-in fallback text lives in src/legalDefaults.js.
  */
 export default function Privacy() {
+  usePageMeta({
+    title: "Privacy Policy",
+    description:
+      "How Holy Family Catholic Hospital's telemedicine service collects, uses, protects and deletes your personal information, under Ghana's Data Protection Act, 2012 (Act 843).",
+    path: "/privacy",
+  });
   return (
     <LegalPage
       docId="privacy"

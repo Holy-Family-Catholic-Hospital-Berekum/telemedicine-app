@@ -1,7 +1,7 @@
 // firebase.js
 //
 // The one place Firebase is initialised. Import `app`, `db`, `auth`,
-// `functions` and `storage` from here; never call getFunctions() or
+// `functions` from here (Storage: ./firebaseStorage.js); never call getFunctions() or
 // getStorage() elsewhere, so every callable goes to the same region.
 //
 // The web config comes from VITE_* environment variables. It isn't a
@@ -13,7 +13,6 @@ import { initializeAppCheck, ReCaptchaEnterpriseProvider } from "firebase/app-ch
 import { getAuth, browserSessionPersistence, initializeRecaptchaConfig } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 import { getFunctions } from "firebase/functions";
-import { getStorage } from "firebase/storage";
 
 // Every Cloud Function is deployed here (functions/lib/core.js REGION),
 // inside Firestore's eur3 location.
@@ -51,7 +50,7 @@ export const appCheck = appCheckSiteKey
   : null;
 export const db = getFirestore(app);
 export const functions = getFunctions(app, FUNCTIONS_REGION);
-export const storage = getStorage(app);
+// Storage lives in ./firebaseStorage.js (loaded only by pages that upload).
 export const auth = getAuth(app);
 
 // Session-only persistence by default, so a session doesn't outlive the

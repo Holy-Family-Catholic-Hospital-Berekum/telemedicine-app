@@ -27,7 +27,8 @@ import { onSnapshot } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
 import { ref as storageRef, uploadBytesResumable } from "firebase/storage";
 
-import { functions, storage } from "../../src/firebase";
+import { functions } from "../../src/firebase";
+import { storage } from "../../src/firebaseStorage";
 import {
   settingsRef,
   DEFAULT_IMAGES,

@@ -3,7 +3,7 @@
    Brand colors for this module: #EA7321 (orange) / #0095D9 (blue) on white.
 */
 
-@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap");
+/* Fonts (Manrope, Inter, JetBrains Mono) load from index.html. */
 
 .auth-root {
   --auth-primary: #ea7321;

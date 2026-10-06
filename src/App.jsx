@@ -1,17 +1,26 @@
-import Home from "../components/patient/Home";
-import BookConsultation from "../components/patient/bookConsultation";
+import { lazy, Suspense } from "react";
 import { Route, Routes } from "react-router-dom";
-import Admin from "../components/admin/admin";
-import DoctorDashboard from "../components/doctor/doctor";
-import Dashboard from "../components/patient/dashboard/patientDashboard";
+import Home from "../components/patient/Home";
 import { AuthProvider } from "./context/authContext";
 import { ProtectedRoute, PublicOnlyRoute } from "./protectedRoutes";
-import SignIn from "./pages/auth/signIn";
-import StaffSignIn from "./pages/auth/staffSignIn";
-import SignUp from "./pages/auth/signUp";
-import VerifyEmailNotice from "./pages/auth/verifyEmailNotice";
-import Unauthorized from "./pages/auth/unauthorized";
 import { STAFF_LOGIN_PATH } from "./staffRoute";
+import HealthcarePreloader from "./components/common/healthcarePreloader.jsx";
+
+// Code splitting: the home page (what most visitors and search engines
+// open first) ships in the main bundle; every other page downloads only
+// when it's opened, so a patient never downloads the admin dashboard,
+// the doctor portal or the video-call code just to see the home page.
+const BookConsultation = lazy(() => import("../components/patient/bookConsultation"));
+const Admin = lazy(() => import("../components/admin/admin"));
+const DoctorDashboard = lazy(() => import("../components/doctor/doctor"));
+const Dashboard = lazy(() => import("../components/patient/dashboard/patientDashboard"));
+const SignIn = lazy(() => import("./pages/auth/signIn"));
+const StaffSignIn = lazy(() => import("./pages/auth/staffSignIn"));
+const SignUp = lazy(() => import("./pages/auth/signUp"));
+const VerifyEmailNotice = lazy(() => import("./pages/auth/verifyEmailNotice"));
+const Unauthorized = lazy(() => import("./pages/auth/unauthorized"));
+const Privacy = lazy(() => import("./pages/privacy"));
+const Terms = lazy(() => import("./pages/terms"));
 
 // Larger, easier-to-read type on every page patients use (src/index.css).
 // Every patient page also gets the WhatsApp "Chat with us" button.
@@ -23,8 +32,6 @@ function PatientPage({ children }) {
     </div>
   );
 }
-import Privacy from "./pages/privacy";
-import Terms from "./pages/terms";
 import WhatsAppSupport from "../components/shared/whatsAppSupport";
 
 // Where signed-out staff are sent: the hidden staff sign-in page.
@@ -33,6 +40,7 @@ const STAFF_HOME = STAFF_LOGIN_PATH || "/";
 export default function App() {
   return (
     <AuthProvider>
+      <Suspense fallback={<HealthcarePreloader fullscreen label="Loading…" />}>
       <Routes>
         <Route path="/" element={<PatientPage><Home /></PatientPage>} />
         <Route path="/privacy" element={<PatientPage><Privacy /></PatientPage>} />
@@ -68,6 +76,7 @@ export default function App() {
           <Route path="/doctor" element={<DoctorDashboard />} />
         </Route>
       </Routes>
+      </Suspense>
     </AuthProvider>
   );
 }

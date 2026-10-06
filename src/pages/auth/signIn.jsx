@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useNavigate, useLocation, Link } from "react-router-dom";
 import { useAuth } from "../../context/authContext.jsx";
 import HealthcarePreloader from "../../components/common/healthcarePreloader.jsx";
@@ -15,6 +15,7 @@ import {
 } from "../../components/auth/icons.jsx";
 import "../../styles/auth.css";
 import logo from "../../assets/logo.png";
+import { usePageMeta } from "../../seo.js";
 
 const PATIENT_ASIDE_POINTS = [
   "Secured role-based access",
@@ -57,17 +58,18 @@ export default function SignIn({ audience = "patient" }) {
   const [staffStep, setStaffStep] = useState(null);
   const [enrolledNote, setEnrolledNote] = useState(false);
 
-  // Keep the staff page out of search results.
-  useEffect(() => {
-    if (!isStaff) return;
-    const meta = document.createElement("meta");
-    meta.name = "robots";
-    meta.content = "noindex, nofollow";
-    document.head.appendChild(meta);
-    return () => {
-      document.head.removeChild(meta);
-    };
-  }, [isStaff]);
+  // The staff page is kept out of search results (noindex) and has no
+  // canonical address, so its hidden path is never published.
+  usePageMeta(
+    isStaff
+      ? { title: "Staff sign-in", noindex: true }
+      : {
+          title: "Sign In",
+          description:
+            "Sign in to book, join or reschedule your consultation with Holy Family Catholic Hospital, Berekum.",
+          path: "/signin",
+        },
+  );
 
   const resolveRedirect = (role) => {
     const roleHome = ROLE_HOME[role];

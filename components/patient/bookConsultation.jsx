@@ -18,6 +18,7 @@ import {
   GUARDIAN_CONSENT_TEXT,
   CURRENT_GUARDIAN_CONSENT,
 } from "../../src/consentText";
+import { usePageMeta } from "../../src/seo.js";
 
 /** Whole years from a YYYY-MM-DD date of birth to today. */
 function ageFrom(dob) {
@@ -436,6 +437,7 @@ function DoctorAvatar({ doctor, size = 44 }) {
 }
 
 export default function BookConsultation() {
+  usePageMeta({ title: "Book a consultation", noindex: true });
   const [searchParams] = useSearchParams();
 
   const [step, setStep] = useState(0);

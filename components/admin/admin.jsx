@@ -27,6 +27,7 @@ import ControlPanel from "./controlPanel.jsx";
 import { IconBell, IconRefresh } from "./icons.jsx";
 
 import "./admin.css";
+import { usePageMeta } from "../../src/seo.js";
 
 const TAB_TITLES = {
   account: {
@@ -89,6 +90,7 @@ const historyWindow = (n) =>
 const auditWindow = (n) => query(collection(db, "auditLog"), orderBy("timestamp", "desc"), limit(n));
 
 export default function Admin() {
+  usePageMeta({ title: "Admin", noindex: true });
   const [tab, setTab] = useState("overview");
   const { user, profile, signOutUser } = useAuth();
 

@@ -42,6 +42,7 @@ import {
 } from "../../utils/validators.js";
 import "../../styles/auth.css";
 import logo from "../../assets/logo.png";
+import { usePageMeta } from "../../seo.js";
 
 const ASIDE_POINTS = [
   "Book General OPD or Surgical consultations, online or in-person",
@@ -50,6 +51,12 @@ const ASIDE_POINTS = [
 ];
 
 export default function SignUp() {
+  usePageMeta({
+    title: "Create an Account",
+    description:
+      "Create a free account to book online or in-person consultations with Holy Family Catholic Hospital doctors in Berekum, Ghana.",
+    path: "/signup",
+  });
   const { signUpPatient } = useAuth();
   const navigate = useNavigate();
 

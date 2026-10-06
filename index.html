@@ -1,14 +1,119 @@
 <!doctype html>
-<html lang="en">
+<html lang="en-GH">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/png" href="src/assets/logo.png" />
-    <link rel="stylesheet" href="src/index.css" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>telemedicine</title>
+
+    <!-- Defaults for the home page and for link previews (WhatsApp,
+         Facebook, X don't run JavaScript). Each page sets its own title and
+         description at runtime (src/seo.js). %SITE_URL% is filled in at
+         build time (vite.config.js, VITE_SITE_URL). -->
+    <title>Online Doctor Consultation in Ghana | Holy Family Catholic Hospital, Berekum</title>
+    <meta
+      name="description"
+      content="See a Holy Family Catholic Hospital, Berekum doctor by video or in person. Book General OPD or surgical consultations online and pay with mobile money."
+    />
+    <link rel="canonical" href="%SITE_URL%/" />
+    <meta name="robots" content="index, follow, max-image-preview:large" />
+    <meta name="theme-color" content="#0095D9" />
+    <meta name="geo.region" content="GH-BO" />
+    <meta name="geo.placename" content="Berekum" />
+
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+
+    <!-- Link previews -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Holy Family Catholic Hospital Telemedicine" />
+    <meta property="og:locale" content="en_GH" />
+    <meta property="og:url" content="%SITE_URL%/" />
+    <meta property="og:title" content="See a Holy Family Catholic Hospital doctor online" />
+    <meta
+      property="og:description"
+      content="General OPD and surgical consultations by video or in person, from Berekum, Ghana. Book and pay with mobile money in minutes."
+    />
+    <meta property="og:image" content="%SITE_URL%/og-image.jpg" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="A Holy Family Catholic Hospital doctor speaking with a patient" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="See a Holy Family Catholic Hospital doctor online" />
+    <meta
+      name="twitter:description"
+      content="General OPD and surgical consultations by video or in person, from Berekum, Ghana."
+    />
+    <meta name="twitter:image" content="%SITE_URL%/og-image.jpg" />
+
+    <!-- Fonts: load in parallel with the app instead of from inside CSS. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap"
+    />
+
+    <!-- Structured data: tells search engines this is a hospital offering
+         telemedicine in Berekum (eligible for richer results). Data only;
+         browsers don't run it, so the CSP doesn't apply. Add the hospital's
+         phone number ("telephone") once the real number is confirmed. -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": ["Hospital", "MedicalOrganization"],
+            "@id": "%SITE_URL%/#hospital",
+            "name": "Holy Family Catholic Hospital",
+            "alternateName": "Holy Family Hospital Berekum",
+            "url": "%SITE_URL%/",
+            "logo": "%SITE_URL%/apple-touch-icon.png",
+            "image": "%SITE_URL%/og-image.jpg",
+            "email": "info@hfhberekum.org",
+            "address": {
+              "@type": "PostalAddress",
+              "addressLocality": "Berekum",
+              "addressRegion": "Bono Region",
+              "addressCountry": "GH"
+            },
+            "areaServed": { "@type": "Country", "name": "Ghana" },
+            "medicalSpecialty": ["PrimaryCare", "Surgical"],
+            "availableService": [
+              {
+                "@type": "MedicalProcedure",
+                "name": "General OPD consultation (online video or in person)"
+              },
+              {
+                "@type": "MedicalProcedure",
+                "name": "Surgical consultation (online video or in person)"
+              }
+            ],
+            "paymentAccepted": "Mobile money, card",
+            "currenciesAccepted": "GHS"
+          },
+          {
+            "@type": "WebSite",
+            "@id": "%SITE_URL%/#website",
+            "url": "%SITE_URL%/",
+            "name": "Holy Family Catholic Hospital Telemedicine",
+            "inLanguage": "en-GH",
+            "publisher": { "@id": "%SITE_URL%/#hospital" }
+          }
+        ]
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>
+    <!-- Shown only where JavaScript is off (some crawlers, very old phones). -->
+    <noscript>
+      <h1>Online doctor consultations from Holy Family Catholic Hospital, Berekum</h1>
+      <p>
+        Book a General OPD or surgical consultation with the hospital's own
+        doctors, by video from your phone or in person at the hospital, and pay
+        with mobile money. Please turn on JavaScript to use the booking site.
+      </p>
+      <p><a href="/signup">Create an account</a> · <a href="/privacy">Privacy policy</a> · <a href="/terms">Terms of service</a></p>
+    </noscript>
     <script type="module" src="/src/index.jsx"></script>
   </body>
 </html>

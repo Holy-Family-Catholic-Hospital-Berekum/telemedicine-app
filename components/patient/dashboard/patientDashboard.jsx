@@ -36,8 +36,10 @@ import VideoCallModal from "../../video/videoCallModal";
 import BrandAside from "../../shared/brandAside";
 import logo from "../../../src/assets/logo.png";
 import Footer from "../../shared/footer";
+import { usePageMeta } from "../../../src/seo.js";
 
 export default function Dashboard() {
+  usePageMeta({ title: "My dashboard", noindex: true });
   const navigate = useNavigate();
   // The route is wrapped in ProtectedRoute (patient, verified email), so
   // `user` is always a signed-in patient here.

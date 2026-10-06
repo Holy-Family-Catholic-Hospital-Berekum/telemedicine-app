@@ -4,8 +4,10 @@
 import { Link } from "react-router-dom";
 import { IconAlert } from "../../components/auth/icons.jsx";
 import "../../styles/auth.css";
+import { usePageMeta } from "../../seo.js";
 
 export default function Unauthorized() {
+  usePageMeta({ title: "Not available", noindex: true });
   return (
     <div className="auth-root" style={{ gridTemplateColumns: "1fr" }}>
       <div className="auth-formside">

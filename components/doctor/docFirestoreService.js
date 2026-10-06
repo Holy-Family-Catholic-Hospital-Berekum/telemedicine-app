@@ -22,7 +22,8 @@ import {
 import { httpsCallable } from "firebase/functions";
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 
-import { db, functions, storage } from "../../src/firebase";
+import { db, functions } from "../../src/firebase";
+import { storage } from "../../src/firebaseStorage";
 import { toDate } from "../../src/constants";
 import { getRoomDevice } from "../../src/roomDevice";
 

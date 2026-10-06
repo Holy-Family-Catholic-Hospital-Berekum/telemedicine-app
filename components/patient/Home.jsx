@@ -15,6 +15,7 @@ import heroDefault from "../../src/assets/hero-consult.jpg";
 import { useSiteSettings } from "../../src/siteSettings";
 import { fetchAvailableSlots } from "./dashboard/patientFirestoreService";
 import { TYPE_LABELS, MODE_LABELS, formatDateTime } from "../../src/constants";
+import { usePageMeta } from "../../src/seo.js";
 /**
  * Home.jsx
  * Public landing page for Holy Family Catholic Hospital's telemedicine platform.
@@ -1644,6 +1645,12 @@ function HomeContent({ isLoggedIn }) {
 // Public entry point. Waits for Firebase to resolve the session (showing the
 // custom preloader), then mounts the page with a real isLoggedIn flag.
 export default function Home() {
+  usePageMeta({
+    title: "Online Doctor Consultation in Berekum, Ghana",
+    description:
+      "See a Holy Family Catholic Hospital, Berekum doctor by video or in person. Book General OPD or surgical consultations online and pay with mobile money.",
+    path: "/",
+  });
   const { user, initializing } = useAuth();
 
   if (initializing) {

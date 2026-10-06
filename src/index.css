@@ -20,7 +20,7 @@
    (monospace + a small notch) since those codes are the object at
    the center of the whole booking/payment flow.
 */
-  @import url("https://fonts.googleapis.com/css2?family=Manrope:wght@500;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap");
+/* Fonts (Manrope, Inter, JetBrains Mono) load from index.html. */
 
 .admin-root {
   --color-primary: #f88535;
