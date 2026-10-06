@@ -255,7 +255,7 @@ export default function Dashboard() {
               <div className="min-w-0 leading-tight">
                 <p className="truncate text-[17px] font-semibold">Hi, {firstName}</p>
                 <p className="truncate text-[13px] text-white/90 sm:text-[14px]">
-                  Holy Family Catholic Hospital
+                  Holy Family Catholic Hospital, Berekum
                 </p>
               </div>
             </div>

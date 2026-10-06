@@ -197,7 +197,7 @@ export default function Header({
                   Holy Family Catholic Hospital
                 </span>
 
-                <span className="hidden sm:block text-[14px] text-[#142138a0]">
+                <span className="block truncate text-[13px] sm:text-[14px] text-[#142138a0]">
                   Telemedicine · Berekum, Ghana
                 </span>
               </span>
@@ -435,7 +435,7 @@ export default function Header({
                 <span className="block font-display font-medium truncate text-[16px] sm:text-[17px]">
                   Holy Family Catholic Hospital
                 </span>
-                <span className="hidden sm:block text-[15px] text-[#14213899]">
+                <span className="block truncate text-[13px] sm:text-[15px] text-[#14213899]">
                   Berekum, Ghana
                 </span>
               </span>
