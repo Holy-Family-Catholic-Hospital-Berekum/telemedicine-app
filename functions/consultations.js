@@ -2,7 +2,10 @@
 //
 //   startVideoCall       patient or doctor joins; the only way a call opens
 //   getTurnCredentials   short-lived TURN relay credentials, participants only
-//   markConsultationDone closes a consultation and erases the booking data
+//   markConsultationDone closes a consultation (completed) and erases the
+//                        booking data, or marks a no-show (booking kept for
+//                        a paid reschedule or a refund; see
+//                        lib/consultationLifecycle.js)
 //
 // Video is peer-to-peer WebRTC. Signalling goes through calls/{consultationId},
 // which only startVideoCall can create and which Security Rules open to the
@@ -32,11 +35,13 @@ const {
   toDate,
   audit,
   rateLimit,
-  deleteTree,
   sha256,
 } = require("./lib/core");
 const { CALL_CONSENT_TEXT, CURRENT_CALL_CONSENT } = require("./lib/consentText");
 const { verifyRoomDevice } = require("./roomDevices");
+const { markNoShow, closeConsultation, noShowDeadline } = require("./lib/consultationLifecycle");
+const { loadNoShowPolicy } = require("./siteSettings");
+const { queueEmail } = require("./lib/mailQueue");
 
 const CLOUDFLARE_TURN_KEY_ID = defineSecret("CLOUDFLARE_TURN_KEY_ID");
 const CLOUDFLARE_TURN_API_TOKEN = defineSecret("CLOUDFLARE_TURN_API_TOKEN");
@@ -44,8 +49,6 @@ const CLOUDFLARE_TURN_API_TOKEN = defineSecret("CLOUDFLARE_TURN_API_TOKEN");
 const JOIN_OPENS_MINUTES_BEFORE = 30;
 const JOIN_CLOSES_HOURS_AFTER = 4;
 const CALL_DOC_TTL_HOURS = 6;
-// Share of the fee kept when the patient doesn't attend.
-const NO_SHOW_FORFEIT = 0.2;
 
 async function currentRecordingMode() {
   const snap = await db.collection("systemSettings").doc("features").get();
@@ -130,6 +133,7 @@ exports.startVideoCall = onCall(async (request) => {
   // old ones are simply ignored.
   const expiresAt = Timestamp.fromMillis(now + CALL_DOC_TTL_HOURS * 3600 * 1000);
   let patientSeq = null;
+  let firstDoctorJoinWithoutPatient = false;
   await db.runTransaction(async (tx) => {
     const [callSnap, consultationSnap] = await Promise.all([tx.get(callRef), tx.get(ref)]);
     const current = consultationSnap.data();
@@ -203,6 +207,9 @@ exports.startVideoCall = onCall(async (request) => {
       updates[joinedField] = serverTime();
       bookingUpdates[bookingJoinedField] = serverTime();
     }
+    // The doctor is in and the patient isn't: their waiting time starts.
+    firstDoctorJoinWithoutPatient =
+      caller.role === "doctor" && !current.doctorFirstJoinedAt && !current.patientFirstJoinedAt;
     tx.update(ref, updates);
     if (Object.keys(bookingUpdates).length) {
       tx.update(db.collection("bookings").doc(current.bookingId), bookingUpdates);
@@ -225,12 +232,47 @@ exports.startVideoCall = onCall(async (request) => {
   });
 
   const fresh = (await ref.get()).data();
+
+  // No-show countdown (doctor's call screen): when the patient will be
+  // marked as a no-show if they still haven't joined (noShow.js does it).
+  let noShowAt = null;
+  if (caller.role === "doctor" && !fresh.patientFirstJoinedAt) {
+    const policy = await loadNoShowPolicy();
+    noShowAt = noShowDeadline(fresh, policy.waitMinutes);
+    if (firstDoctorJoinWithoutPatient && noShowAt) {
+      // Tell the patient right away (delivered once email is set up).
+      const bookingSnap = await db.collection("bookings").doc(fresh.bookingId).get();
+      const booking = bookingSnap.exists ? bookingSnap.data() : null;
+      if (booking?.email) {
+        const batch = db.batch();
+        queueEmail(batch, {
+          bookingId: fresh.bookingId,
+          to: booking.email,
+          kind: "patient_doctor_waiting",
+          data: {
+            patientName: booking.guardianName || booking.patientName || "",
+            doctorName: fresh.doctorName || "",
+            type: fresh.type,
+            mode: fresh.mode,
+            scheduledAt: toDate(fresh.scheduledTime).getTime(),
+            consultationId,
+            noShowAt,
+            noShow: policy,
+          },
+          sendBefore: noShowAt,
+        });
+        await batch.commit().catch((err) => logger.warn("doctor-waiting email not queued", err));
+      }
+    }
+  }
+
   return {
     consultationId,
     callStartedAt: toDate(fresh.callStartedAt)?.toISOString() ?? null,
     recordingEnabled,
     // The patient answers only offers carrying this number.
     ...(caller.role === "patient" ? { patientSeq } : {}),
+    ...(caller.role === "doctor" ? { noShowAt } : {}),
   };
 });
 
@@ -337,116 +379,21 @@ exports.markConsultationDone = onCall(async (request) => {
   const d = request.data || {};
   const consultationId = docId(d.consultationId, "Consultation");
   const outcome = oneOf(d.outcome, OUTCOMES, "outcome");
+  const actor = { uid: caller.uid, role: caller.role };
+  const expectDoctorUid = caller.role === "doctor" ? caller.uid : null;
+  const meta = requestMeta(request);
 
-  const consultationRef = db.collection("consultations").doc(consultationId);
-  const historyRef = db.collection("consultationHistory").doc(consultationId);
-  const callRef = db.collection("calls").doc(consultationId);
-
-  // Was recording expected for this call? Read before the shell goes.
-  const callSnap = await callRef.get();
-  const recordingExpected = callSnap.exists && callSnap.data().recordingEnabled === true;
-
-  const closed = await db.runTransaction(async (tx) => {
-    const [consultationSnap, historySnap] = await Promise.all([
-      tx.get(consultationRef),
-      tx.get(historyRef),
-    ]);
-    if (!consultationSnap.exists) {
-      if (historySnap.exists) return null; // already closed: idempotent
-      throw new HttpsError("not-found", "Consultation not found.");
-    }
-    const c = consultationSnap.data();
-    if (caller.role === "doctor" && c.doctorUid !== caller.uid) {
-      throw new HttpsError("not-found", "Consultation not found.");
-    }
-
-    const bookingRef = db.collection("bookings").doc(c.bookingId);
-    const bookingSnap = await tx.get(bookingRef);
-    const booking = bookingSnap.exists ? bookingSnap.data() : {};
-    const amountPaid = Number(booking.amountPaid ?? 0);
-
-    let forfeitAmount = 0;
-    let refundOwed = 0;
-    if (outcome === "no_show") {
-      forfeitAmount = Math.round(amountPaid * NO_SHOW_FORFEIT * 100) / 100;
-      refundOwed = Math.round((amountPaid - forfeitAmount) * 100) / 100;
-    }
-
-    // What survives: no date of birth, sex, location or phone.
-    tx.set(historyRef, {
-      consultationId,
-      patientUid: c.patientUid,
-      doctorUid: c.doctorUid,
-      doctorName: c.doctorName || null,
-      type: c.type,
-      mode: c.mode,
-      outcome,
-      scheduledTime: c.scheduledTime,
-      // Online: when the call actually began. In person: the booked time.
-      startedAt: c.callStartedAt || c.scheduledTime,
-      // Whether each side joined the video call (online only). A patient
-      // who joined can't ask for a refund (refunds.js).
-      patientJoined: Boolean(c.patientFirstJoinedAt),
-      doctorJoined: Boolean(c.doctorFirstJoinedAt),
-      endedAt: serverTime(),
-      amountPaid,
-      currency: booking.currency || "GHS",
-      forfeitAmount,
-      refundOwed,
-      paystackReference: booking.paystackReference || null,
-      closedByUid: caller.uid,
-      closedByRole: caller.role,
-      createdAt: serverTime(),
-    });
-
-    tx.delete(consultationRef);
-    if (bookingSnap.exists) tx.delete(bookingRef);
-
-    audit(tx, {
-      actorId: caller.uid,
-      actorRole: caller.role,
-      action: outcome === "no_show" ? "Closed a consultation as a no-show" : "Closed a consultation as completed",
-      code: outcome === "no_show" ? "consultation.no_show" : "consultation.closed",
-      category: "consultation",
-      targetType: "consultation",
-      targetId: consultationId,
-      patientUid: c.patientUid,
-      details: refundOwed > 0 ? { refundOwed } : null,
-      meta: requestMeta(request),
-    });
-
-    return { txRefs: booking.txRefs || [], patientUid: c.patientUid, forfeitAmount, refundOwed };
-  });
-
-  if (closed) {
-    // Tidy-up after commit; failures here don't undo the close.
-    await Promise.all([
-      deleteTree(callRef).catch((err) => logger.warn("call cleanup failed", err)),
-      ...closed.txRefs.map((ref) =>
-        db.collection("paymentRefs").doc(ref).delete().catch(() => {}),
-      ),
-    ]);
-
-    if (recordingExpected) {
-      const recs = await db
-        .collection("recordings")
-        .where("consultationId", "==", consultationId)
-        .limit(1)
-        .get();
-      if (recs.empty) {
-        await audit(null, {
-          action: "Recording was switched on but this call has no recording",
-          code: "recording.missing",
-          category: "recording",
-          result: "failed",
-          targetType: "consultation",
-          targetId: consultationId,
-          patientUid: closed.patientUid,
-        });
-      }
-    }
+  // A no-show keeps the booking so the patient can reschedule (with the
+  // no-show fee) or ask for a refund; it can only be marked once the
+  // patient's waiting time is over (lib/consultationLifecycle.js).
+  // An admin can close a held no-show early with { close: true } (the
+  // patient's booking details are then deleted, as after the hold).
+  if (outcome === "no_show" && !(d.close === true && caller.role === "admin")) {
+    await markNoShow({ consultationId, actor, meta, expectDoctorUid });
+    return { consultationId, outcome };
   }
 
+  const closed = await closeConsultation({ consultationId, outcome, actor, meta, expectDoctorUid });
   // Doctors aren't shown payment figures; only admins get them back.
   return caller.role === "admin" && closed
     ? { consultationId, outcome, forfeitAmount: closed.forfeitAmount, refundOwed: closed.refundOwed }

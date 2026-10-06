@@ -39,6 +39,7 @@ import "./controlPanel.css";
 import LegalDocsCard from "./legalDocsCard.jsx";
 import RecordingSwitchCard from "./recordingSwitchCard.jsx";
 import RoomDevicesCard from "./roomDevicesCard.jsx";
+import NoShowPolicyCard from "./noShowPolicyCard.jsx";
 import DoctorSelectionCard from "./doctorSelectionCard.jsx";
 
 const callUpdatePrices = httpsCallable(functions, "updateConsultationPrices");
@@ -940,6 +941,8 @@ export default function ControlPanel({ onAudit }) {
       />
 
       <PricesCard current={prices} onAudit={onAudit} />
+
+      <NoShowPolicyCard />
 
       <SliderCard current={raw?.sliderImages ?? []} onAudit={onAudit} />
 

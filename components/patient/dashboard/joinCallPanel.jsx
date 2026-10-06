@@ -1,10 +1,11 @@
-import { useState } from "react";
-import { Video, Lock, Loader2, PhoneCall } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Video, Lock, Loader2, PhoneCall, Timer } from "lucide-react";
 import { getCallWindow } from "./patientUtils";
 import { joinVideoCall } from "./patientFirestoreService";
 import { callableMessage, CALL_UNLOCK_MINUTES } from "../../../src/constants";
 import { CURRENT_CALL_CONSENT } from "../../../src/consentText";
 import CallConsentDialog from "./callConsentDialog";
+import { useSiteSettings } from "../../../src/siteSettings";
 
 function formatWait(minutes) {
   if (minutes < 60) return `${minutes} min`;
@@ -17,7 +18,14 @@ function formatWait(minutes) {
 // consultation and that the video room is open. The first join of each
 // consultation also asks for the video consultation consent (stored by the
 // server); later joins don't.
+//
+// The no-show rule is stated here too: the patient has the policy's
+// waiting time to join after the start (or after the doctor joined, if
+// later); then the server marks a no-show automatically. Once the doctor
+// is in the room, a countdown shows the time left.
 export default function JoinCallPanel({ booking, onJoined }) {
+  const { noShow } = useSiteSettings().settings;
+  const [now, setNow] = useState(() => Date.now());
   const [joining, setJoining] = useState(false);
   const [error, setError] = useState(null);
   const [askConsent, setAskConsent] = useState(false);
@@ -25,6 +33,19 @@ export default function JoinCallPanel({ booking, onJoined }) {
   // The patient has been in this call before: "Rejoin call" takes them back.
   const callInProgress = Boolean(booking.patientJoinedAt);
   const doctorWaiting = Boolean(booking.doctorJoinedAt) && !callInProgress;
+  const deadline = doctorWaiting
+    ? Math.max(booking.scheduledTime?.getTime?.() ?? 0, booking.doctorJoinedAt.getTime()) +
+      noShow.waitMinutes * 60000
+    : null;
+  const left = deadline === null ? null : Math.max(0, deadline - now);
+
+  useEffect(() => {
+    if (deadline === null) return undefined;
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [deadline]);
+
+  const rule = `Please join on time. If you haven't joined within ${noShow.waitMinutes} minutes of the start (or of your doctor joining, if later), the consultation is marked as missed.${noShow.rescheduleFee > 0 ? ` Booking a new time after that costs an extra GHS ${noShow.rescheduleFee}.` : ""}`;
 
   async function join(withConsent) {
     setJoining(true);
@@ -57,10 +78,12 @@ export default function JoinCallPanel({ booking, onJoined }) {
 
   if (!unlocked && !callInProgress) {
     return (
-      <div className="mt-4 flex items-center gap-2 rounded-sm border border-[#DCE6EC] px-3.5 py-2.5 text-sm text-[#3E4E56]">
-        <Lock size={14} strokeWidth={1.75} />
-        The video room opens {CALL_UNLOCK_MINUTES} minutes before your
-        appointment (in {formatWait(minutesUntilUnlock)})
+      <div className="mt-4 flex items-start gap-2 rounded-sm border border-[#DCE6EC] px-3.5 py-2.5 text-sm text-[#3E4E56]">
+        <Lock size={14} strokeWidth={1.75} className="mt-1 shrink-0" />
+        <span>
+          The video room opens {CALL_UNLOCK_MINUTES} minutes before your
+          appointment (in {formatWait(minutesUntilUnlock)}). {rule}
+        </span>
       </div>
     );
   }
@@ -88,6 +111,17 @@ export default function JoinCallPanel({ booking, onJoined }) {
             Your doctor is in the video room. Join now.
           </p>
         )}
+        {left !== null && (
+          <p
+            role="timer"
+            className="mb-2 flex items-center gap-1.5 rounded-sm bg-[#B23A3A]/10 px-3 py-2 text-sm font-semibold text-[#B23A3A]"
+          >
+            <Timer size={15} strokeWidth={2} />
+            {left > 0
+              ? `${Math.floor(left / 60000)}:${String(Math.floor((left % 60000) / 1000)).padStart(2, "0")} left to join before this is marked as missed`
+              : "Your joining time is up. Join now, or refresh the page to see your options."}
+          </p>
+        )}
         <p className="text-sm text-[#12242C]">
           The video room is open. Join from a quiet, private place.
         </p>
@@ -104,6 +138,7 @@ export default function JoinCallPanel({ booking, onJoined }) {
           )}
           {joining ? "Joining…" : "Join call"}
         </button>
+        <p className="mt-2 text-[14px] text-[#3E4E56]">{rule}</p>
         <p className="mt-2 text-[14px] text-[#3E4E56]">
           Calls may be recorded (video with sound, or sound only) when the
           hospital has recording switched on. You'll see a REC sign on screen

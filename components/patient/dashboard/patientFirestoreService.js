@@ -23,6 +23,8 @@ const callRequestReschedule = httpsCallable(functions, "requestReschedule");
 const callStartVideoCall = httpsCallable(functions, "startVideoCall");
 const callGetBookingStatus = httpsCallable(functions, "getBookingStatus");
 const callRequestRefund = httpsCallable(functions, "requestRefund");
+const callStartNoShowReschedule = httpsCallable(functions, "startNoShowReschedule");
+const callGetNoShowFeeStatus = httpsCallable(functions, "getNoShowFeeStatus");
 
 /** The patient's refund requests, keyed by consultationId. */
 export async function fetchMyRefundRequests(patientUid) {
@@ -49,9 +51,12 @@ export async function checkPaymentStatus(bookingId) {
 //   paid             -> "pending_assignment"
 //   scheduled        -> "scheduled", or "in_progress" once the patient
 //                       has joined the call
+//   no_show          -> "no_show" (missed; held for a paid reschedule or a
+//                       refund until noShowExpiresAt)
 function displayState(b) {
   if (b.status === "awaiting_payment") return "awaiting_payment";
   if (b.status === "paid") return "pending_assignment";
+  if (b.status === "no_show") return "no_show";
   if (b.patientJoinedAt) return "in_progress";
   return "scheduled";
 }
@@ -78,6 +83,8 @@ export async function fetchMyBookings(patientUid) {
       callStartedAt: toDate(b.callStartedAt),
       patientJoinedAt: toDate(b.patientJoinedAt),
       doctorJoinedAt: toDate(b.doctorJoinedAt),
+      noShowAt: toDate(b.noShowAt),
+      noShowExpiresAt: toDate(b.noShowExpiresAt),
       state: displayState(b),
     };
   });
@@ -123,6 +130,7 @@ export async function fetchConsultationHistory(patientUid, max = HISTORY_STEP) {
       mode: h.mode,
       outcome: h.outcome,
       patientJoined: h.patientJoined === true,
+      refundClosed: h.refundClosed === true,
       scheduledTime: toDate(h.scheduledTime),
       startedAt: toDate(h.startedAt),
       endedAt: toDate(h.endedAt),
@@ -143,6 +151,23 @@ export async function requestReschedule({ booking, preferredTime, reason }) {
     reason,
   });
   return data;
+}
+
+/**
+ * A missed (no-show) booking: ask for a new time. Resolves
+ * { status: "requested" } (no fee, or already paid) or
+ * { status: "pay", reference, amount, currency, customer } for the
+ * Paystack popup.
+ */
+export async function startNoShowReschedule({ bookingId, preferredTime, reason }) {
+  const { data } = await callStartNoShowReschedule({ bookingId, preferredTime, reason });
+  return data;
+}
+
+/** Asks the server (which re-checks Paystack) whether the no-show fee arrived. */
+export async function getNoShowFeeStatus(bookingId) {
+  const { data } = await callGetNoShowFeeStatus({ bookingId });
+  return data; // { status: "confirmed" | "pending" | "failed" }
 }
 
 /** Server checks ownership and the time window, then opens the call. */

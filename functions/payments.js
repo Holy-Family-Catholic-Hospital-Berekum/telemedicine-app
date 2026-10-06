@@ -6,6 +6,15 @@
 //   initializePayment   (callable)  mints a one-use reference per attempt
 //   paystackWebhook     (HTTP)      Paystack reports a completed charge
 //   getBookingStatus    (callable)  the page asks "am I paid yet?"
+//   resolvePaymentIssue (callable)  admin refunds a flagged payment through
+//                                   Paystack, or records a manual refund
+//
+// Money Paystack took that can't be applied to a booking (a duplicate
+// payment, a payment that arrived after the booking expired, a wrong
+// amount) is flagged in paymentIssues AND refunded automatically, in full,
+// to the original payment method (startIssueRefund). No judgment is
+// needed for these, so no admin step; admins see the result, and step in
+// only if Paystack refuses the refund.
 //
 // The browser never sends an amount and never marks anything paid. The fee
 // comes from loadPrices() (siteSettings/public, falling back to
@@ -24,7 +33,6 @@
 
 const crypto = require("crypto");
 const { onRequest } = require("firebase-functions/v2/https");
-const { defineSecret } = require("firebase-functions/params");
 const logger = require("firebase-functions/logger");
 const {
   db,
@@ -58,8 +66,7 @@ const {
   CURRENT_GUARDIAN_CONSENT,
 } = require("./lib/consentText");
 
-const PAYSTACK_SECRET_KEY = defineSecret("PAYSTACK_SECRET_KEY");
-const PAYSTACK_API = "https://api.paystack.co";
+const { PAYSTACK_SECRET_KEY, PAYSTACK_API, secretKey, createRefund } = require("./lib/paystack");
 const CURRENCY = "GHS";
 
 // References are minted by initializePayment: HFH-<6 code chars>-<bookingId>.
@@ -76,8 +83,6 @@ const DRAFT_LIFETIME_HOURS = 24;
 /* Paystack helpers                                                    */
 /* ------------------------------------------------------------------ */
 
-// Trimmed so a stray newline from pasting doesn't break authentication.
-const secretKey = () => PAYSTACK_SECRET_KEY.value().trim();
 
 // Paystack statuses for a charge that may still complete (e.g. a MoMo
 // prompt waiting on the patient's phone).
@@ -126,6 +131,7 @@ async function recordPaymentIssue(paystackData, { reason, bookingId = null, pati
       channel: paystackData.channel || null,
       reason,
       status: "refund_due",
+      transactionId: paystackData.id != null ? String(paystackData.id) : null,
       createdAt: serverTime(),
     });
     audit(tx, {
@@ -140,7 +146,81 @@ async function recordPaymentIssue(paystackData, { reason, bookingId = null, pati
     });
     return true;
   });
-  if (created) logger.warn("Payment flagged for refund", { reference: paystackData.reference, reason });
+  if (created) {
+    logger.warn("Payment flagged for refund", { reference: paystackData.reference, reason });
+    // Automatic, full refund to the original payment method.
+    await startIssueRefund(paystackData.reference, { actorId: "system" }).catch((err) =>
+      logger.error("Automatic refund didn't start", { reference: paystackData.reference, err: err.message }),
+    );
+  }
+}
+
+/**
+ * Refunds a flagged payment in full through Paystack. The issue is claimed
+ * first (refund_due -> refund_starting) so it can never be refunded twice;
+ * Paystack also refuses to refund more than was paid.
+ * Resolves the new status: "refund_processing" (or throws).
+ */
+async function startIssueRefund(reference, { actorId, actorRole = null, meta = null }) {
+  const ref = db.collection("paymentIssues").doc(reference);
+  const issue = await db.runTransaction(async (tx) => {
+    // deepcode ignore Sqli: Firestore document ID, not SQL; reference validated by REFERENCE_RE (no '/').
+    const snap = await tx.get(ref);
+    if (!snap.exists) throw new HttpsError("not-found", "Payment issue not found.");
+    const d = snap.data();
+    if (d.status !== "refund_due" && d.status !== "refund_failed") {
+      throw new HttpsError("failed-precondition", "A refund for this payment is already under way or done.");
+    }
+    tx.update(ref, { status: "refund_starting", refundStartingAt: serverTime() });
+    return d;
+  });
+
+  try {
+    const refund = await createRefund({
+      reference,
+      amount: issue.amount,
+      customerNote: "Refund of a payment we couldn't use for a booking (Holy Family Catholic Hospital).",
+      merchantNote: `paymentIssue ${issue.reason}`,
+    });
+    // deepcode ignore Sqli: Firestore document ID, not SQL; reference validated by REFERENCE_RE (no '/').
+    await ref.update({
+      status: "refund_processing",
+      paystackRefundId: refund.id,
+      paystackRefundStatus: refund.status,
+      refundStartedAt: serverTime(),
+      refundStartedBy: actorId,
+      lastRefundError: FieldValue.delete(),
+    });
+    await audit(null, {
+      actorId,
+      actorRole: actorRole || (actorId === "system" ? "system" : "admin"),
+      action: "Started a Paystack refund of a flagged payment",
+      code: "payment.refund_started",
+      category: "payment",
+      targetType: "payment",
+      targetId: reference,
+      patientUid: issue.patientUid || null,
+      details: { amount: issue.amount, reason: issue.reason },
+      meta,
+    });
+    return "refund_processing";
+  } catch (err) {
+    await ref.update({ status: "refund_due", lastRefundError: String(err.message).slice(0, 300) });
+    await audit(null, {
+      actorId,
+      actorRole: actorRole || (actorId === "system" ? "system" : "admin"),
+      action: "Paystack refused a refund of a flagged payment",
+      code: "payment.refund_failed",
+      category: "payment",
+      result: "failed",
+      targetType: "payment",
+      targetId: reference,
+      patientUid: issue.patientUid || null,
+      details: { error: String(err.message).slice(0, 200) },
+      meta,
+    });
+    throw new HttpsError("failed-precondition", `Paystack didn't accept the refund: ${err.message}`);
+  }
 }
 
 /**
@@ -668,6 +748,18 @@ exports.paystackWebhook = onRequest(
     }
 
     const event = req.body || {};
+    // Refund progress: re-read the refund from Paystack (refundSync.js).
+    if (typeof event.event === "string" && event.event.startsWith("refund.")) {
+      try {
+        const { handleRefundEvent } = require("./refundSync");
+        await handleRefundEvent(event.data || {});
+        res.status(200).send("OK");
+      } catch (err) {
+        logger.error("Refund webhook processing failed", err);
+        res.status(500).send("Error");
+      }
+      return;
+    }
     if (event.event !== "charge.success" || !isOurReference(event.data?.reference)) {
       res.status(200).send("Ignored");
       return;
@@ -693,8 +785,23 @@ exports.paystackWebhook = onRequest(
       }
 
       const bookingRef = db.collection("bookings").doc(refSnap.data().bookingId);
-      const result = await markBookingPaid(bookingRef, tx, "webhook");
       const ids = { bookingId: bookingRef.id, patientUid: refSnap.data().patientUid };
+
+      // A no-show reschedule fee (noShow.js), not a consultation fee.
+      if (refSnap.data().purpose === "noshow_fee") {
+        const { markNoShowFeePaid } = require("./noShow");
+        const fee = await markNoShowFeePaid(bookingRef, tx, "webhook");
+        if (tx.status === "success" && (fee.status === "rejected" || fee.status === "missing" || fee.duplicate)) {
+          await recordPaymentIssue(tx, {
+            reason: fee.duplicate ? "duplicate_payment" : fee.status === "missing" ? "no_matching_booking" : "amount_mismatch",
+            ...ids,
+          });
+        }
+        res.status(200).send("OK");
+        return;
+      }
+
+      const result = await markBookingPaid(bookingRef, tx, "webhook");
       if (result.status === "rejected") {
         await recordPaymentIssue(tx, { reason: "amount_mismatch", ...ids });
       } else if (result.duplicate) {
@@ -753,28 +860,37 @@ exports.getBookingStatus = onCall(
 /* ------------------------------------------------------------------ */
 
 /**
- * data: { reference, note }
- * Admin records that a flagged payment was refunded (through the Paystack
- * dashboard: Transactions -> the reference -> Refund). Audited.
+ * data: { reference, method: "paystack" | "manual", note? }
+ * paystack: (re)try the refund through Paystack (when the automatic one
+ *           was refused). manual: record a refund made outside Paystack
+ *           (note required). Audited.
  */
-exports.resolvePaymentIssue = onCall(async (request) => {
+exports.resolvePaymentIssue = onCall({ secrets: [PAYSTACK_SECRET_KEY] }, async (request) => {
   const caller = await requireRole(request, ["admin"]);
   const reference = str(request.data?.reference, { field: "Reference", max: 160 });
   if (!isOurReference(reference)) {
     throw new HttpsError("invalid-argument", "That reference isn't valid.");
   }
+  const meta = requestMeta(request);
+  if (request.data?.method === "paystack") {
+    await rateLimit(caller.uid, "refundViaPaystack", { max: 30, windowSeconds: 3600 });
+    const status = await startIssueRefund(reference, { actorId: caller.uid, actorRole: "admin", meta });
+    return { status };
+  }
+
   const note = str(request.data?.note, { field: "Note", max: 300, min: 3 });
   const ref = db.collection("paymentIssues").doc(reference);
   await db.runTransaction(async (tx) => {
     // deepcode ignore Sqli: Firestore document ID, not SQL; reference validated by isOurReference (REFERENCE_RE, no '/').
     const snap = await tx.get(ref);
     if (!snap.exists) throw new HttpsError("not-found", "Payment issue not found.");
-    if (snap.data().status !== "refund_due") {
-      throw new HttpsError("failed-precondition", "This one is already resolved.");
+    if (!["refund_due", "refund_failed"].includes(snap.data().status)) {
+      throw new HttpsError("failed-precondition", "This one is already resolved or being refunded.");
     }
     // deepcode ignore Sqli: Firestore document ID, not SQL; reference validated by isOurReference (REFERENCE_RE, no '/').
     tx.update(ref, {
       status: "refunded",
+      refundMethod: "manual",
       resolvedByUid: caller.uid,
       resolvedAt: serverTime(),
       note,
@@ -782,23 +898,25 @@ exports.resolvePaymentIssue = onCall(async (request) => {
     audit(tx, {
       actorId: caller.uid,
       actorRole: "admin",
-      action: "Marked a payment as refunded",
+      action: "Recorded a manual refund of a flagged payment",
       code: "payment.refunded",
       category: "payment",
       targetType: "payment",
       targetId: reference,
       patientUid: snap.data().patientUid || null,
       reason: note,
-      meta: requestMeta(request),
+      meta,
     });
   });
-  return { ok: true };
+  return { status: "refunded" };
 });
 
 // Shared with maintenance.js. Not Cloud Functions: index.js only re-exports
 // the functions above by name.
 exports.markBookingPaid = markBookingPaid;
 exports.recordPaymentIssue = recordPaymentIssue;
+exports.startIssueRefund = startIssueRefund;
+exports.isOurReference = isOurReference;
 exports.checkAttempts = checkAttempts;
 exports.secretKey = secretKey;
 exports.verifyPaystackTransaction = verifyPaystackTransaction;

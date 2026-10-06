@@ -83,13 +83,24 @@ function patientContent(kind, data, when) {
     ];
   const change = `If you can't make it, use "Reschedule" on your dashboard or call us on ${HOSPITAL_PHONE}.`;
 
+  // The no-show rule, stated plainly wherever a patient is told about an
+  // appointment (data.noShow: { waitMinutes, rescheduleFee, forfeitPercent }).
+  const ns = data.noShow;
+  const fee = ns ? `GHS ${Number(ns.rescheduleFee || 0)}` : "";
+  const noShowRule = ns
+    ? online
+      ? `Please be on time. If you haven't joined within ${ns.waitMinutes} minutes of the start (or of your doctor joining, if later), the consultation is marked as missed (a no-show). To book a new time after that, you pay an extra fee of ${fee}; or you can ask for a refund, minus ${ns.forfeitPercent}% of what you paid.`
+      : `Please be on time. If you don't arrive within ${ns.waitMinutes} minutes of the start, the consultation may be marked as missed (a no-show). To book a new time after that, you pay an extra fee of ${fee}; or you can ask for a refund, minus ${ns.forfeitPercent}% of what you paid.`
+    : null;
+  const withRule = (list) => (noShowRule ? [...list, noShowRule] : list);
+
   switch (kind) {
     case "appointment_rescheduled":
       return {
         subject: `Your consultation has moved to ${shortWhen(when)}`,
         intro: "Your consultation has been moved to a new time.",
         rows,
-        paragraphs: [...howTo, change],
+        paragraphs: withRule([...howTo, change]),
       };
     case "patient_reminder":
       return data.lead === "24h"
@@ -97,13 +108,13 @@ function patientContent(kind, data, when) {
           subject: `Reminder: your consultation is tomorrow at ${clock(when)}`,
           intro: "This is a reminder that your consultation is in about 24 hours.",
           rows,
-          paragraphs: [...howTo, change],
+          paragraphs: withRule([...howTo, change]),
         }
         : {
           subject: `Reminder: your consultation starts at ${clock(when)}`,
           intro: "Your consultation starts in about an hour.",
           rows,
-          paragraphs: [...howTo, change],
+          paragraphs: withRule([...howTo, change]),
         };
     case "patient_not_joined":
       return {
@@ -112,17 +123,52 @@ function patientContent(kind, data, when) {
           ? "Your doctor is waiting for you in the video room."
           : "Your video consultation is due now and you haven't joined yet.",
         rows,
-        paragraphs: [
+        paragraphs: withRule([
           "Sign in to your dashboard, open this booking and press Join call.",
           `If you can't join now, use "Reschedule" on your dashboard to choose another time, or call us on ${HOSPITAL_PHONE}.`,
+        ]),
+      };
+    case "patient_doctor_waiting": {
+      const by = data.noShowAt ? clock(new Date(data.noShowAt)) : null;
+      return {
+        subject: "Your doctor is waiting for you now",
+        intro: by
+          ? `Your doctor has joined the video room. Please join before ${by} (Ghana time).`
+          : "Your doctor has joined the video room. Please join now.",
+        rows,
+        paragraphs: withRule([
+          "Sign in to your dashboard, open this booking and press Join call.",
+        ]),
+      };
+    }
+    case "patient_no_show": {
+      const until = data.holdUntil ? formatWhen(new Date(data.holdUntil)).replace(/ at .*$/, "") : null;
+      const paid = Number(data.amountPaid || 0);
+      const back = ns ? Math.round(paid * (1 - (ns.forfeitPercent || 0) / 100) * 100) / 100 : paid;
+      return {
+        subject: "You missed your consultation: book a new time or ask for a refund",
+        intro: "You didn't join your consultation in time, so it was marked as missed (a no-show).",
+        rows,
+        paragraphs: [
+          ns && Number(ns.rescheduleFee) > 0
+            ? `To see a doctor at a new time, open your dashboard and choose "Book a new time". There is an extra fee of ${fee}.`
+            : "To see a doctor at a new time, open your dashboard and choose \"Book a new time\".",
+          ns
+            ? `Or ask for a refund from your dashboard: GHS ${back} of the GHS ${paid} you paid (${ns.forfeitPercent}% is kept for the missed appointment).`
+            : "Or ask for a refund from your dashboard.",
+          until
+            ? `Please choose by ${until}. After that the booking is closed and its details are deleted.`
+            : "Please choose soon; after 14 days the booking is closed and its details are deleted.",
+          `Questions? Call us on ${HOSPITAL_PHONE}.`,
         ],
       };
+    }
     default: // appointment_scheduled
       return {
         subject: `Your consultation is booked for ${shortWhen(when)}`,
         intro: "Your consultation has been scheduled.",
         rows,
-        paragraphs: [...howTo, change],
+        paragraphs: withRule([...howTo, change]),
       };
   }
 }

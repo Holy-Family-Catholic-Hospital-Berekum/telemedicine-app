@@ -70,6 +70,9 @@ export default function DoctorDashboard() {
   const [toast, setToast] = useState(null);
   const [activeCallConsultationId, setActiveCallConsultationId] =
     useState(null);
+  // When the patient counts as a no-show (ms, from startVideoCall); the
+  // call screen counts down to it while the patient hasn't joined.
+  const [callNoShowAt, setCallNoShowAt] = useState(null);
 
   const [today] = useState(() => new Date());
   // Calls start only from the registered telemedicine room computer.
@@ -89,6 +92,10 @@ export default function DoctorDashboard() {
           role: profile.role,
         }
       : null;
+
+  // Bumped after a call closes, to pick up consultations the server marked
+  // as a no-show meanwhile.
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     if (!doctor?.uid) return;
@@ -110,7 +117,7 @@ export default function DoctorDashboard() {
     return () => {
       active = false;
     };
-  }, [doctor?.uid]);
+  }, [doctor?.uid, reloadKey]);
 
   const { todayList, upcomingList } = useMemo(() => {
     const sorted = [...consultations].sort(
@@ -153,6 +160,7 @@ export default function DoctorDashboard() {
             : c,
         ),
       );
+      setCallNoShowAt(result.noShowAt ?? null);
       setActiveCallConsultationId(consultationId);
       return { ok: true };
     } catch (err) {
@@ -178,9 +186,9 @@ export default function DoctorDashboard() {
     setMarkDoneTarget(null);
     showToast(
       outcome === "no_show"
-        ? "Closed as no-show — booking details deleted"
+        ? "Marked as a no-show. The patient can book a new time (for a fee) or ask for a refund."
         : "Closed as completed — booking details deleted",
-      3500,
+      4000,
     );
   }
 
@@ -414,7 +422,12 @@ export default function DoctorDashboard() {
           consultationId={activeCallConsultationId}
           role="doctor"
           viewerName={doctor?.name}
-          onClose={() => setActiveCallConsultationId(null)}
+          noShowAt={callNoShowAt}
+          onClose={() => {
+            setActiveCallConsultationId(null);
+            setCallNoShowAt(null);
+            setReloadKey((k) => k + 1);
+          }}
         />
       )}
 

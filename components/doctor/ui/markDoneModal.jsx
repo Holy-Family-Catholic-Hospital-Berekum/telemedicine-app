@@ -1,10 +1,12 @@
 import { useState } from 'react';
 import { X, CheckCircle2, AlertTriangle, Loader2, ShieldAlert } from 'lucide-react';
+import { useSiteSettings } from '../../../src/siteSettings';
 
 export default function MarkDoneModal({ consultation, onClose, onSubmit }) {
   const [outcome, setOutcome] = useState(null); // 'completed' | 'no_show'
   const [step, setStep] = useState('choose'); // 'choose' | 'confirm'
   const [submitting, setSubmitting] = useState(false);
+  const { waitMinutes } = useSiteSettings().settings.noShow;
 
   async function handleConfirm() {
     setSubmitting(true);
@@ -61,7 +63,9 @@ export default function MarkDoneModal({ consultation, onClose, onSubmit }) {
 
             {outcome === 'no_show' && (
               <p className="mt-4 text-xs text-[#5C6B72]">
-                Any refund or forfeit is handled automatically by reception — nothing further needed from you.
+                The patient has {waitMinutes} minutes to join after the start time (or after you joined the call,
+                if later); a no-show can only be marked after that. Online calls are marked automatically once
+                that time is up. The patient can then book a new time for a fee, or ask for a refund.
               </p>
             )}
 
@@ -82,8 +86,9 @@ export default function MarkDoneModal({ consultation, onClose, onSubmit }) {
             <div className="flex gap-3 rounded-md border border-[#DCE6EC] bg-[#F5F8FA] p-3.5">
               <ShieldAlert size={20} strokeWidth={1.75} className="mt-0.5 shrink-0" style={{ color: '#F88535' }} />
               <p className="text-sm text-[#12242C]">
-                This closes the consultation and permanently deletes the patient's booking details (date of
-                birth, sex, location, phone). A short record (doctor, times, amount) is kept. This can't be undone.
+                {outcome === 'no_show'
+                  ? "This marks the consultation as missed and removes it from your list. The patient's booking is kept for 14 days so they can book a new time or ask for a refund, then its details are deleted."
+                  : "This closes the consultation and permanently deletes the patient's booking details (date of birth, sex, location, phone). A short record (doctor, times, amount) is kept. This can't be undone."}
               </p>
             </div>
             <p className="mt-4 text-sm text-[#5C6B72]">
@@ -108,7 +113,7 @@ export default function MarkDoneModal({ consultation, onClose, onSubmit }) {
                 className="flex flex-1 items-center justify-center gap-2 rounded-sm bg-[#B23A3A] py-2.5 text-sm font-medium text-white transition hover:bg-[#96302F] disabled:cursor-not-allowed disabled:opacity-70"
               >
                 {submitting && <Loader2 size={15} strokeWidth={2} className="animate-spin" />}
-                {submitting ? 'Closing…' : 'Close consultation'}
+                {submitting ? 'Saving…' : outcome === 'no_show' ? 'Mark as no-show' : 'Close consultation'}
               </button>
             </div>
           </div>

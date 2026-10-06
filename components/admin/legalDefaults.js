@@ -11,7 +11,7 @@
 
 export const DEFAULT_LEGAL = {
   privacy: {
-    lastUpdated: "4 October 2026",
+    lastUpdated: "6 October 2026",
     contactEmail: "info@hfhberekum.org",
     intro:
       "This policy explains what personal information the hospital's telemedicine platform collects, why, who sees it, and how long we keep it. We have tried to keep it short and plain.",
@@ -29,7 +29,7 @@ export const DEFAULT_LEGAL = {
 - Account details: your name, phone number and email address, and a password that is handled by our sign-in provider (we never see or store it in readable form).
 - Booking details: consultation type, online or in-person mode, your date of birth, sex, town or city, area or nearest landmark, phone number, and the doctor you choose, if any. When you book for your child, these are your child's details, plus your child's name.
 - Your confirmation that you are 18 or older, given when you create an account, and, when you book for a child, your consent as their parent or guardian.
-- Payment details: the amount, the payment reference and whether the payment succeeded. Payment is made by mobile money through Paystack. We never see or store your mobile money PIN.
+- Payment details: the amount, the payment reference and whether the payment succeeded, and for refunds, the amount and its progress. Payment is made by mobile money through Paystack, and refunds go back through Paystack to the wallet you paid from. We never see or store your mobile money PIN.
 - Consultation information: what you share with your doctor during the consultation and, when the hospital has call recording switched on, a recording of online consultations (video with sound, or sound only) (see "Consultation recording" below).
 - Basic technical data needed to keep the service working and secure, such as sign-in activity, and any attempt the call screen detects to take a screenshot of or record a video consultation.`,
       },
@@ -69,7 +69,7 @@ We do not sell your information and we do not use it for advertising.`,
       {
         id: "retention",
         title: "How long we keep it",
-        body: `- The details you give when booking (date of birth, sex, location and phone number) are permanently deleted once your consultation is closed. Unpaid bookings are deleted after 24 hours.
+        body: `- The details you give when booking (date of birth, sex, location and phone number) are permanently deleted once your consultation is closed. If a consultation is marked as missed, they are kept for up to 14 days so you can book a new time or ask for a refund, then deleted when it closes. Unpaid bookings are deleted after 24 hours.
 - To protect against data loss, we keep encrypted backups of our database for 7 days. Information deleted from the platform can remain in these backups until they expire, at most 7 days later, and is only used to restore the service after a fault.
 - A short record of each consultation (doctor, date, start and end time, outcome and amount paid) is kept so you and the hospital can see your history.
 - A record that you agreed to this policy, and when, is kept as proof of your consent.
@@ -111,7 +111,7 @@ If you are not happy with how we handle your information, you can complain to Gh
   },
 
   terms: {
-    lastUpdated: "4 October 2026",
+    lastUpdated: "6 October 2026",
     contactEmail: "info@hfhberekum.org",
     intro:
       "These terms explain the rules for using the hospital's telemedicine platform to book and attend consultations. Please read them before you book.",
@@ -159,7 +159,8 @@ If you are not happy with how we handle your information, you can complain to Gh
         body: `- After you pay, our team assigns you a doctor and a time and tells you by email, and may also contact you by phone or WhatsApp.
 - We send email reminders about a day and about an hour before your appointment. For an online consultation, we also email you if the start time has passed and you have not joined the call yet.
 - Keep your phone reachable and join or arrive on time. The video room opens 30 minutes before your appointment and stays open for 4 hours after the start time.
-- You can ask to reschedule from your dashboard or by calling the hospital, before your appointment or after missing it. Rescheduling depends on availability.
+- You can ask to reschedule from your dashboard or by calling the hospital before your appointment. Rescheduling depends on availability.
+- Missed appointments (no-shows): you have a short waiting time to join after the start time, or after your doctor joins the video call if that is later. The waiting time is shown on your dashboard and in your appointment emails. If you have not joined (or, for an in-person visit, arrived) by then, the consultation is marked as missed. For online consultations this happens automatically. See "Cancellations and refunds" for what you can do next.
 - For online consultations, you are responsible for a working internet connection, a device with a camera and microphone, and a private place to talk.`,
       },
       {
@@ -173,11 +174,13 @@ If you are not happy with how we handle your information, you can complain to Gh
       {
         id: "refunds",
         title: "Cancellations and refunds",
-        body: `- If you cannot attend a scheduled appointment, or you missed it, you can reschedule it from your dashboard at no extra cost. This is the quickest way to still see a doctor.
-- If you would rather not reschedule, you can ask for a refund, but only for a scheduled appointment that you did not attend. For an online consultation, that means you never joined the video call. Once you have joined a consultation, it cannot be refunded.
-- You can ask for a refund from your dashboard once the day of your appointment has passed. Each consultation can be either rescheduled or refunded, not both.
+        body: `- If you cannot attend a scheduled appointment, reschedule it from your dashboard before it starts, at no extra cost. This is the quickest way to still see a doctor.
+- If your consultation is marked as missed (a no-show), you can, within 14 days: book a new time by paying an extra no-show fee, or ask for a refund of what you paid minus a share the hospital keeps for the missed appointment. The fee and the share kept are set by the hospital; the amounts that apply to you are fixed when the consultation is marked as missed and are shown on your dashboard and in the email we send you. If you do neither within 14 days, the booking is closed without a refund.
+- You can only ask for a refund for a scheduled appointment that you did not attend. For an online consultation, that means you never joined the video call. Once you have joined a consultation, it cannot be refunded. If a consultation was not marked as missed and was not held, you can ask for a refund from your dashboard once the day of your appointment has passed.
+- Each consultation can be either rescheduled or refunded, not both.
 - If your doctor could not join your online consultation, you can reschedule it at no extra cost. If you need help, call the hospital.
-- The hospital reviews each refund request and may keep part of the fee for an appointment you did not attend. Approved refunds are paid to the mobile money number you give in your request.`,
+- The hospital reviews each refund request. Approved refunds are sent through Paystack back to the mobile money wallet you paid from; it can take a few working days to arrive.
+- If you are charged twice for the same booking, or your payment arrives after your booking has expired, the payment we cannot use is refunded to you in full automatically.`,
       },
       {
         id: "conduct",

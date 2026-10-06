@@ -70,7 +70,9 @@ export default function ConsultationHistory({
           </div>
           {/* Refunds only for a consultation the patient didn't attend. */}
           {(refunds[consultation.id] ||
-            (consultation.outcome === "no_show" && !consultation.patientJoined)) && (
+            (consultation.outcome === "no_show" &&
+              !consultation.patientJoined &&
+              !consultation.refundClosed)) && (
             <div className="mt-2">
               <RefundRequest
                 source="history"

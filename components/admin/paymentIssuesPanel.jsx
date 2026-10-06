@@ -10,9 +10,19 @@ import { usePagination } from "../shared/usePagination.js";
 
 // Payments Paystack took that couldn't be applied to a booking: a second
 // successful attempt on an already-paid booking, a payment that arrived
-// after the booking was removed, or an amount that didn't match. Each one
-// needs a refund through the Paystack dashboard, then "Mark refunded" here
-// (audited). Renders nothing while there are none.
+// after the booking was removed, or an amount that didn't match. The server
+// refunds each one in full through Paystack automatically (payments.js
+// startIssueRefund) and follows it until Paystack confirms (refundSync.js).
+// Rows here are the ones still under way or that Paystack refused: retry,
+// or record a refund made another way (audited). Renders nothing while
+// there are none.
+
+const ISSUE_STATUS = {
+  refund_due: "Waiting to refund",
+  refund_starting: "Sending to Paystack…",
+  refund_processing: "Refunding through Paystack…",
+  refund_failed: "Paystack couldn't refund",
+};
 
 const REASONS = {
   duplicate_payment: "Paid twice for the same booking",
@@ -25,23 +35,34 @@ export default function PaymentIssuesPanel({ callAdmin }) {
     () =>
       query(
         collection(db, "paymentIssues"),
-        where("status", "==", "refund_due"),
+        where("status", "in", ["refund_due", "refund_starting", "refund_processing", "refund_failed"]),
         orderBy("createdAt", "desc"),
       ),
     [],
   );
   const { data: issues, error } = useFirestoreCollection(issuesQuery);
   const pager = usePagination(issues, 25);
-  const [resolving, setResolving] = useState(null);
+  const [resolving, setResolving] = useState(null); // { issue, method }
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
 
   if (error || issues.length === 0) return null;
 
+  function open(issue, method) {
+    setResolving({ issue, method });
+    setNote("");
+  }
+  const manual = resolving?.method === "manual";
+  const ri = resolving?.issue;
+
   async function confirm() {
     setBusy(true);
     try {
-      await callAdmin("resolvePaymentIssue", { reference: resolving.id, note: note.trim() });
+      await callAdmin("resolvePaymentIssue", {
+        reference: resolving.issue.id,
+        method: resolving.method,
+        ...(resolving.method === "manual" ? { note: note.trim() } : {}),
+      });
       setResolving(null);
       setNote("");
     } catch {
@@ -56,10 +77,11 @@ export default function PaymentIssuesPanel({ callAdmin }) {
       <section className="admin-panel">
         <div className="admin-panel-head">
           <div>
-            <h2>Refunds needed ({issues.length})</h2>
+            <h2>Automatic refunds ({issues.length})</h2>
             <p>
-              Refund each one in the Paystack dashboard (Transactions → search
-              the reference → Refund), then mark it here.
+              Payments we couldn't use (paid twice, or paid after the booking
+              expired) are refunded in full through Paystack automatically. If
+              Paystack refuses one, retry it or record a refund made another way.
             </p>
           </div>
         </div>
@@ -71,6 +93,7 @@ export default function PaymentIssuesPanel({ callAdmin }) {
                 <th>Reason</th>
                 <th>Amount</th>
                 <th>Paystack reference</th>
+                <th>Status</th>
                 <th></th>
               </tr>
             </thead>
@@ -88,9 +111,24 @@ export default function PaymentIssuesPanel({ callAdmin }) {
                     <span className="code-chip">{i.reference}</span>
                   </td>
                   <td>
-                    <button className="btn btn-outline" onClick={() => setResolving(i)}>
-                      Mark refunded
-                    </button>
+                    {ISSUE_STATUS[i.status] ?? i.status}
+                    {i.lastRefundError && (
+                      <div className="admin-cell-sub" style={{ color: "var(--color-danger)" }}>
+                        Paystack: {i.lastRefundError}
+                      </div>
+                    )}
+                  </td>
+                  <td>
+                    {i.status === "refund_due" || i.status === "refund_failed" ? (
+                      <div className="admin-row-actions">
+                        <button className="btn btn-primary" onClick={() => open(i, "paystack")}>
+                          Retry refund
+                        </button>
+                        <button className="btn btn-outline" onClick={() => open(i, "manual")}>
+                          Record manual refund
+                        </button>
+                      </div>
+                    ) : null}
                   </td>
                 </tr>
               ))}
@@ -103,12 +141,13 @@ export default function PaymentIssuesPanel({ callAdmin }) {
       {resolving && (
         <div className="admin-modal-backdrop" onClick={() => !busy && setResolving(null)}>
           <div className="admin-modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
-            <h3>Mark as refunded?</h3>
+            <h3>{manual ? "Record a manual refund?" : "Refund through Paystack?"}</h3>
             <p className="sub">
-              Only do this after the refund for {resolving.currency}{" "}
-              {Number(resolving.amount).toFixed(2)} ({resolving.reference}) has
-              been issued in Paystack.
+              {manual
+                ? `Only do this after ${ri.currency} ${Number(ri.amount).toFixed(2)} (${ri.reference}) has been refunded another way.`
+                : `Paystack refunds ${ri.currency} ${Number(ri.amount).toFixed(2)} (${ri.reference}) to the original payment.`}
             </p>
+            {manual && (
             <div className="admin-field">
               <label htmlFor="refund-note">Note (kept in the audit log)</label>
               <textarea
@@ -117,15 +156,16 @@ export default function PaymentIssuesPanel({ callAdmin }) {
                 maxLength={300}
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
-                placeholder="e.g. Refunded in Paystack on 3 Oct"
+                placeholder="e.g. Sent by mobile money on 3 Oct"
               />
             </div>
+            )}
             <div className="admin-modal-actions">
               <button className="btn btn-outline" onClick={() => setResolving(null)} disabled={busy}>
                 Cancel
               </button>
-              <button className="btn btn-primary" disabled={busy || note.trim().length < 3} onClick={confirm}>
-                {busy ? "Saving…" : "Mark refunded"}
+              <button className="btn btn-primary" disabled={busy || (manual && note.trim().length < 3)} onClick={confirm}>
+                {busy ? "Working…" : manual ? "Record refund" : "Refund"}
               </button>
             </div>
           </div>

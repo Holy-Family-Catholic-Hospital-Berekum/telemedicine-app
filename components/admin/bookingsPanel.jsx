@@ -192,7 +192,7 @@ export default function BookingsPanel({
     });
   };
   const [rescheduling, setRescheduling] = useState(null);
-  const [closing, setClosing] = useState(null); // { booking, outcome }
+  const [closing, setClosing] = useState(null); // { booking, outcome, close? }
   const [creatingSlot, setCreatingSlot] = useState(false);
   const [cancellingSlot, setCancellingSlot] = useState(null);
 
@@ -203,6 +203,7 @@ export default function BookingsPanel({
     toSchedule: "",
     scheduled: "",
     reschedules: "",
+    noShows: "",
     slots: "",
   });
   const query = queries[subtab];
@@ -220,6 +221,9 @@ export default function BookingsPanel({
   const toSchedule = bookings.filter((b) => b.status === "paid" && !b.consultationId);
   const scheduled = bookings.filter((b) => b.status === "scheduled");
   const reschedules = bookings.filter((b) => b.rescheduleRequest?.status === "requested");
+  // Missed (no-show) bookings held for the patient to pay the reschedule
+  // fee or ask for a refund; closed automatically when the hold ends.
+  const noShows = bookings.filter((b) => b.status === "no_show");
   const openSlots = slots.filter((s) => s.status === "open");
 
   const doctorName = (id) => doctors.find((d) => d.id === id)?.name ?? "—";
@@ -231,7 +235,9 @@ export default function BookingsPanel({
         ? scheduled
         : subtab === "reschedules"
           ? reschedules
-          : null;
+          : subtab === "noShows"
+            ? noShows
+            : null;
 
   const filteredRows = useMemo(() => {
     if (!rows) return rows;
@@ -284,6 +290,7 @@ export default function BookingsPanel({
     toSchedule: "Search by patient, phone, or booking ID…",
     scheduled: "Search by patient, doctor, or consultation ID…",
     reschedules: "Search by patient or phone…",
+    noShows: "Search by patient, doctor, or consultation ID…",
     slots: "Search by doctor, date, or slot ID…",
   };
 
@@ -324,6 +331,12 @@ export default function BookingsPanel({
             onClick={() => setSubtab("reschedules")}
           >
             Reschedule requests ({reschedules.length})
+          </button>
+          <button
+            className={`admin-subtab${subtab === "noShows" ? " active" : ""}`}
+            onClick={() => setSubtab("noShows")}
+          >
+            No-shows ({noShows.length})
           </button>
           <button
             className={`admin-subtab${subtab === "slots" ? " active" : ""}`}
@@ -453,6 +466,20 @@ export default function BookingsPanel({
                           {b.rescheduleRequest?.reason ? ` · ${b.rescheduleRequest.reason}` : ""}
                         </div>
                       )}
+                      {subtab === "reschedules" && b.rescheduleRequest?.afterNoShow && (
+                        <div className="admin-cell-sub">
+                          After a no-show
+                          {b.noShowFee?.amount ? ` · fee paid GHS ${b.noShowFee.amount}` : " · no fee"}
+                        </div>
+                      )}
+                      {subtab === "noShows" && (
+                        <div className="admin-cell-sub" style={{ color: "var(--color-danger)" }}>
+                          Missed · held until {formatDateTime(b.noShowExpiresAt)}
+                          {b.noShowTerms
+                            ? ` · fee GHS ${b.noShowTerms.rescheduleFee}, keeps ${b.noShowTerms.forfeitPercent}% on refund`
+                            : ""}
+                        </div>
+                      )}
                     </td>
                     {subtab === "toSchedule" && (
                       <td>
@@ -546,6 +573,14 @@ export default function BookingsPanel({
                                 <IconPhone size={14} /> Reschedule
                               </>
                             )}
+                          </button>
+                        )}
+                        {subtab === "noShows" && (
+                          <button
+                            className="btn btn-outline"
+                            onClick={() => setClosing({ booking: b, outcome: "no_show", close: true })}
+                          >
+                            Close now
                           </button>
                         )}
                         {subtab === "scheduled" && (
@@ -654,8 +689,22 @@ export default function BookingsPanel({
 
       {closing && (
         <ConfirmDialog
-          title={`Close as ${OUTCOME_LABELS[closing.outcome].toLowerCase()}?`}
+          title={
+            closing.outcome === "no_show" && !closing.close
+              ? "Mark as a no-show?"
+              : `Close as ${OUTCOME_LABELS[closing.outcome].toLowerCase()}?`
+          }
           body={
+            closing.outcome === "no_show" && !closing.close ? (
+              <>
+                {closing.booking.patientName} is marked as missed. Their booking
+                is kept for 14 days so they can pay the no-show reschedule fee
+                for a new time, or ask for a refund minus the share kept; then
+                it closes and the booking details are deleted. This only works
+                once the patient's waiting time is over (online calls are
+                marked automatically).
+              </>
+            ) : (
             <>
               This closes {closing.booking.patientName}'s consultation{" "}
               {closing.booking.consultationId} and{" "}
@@ -664,12 +713,19 @@ export default function BookingsPanel({
               (doctor, times, amount) is kept. It can't be undone.
               {closing.outcome === "completed" &&
                 ` Only continue if ${closing.booking.doctorName || "the doctor"} has seen the patient.`}
+              {closing.close &&
+                " The patient can no longer reschedule or ask for a refund from their dashboard."}
             </>
+            )
           }
-          confirmLabel={`Close as ${OUTCOME_LABELS[closing.outcome].toLowerCase()}`}
+          confirmLabel={
+            closing.outcome === "no_show" && !closing.close
+              ? "Mark as no-show"
+              : `Close as ${OUTCOME_LABELS[closing.outcome].toLowerCase()}`
+          }
           tone="danger"
           onConfirm={() => {
-            onMarkDone(closing.booking, closing.outcome);
+            onMarkDone(closing.booking, closing.outcome, Boolean(closing.close));
             setClosing(null);
           }}
           onClose={() => setClosing(null)}

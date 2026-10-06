@@ -79,8 +79,9 @@ const WINDOW = 500;
 const bookingsWindow = (n) =>
   query(
     collection(db, "bookings"),
-    // Paid and scheduled bookings only: unpaid drafts never reach admin.
-    where("status", "in", ["paid", "scheduled"]),
+    // Paid, scheduled and held no-show bookings: unpaid drafts never
+    // reach admin.
+    where("status", "in", ["paid", "scheduled", "no_show"]),
     orderBy("createdAt", "desc"),
     limit(n),
   );
@@ -89,9 +90,16 @@ const historyWindow = (n) =>
   query(collection(db, "consultationHistory"), orderBy("endedAt", "desc"), limit(n));
 const auditWindow = (n) => query(collection(db, "auditLog"), orderBy("timestamp", "desc"), limit(n));
 // Refunds waiting for an admin (badge on the Revenue tab): patient refund
-// requests and payments flagged for a refund (duplicates, late payments).
-const pendingRefundsQuery = query(collection(db, "refundRequests"), where("status", "==", "requested"));
-const refundDueIssuesQuery = query(collection(db, "paymentIssues"), where("status", "==", "refund_due"));
+// requests to decide or that Paystack refused, and automatic refunds of
+// flagged payments (duplicates, late payments) that Paystack refused.
+const pendingRefundsQuery = query(
+  collection(db, "refundRequests"),
+  where("status", "in", ["requested", "failed"]),
+);
+const refundDueIssuesQuery = query(
+  collection(db, "paymentIssues"),
+  where("status", "in", ["refund_due", "refund_failed"]),
+);
 
 export default function Admin() {
   usePageMeta({ title: "Admin", noindex: true });
@@ -218,11 +226,13 @@ export default function Admin() {
       () => false,
     );
 
-  const handleMarkDone = (booking, outcome) =>
+  // close: true closes a held no-show now (details deleted).
+  const handleMarkDone = (booking, outcome, close = false) =>
     quietly(
       callAdmin("markConsultationDone", {
         consultationId: booking.consultationId,
         outcome,
+        ...(close ? { close: true } : {}),
       }),
     );
 

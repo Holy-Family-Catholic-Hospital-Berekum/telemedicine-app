@@ -34,6 +34,7 @@ const {
   deleteTree,
 } = require("./lib/core");
 const { queueEmail } = require("./lib/mailQueue");
+const { loadNoShowPolicy } = require("./siteSettings");
 
 // A doctor can't have two consultations closer together than this.
 const MIN_GAP_MINUTES = 30;
@@ -120,6 +121,7 @@ exports.scheduleConsultation = onCall(async (request) => {
   checkFutureTime(when);
 
   const bookingRef = db.collection("bookings").doc(bookingId);
+  const noShow = await loadNoShowPolicy();
 
   const consultationId = await db.runTransaction(async (tx) => {
     const bookingSnap = await tx.get(bookingRef);
@@ -191,6 +193,7 @@ exports.scheduleConsultation = onCall(async (request) => {
         mode: booking.mode,
         scheduledAt: when.getTime(),
         consultationId: id,
+        noShow,
       },
     });
     queueEmail(tx, {
@@ -398,6 +401,7 @@ exports.rescheduleConsultation = onCall(async (request) => {
   const note = str(d.reason, { field: "Reason", max: 300, optional: true });
 
   const bookingRef = db.collection("bookings").doc(bookingId);
+  const noShow = await loadNoShowPolicy();
 
   const moved = await db.runTransaction(async (tx) => {
     const bookingSnap = await tx.get(bookingRef);
@@ -497,6 +501,7 @@ exports.rescheduleConsultation = onCall(async (request) => {
         mode: booking.mode,
         scheduledAt: when.getTime(),
         consultationId: booking.consultationId,
+        noShow,
       },
     });
     queueEmail(tx, {

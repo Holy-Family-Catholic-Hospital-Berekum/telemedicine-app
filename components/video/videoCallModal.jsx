@@ -68,13 +68,16 @@ function Watermark({ text }) {
  *
  * Props: consultationId, role ("doctor" | "patient"),
  *        patientSeq (patient only, from startVideoCall), viewerName
- *        (for the anti-capture watermark), onClose
+ *        (for the anti-capture watermark), noShowAt (doctor only: when the
+ *        patient counts as a no-show, ms; the waiting screen counts down to
+ *        it and the server marks the no-show then), onClose
  */
 export default function VideoCallModal({
   consultationId,
   role,
   patientSeq,
   viewerName,
+  noShowAt = null,
   onClose,
 }) {
   const {
@@ -100,11 +103,17 @@ export default function VideoCallModal({
   useEffect(() => holdSession(), [holdSession]);
   const [captureWarning, setCaptureWarning] = useState(false);
 
-  // Keeps the watermark's time current.
+  // Has the other person ever connected? Then the no-show countdown stops.
+  const [everConnected, setEverConnected] = useState(false);
+  if (status === "connected" && !everConnected) setEverConnected(true);
+  const counting = role === "doctor" && Boolean(noShowAt) && !everConnected;
+
+  // Keeps the watermark's time current (and the no-show countdown, each
+  // second, while it runs).
   useEffect(() => {
-    const id = setInterval(() => setNow(new Date()), 30000);
+    const id = setInterval(() => setNow(new Date()), counting ? 1000 : 30000);
     return () => clearInterval(id);
-  }, []);
+  }, [counting]);
 
   useEffect(() => {
     if (!consultationId) return undefined;
@@ -140,11 +149,20 @@ export default function VideoCallModal({
   })} · Confidential`;
 
   const other = role === "doctor" ? "patient" : "doctor";
+  const left = counting ? Math.max(0, noShowAt - now.getTime()) : null;
+  const countdown =
+    left === null
+      ? null
+      : left > 0
+        ? `${Math.floor(left / 60000)}:${String(Math.floor((left % 60000) / 1000)).padStart(2, "0")} left for the patient to join. After that the consultation is marked as a no-show automatically.`
+        : "The patient didn't join in time, so the consultation is being marked as a no-show. You can end the call.";
   const overlay =
     status === "connecting"
       ? "Connecting…"
       : status === "waiting"
-        ? `Waiting for the ${other} to join…`
+        ? countdown
+          ? `Waiting for the ${other} to join… ${countdown}`
+          : `Waiting for the ${other} to join…`
         : status === "reconnecting"
           ? "Connection interrupted — reconnecting…"
           : status === "ending"

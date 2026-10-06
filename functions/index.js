@@ -30,6 +30,8 @@ const refunds = require("./refunds");
 const roomDevices = require("./roomDevices");
 const staffAuth = require("./staffAuth");
 const auditMirror = require("./auditMirror");
+const noShow = require("./noShow");
+const refundSync = require("./refundSync");
 
 // Staff sign-in second factor (authenticator app for admins and doctors)
 exports.confirmStaffSession = staffAuth.confirmStaffSession;
@@ -63,6 +65,14 @@ exports.rescheduleConsultation = scheduling.rescheduleConsultation;
 exports.startVideoCall = consultations.startVideoCall;
 exports.getTurnCredentials = consultations.getTurnCredentials;
 exports.markConsultationDone = consultations.markConsultationDone;
+
+// No-shows: automatic marking after the waiting time, paid reschedule,
+// closing the ones left alone (noShow.js)
+exports.autoMarkNoShows = noShow.autoMarkNoShows;
+exports.closeExpiredNoShows = noShow.closeExpiredNoShows;
+exports.startNoShowReschedule = noShow.startNoShowReschedule;
+exports.getNoShowFeeStatus = noShow.getNoShowFeeStatus;
+exports.syncPaystackRefunds = refundSync.syncPaystackRefunds;
 exports.reportCaptureAttempt = consultations.reportCaptureAttempt;
 
 // Telemedicine room computers (doctors start calls only from these)
@@ -80,6 +90,7 @@ exports.recoverStaleRecordings = recordings.recoverStaleRecordings;
 
 // Site content (admin Control Panel)
 exports.updateConsultationPrices = siteSettings.updateConsultationPrices;
+exports.updateNoShowPolicy = siteSettings.updateNoShowPolicy;
 exports.updateSiteImages = siteSettings.updateSiteImages;
 exports.updateDoctorSelection = siteSettings.updateDoctorSelection;
 exports.updateLegalDocument = legalDocs.updateLegalDocument;

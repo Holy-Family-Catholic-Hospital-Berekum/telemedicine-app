@@ -21,6 +21,7 @@ const { onSchedule } = require("firebase-functions/v2/scheduler");
 const logger = require("firebase-functions/logger");
 const { db, Timestamp, toDate } = require("./lib/core");
 const { queueEmail } = require("./lib/mailQueue");
+const { loadNoShowPolicy } = require("./siteSettings");
 
 const MIN = 60 * 1000;
 const HOUR = 60 * MIN;
@@ -73,6 +74,8 @@ exports.sendAppointmentReminders = onSchedule(
       .where("scheduledTime", "<=", Timestamp.fromMillis(now + 24 * HOUR))
       .get();
 
+    // The no-show rule goes into every patient email (lib/emailTemplates.js).
+    const noShow = snap.empty ? null : await loadNoShowPolicy();
     let queued = 0;
     for (const doc of snap.docs) {
       if (dueReminders(doc.data(), now).length === 0) continue;
@@ -115,6 +118,7 @@ exports.sendAppointmentReminders = onSchedule(
                   ...extra,
                   // The account holder (a child's parent or guardian).
                   patientName: booking.guardianName || booking.patientName || c.patientName || "",
+                  noShow,
                   consultationId: doc.id,
                 },
                 sendBefore: late ? start + LATE_TO : start,

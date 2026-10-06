@@ -155,4 +155,7 @@ dashboard. Their hospital admin account is enough.
 5. **Paystack live keys** at go-live: the live secret key via
    `firebase functions:secrets:set PAYSTACK_SECRET_KEY`, the live public key
    in Vercel (`VITE_PAYSTACK_PUBLIC_KEY`), and the webhook URL in the
-   Paystack dashboard.
+   Paystack dashboard. Refunds are sent through the Paystack Refund
+   API from the same balance, so keep enough in it; refunds Paystack can't
+   make show as "Paystack couldn't refund" in Revenue (retry, or record a
+   manual refund). The webhook must stay subscribed to refund events.

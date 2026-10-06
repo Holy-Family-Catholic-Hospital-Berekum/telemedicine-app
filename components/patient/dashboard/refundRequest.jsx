@@ -3,17 +3,24 @@ import { Loader2, X } from "lucide-react";
 import { requestRefund } from "./patientFirestoreService";
 import { callableMessage, toDate } from "../../../src/constants";
 
-// "Request a refund" for a consultation the patient didn't attend, once its
-// scheduled day has passed. Deliberately low-key: rescheduling is the
-// option the dashboard puts first. The server re-checks eligibility (not
-// joined, day passed, money paid, no reschedule pending, one request per
-// consultation). Admin refunds manually and marks the outcome.
+// "Request a refund" for a consultation the patient didn't attend: a
+// no-show straight away (anyTime), otherwise once its scheduled day has
+// passed. Deliberately low-key: rescheduling is the option the dashboard
+// puts first. The server re-checks eligibility (not joined, money paid, no
+// reschedule pending, one request per consultation). An admin approves it
+// and Paystack sends the money back to the mobile money wallet the patient
+// paid from.
 
 const STATUS_TEXT = {
-  requested: "Refund requested — the hospital will contact you",
-  refunded: "Refunded",
+  requested: "Refund requested. The hospital will review it shortly.",
+  refund_starting: "Refund approved. It's on its way to your mobile money wallet.",
+  processing: "Refund approved. It's on its way to your mobile money wallet.",
+  failed: "Refund requested. The hospital will review it shortly.",
+  refunded: "Refunded to your mobile money wallet",
   declined: "Refund declined",
 };
+
+const money = (n) => `GHS ${Number(n || 0).toFixed(2).replace(/\.00$/, "")}`;
 
 /** Ghana is UTC+0: compare calendar days in UTC. */
 function scheduledDayHasPassed(scheduledTime) {
@@ -22,7 +29,18 @@ function scheduledDayHasPassed(scheduledTime) {
   return d.toISOString().slice(0, 10) < new Date().toISOString().slice(0, 10);
 }
 
-export default function RefundRequest({ source, id, scheduledTime, amountPaid, existing, defaultPhone, onRequested }) {
+export default function RefundRequest({
+  source,
+  id,
+  scheduledTime,
+  amountPaid,
+  suggestedAmount,
+  forfeitPercent,
+  anyTime = false,
+  existing,
+  defaultPhone,
+  onRequested,
+}) {
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState("");
   const [phone, setPhone] = useState(defaultPhone || "");
@@ -33,18 +51,20 @@ export default function RefundRequest({ source, id, scheduledTime, amountPaid, e
     return (
       <p className="text-xs text-[#3E4E56]">
         {STATUS_TEXT[existing.status] ?? "Refund requested"}
+        {existing.status === "refunded" && existing.amountRefunded ? ` (${money(existing.amountRefunded)})` : ""}
         {existing.status === "declined" && existing.note ? `: ${existing.note}` : ""}
       </p>
     );
   }
-  if (!(Number(amountPaid) > 0) || !scheduledDayHasPassed(scheduledTime)) return null;
+  if (!(Number(amountPaid) > 0) || !(anyTime || scheduledDayHasPassed(scheduledTime))) return null;
+  const back = suggestedAmount ?? amountPaid;
 
   async function submit(e) {
     e.preventDefault();
     setBusy(true);
     setError(null);
     try {
-      await requestRefund({ source, id, reason: reason.trim(), refundPhone: phone.trim() });
+      await requestRefund({ source, id, reason: reason.trim(), refundPhone: phone.trim() || undefined });
       setOpen(false);
       onRequested?.();
     } catch (err) {
@@ -61,7 +81,7 @@ export default function RefundRequest({ source, id, scheduledTime, amountPaid, e
         onClick={() => setOpen(true)}
         className="text-xs text-[#3E4E56] underline underline-offset-2 hover:text-[#12242C]"
       >
-        Request a refund instead
+        Request a refund instead{forfeitPercent ? ` (${money(back)} back)` : ""}
       </button>
 
       {open && (
@@ -87,8 +107,17 @@ export default function RefundRequest({ source, id, scheduledTime, amountPaid, e
             </div>
             <p className="mt-2 text-sm text-[#3E4E56]">
               Tell us why you're asking for a refund. The hospital reviews each
-              request and refunds approved ones to your mobile money number.
+              request and sends approved refunds back to the mobile money
+              wallet you paid from.
             </p>
+            {forfeitPercent > 0 && (
+              <p className="mt-2 rounded-sm bg-[#F88535]/10 px-3 py-2 text-sm text-[#12242C]">
+                For a missed consultation you get {money(back)} of the{" "}
+                {money(amountPaid)} you paid back ({forfeitPercent}% is kept for
+                the missed appointment). Once you ask for a refund, you can't
+                reschedule this one.
+              </p>
+            )}
 
             <label className="mt-4 block text-sm font-medium text-[#12242C]" htmlFor="refund-reason">
               Reason
@@ -106,11 +135,10 @@ export default function RefundRequest({ source, id, scheduledTime, amountPaid, e
             />
 
             <label className="mt-3 block text-sm font-medium text-[#12242C]" htmlFor="refund-phone">
-              Mobile money number for the refund
+              Phone number we can call you on (optional)
             </label>
             <input
               id="refund-phone"
-              required
               type="tel"
               inputMode="tel"
               maxLength={20}
@@ -133,7 +161,7 @@ export default function RefundRequest({ source, id, scheduledTime, amountPaid, e
               </button>
               <button
                 type="submit"
-                disabled={busy || reason.trim().length < 5 || phone.trim().length < 9}
+                disabled={busy || reason.trim().length < 5 || (phone.trim() !== "" && phone.trim().length < 9)}
                 className="flex items-center gap-2 rounded-sm px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
                 style={{ backgroundColor: "#0095D9" }}
               >

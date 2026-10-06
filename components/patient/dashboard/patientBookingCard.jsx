@@ -8,6 +8,7 @@ import RevealId from "./revealId";
 import JoinCallPanel from "./joinCallPanel";
 import CheckPaymentPanel from "./checkPaymentPanel";
 import RefundRequest from "./refundRequest";
+import NoShowPanel from "./noShowPanel";
 
 const STATE_META = {
   awaiting_payment: {
@@ -30,6 +31,11 @@ const STATE_META = {
     color: "#F88535",
     bg: "#F885351A",
   },
+  no_show: {
+    label: "Missed",
+    color: "#B23A3A",
+    bg: "#B23A3A14",
+  },
 };
 
 const MISSED_META = {
@@ -47,6 +53,7 @@ export default function BookingCard({
   refund,
   defaultPhone,
   onRefundRequested,
+  onNoShowRescheduled,
 }) {
   const isScheduled =
     booking.state === "scheduled" || booking.state === "in_progress";
@@ -148,6 +155,16 @@ export default function BookingCard({
             <CheckPaymentPanel booking={booking} onConfirmed={onPaymentConfirmed} />
           )}
 
+          {booking.state === "no_show" && (
+            <NoShowPanel
+              booking={booking}
+              refund={refund}
+              defaultPhone={defaultPhone}
+              onRefundRequested={onRefundRequested}
+              onRescheduled={onNoShowRescheduled}
+            />
+          )}
+
           {booking.state === "pending_assignment" && (
             <p className="flex items-center gap-2 text-sm text-[#3E4E56]">
               <ShieldCheck size={15} strokeWidth={1.75} />
@@ -187,7 +204,7 @@ export default function BookingCard({
                   <p className="mt-1 text-sm text-[#3E4E56]">
                     {patientJoined
                       ? "Sorry about that. Choose a new time and we'll book you in again at no extra cost."
-                      : "No problem. Choose a new time and we'll book you in again at no extra cost."}
+                      : "Choose a new time and we'll book you in again."}
                   </p>
                   <div className="mt-3">
                     <RescheduleForm booking={booking} onRequested={onRescheduled} />

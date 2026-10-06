@@ -53,6 +53,17 @@ export const DEFAULT_IMAGES = {
  */
 export const DEFAULT_PRICES = { OPD: 250, SURGICAL: 300 };
 
+/**
+ * No-show policy, until an admin sets it (Control panel). Keep in step with
+ * DEFAULT_NO_SHOW in functions/siteSettings.js; the server enforces it.
+ *   waitMinutes     time the patient has to join after the start (or after
+ *                   the doctor joined, if later)
+ *   forfeitPercent  share of the fee kept when a no-show asks for a refund
+ *   rescheduleFee   GHS a no-show pays to book a new time
+ */
+export const DEFAULT_NO_SHOW = { waitMinutes: 5, forfeitPercent: 20, rescheduleFee: 50 };
+const inRange = (n, min, max) => typeof n === "number" && Number.isFinite(n) && n >= min && n <= max;
+
 export const settingsRef = doc(getFirestore(app), "siteSettings", "public");
 
 const CACHE_KEY = "hfh.siteSettings.v1";
@@ -77,6 +88,11 @@ export function normaliseSettings(data) {
       : [],
     // Admin switch; missing = allowed. The server enforces it too.
     doctorSelectionEnabled: d.doctorSelectionEnabled !== false,
+    noShow: {
+      waitMinutes: inRange(d.noShow?.waitMinutes, 1, 30) ? d.noShow.waitMinutes : DEFAULT_NO_SHOW.waitMinutes,
+      forfeitPercent: inRange(d.noShow?.forfeitPercent, 0, 100) ? d.noShow.forfeitPercent : DEFAULT_NO_SHOW.forfeitPercent,
+      rescheduleFee: inRange(d.noShow?.rescheduleFee, 0, 5000) ? d.noShow.rescheduleFee : DEFAULT_NO_SHOW.rescheduleFee,
+    },
   };
 }
 
@@ -100,6 +116,7 @@ function writeCache(data) {
         authImage: data?.authImage ? { url: data.authImage.url } : null,
         sliderImages: (data?.sliderImages || []).map((i) => ({ url: i.url })),
         doctorSelectionEnabled: data?.doctorSelectionEnabled !== false,
+        noShow: data?.noShow ?? null,
       }),
     );
   } catch {

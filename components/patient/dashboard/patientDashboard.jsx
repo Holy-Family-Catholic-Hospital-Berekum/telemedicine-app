@@ -10,6 +10,7 @@ import {
   Settings as SettingsIcon,
   CalendarPlus,
   History as HistoryIcon,
+  CalendarX2,
 } from "lucide-react";
 import { useAuth } from "../../../src/context/authContext.jsx";
 import HealthcarePreloader from "../../../src/components/common/healthcarePreloader.jsx";
@@ -185,6 +186,13 @@ export default function Dashboard() {
       items: safeBookings
         .filter((b) => b.state === "scheduled" || b.state === "in_progress")
         .sort(sortByTime),
+    },
+    {
+      key: "missed",
+      title: "Missed appointments",
+      help: "You didn't join in time. Book a new time (for the no-show fee) or ask for a refund before the date shown.",
+      icon: CalendarX2,
+      items: safeBookings.filter((b) => b.state === "no_show"),
     },
     {
       key: "waiting",
@@ -412,6 +420,7 @@ export default function Dashboard() {
                             onJoined={handleJoined}
                             onRejoinCall={handleRejoinCall}
                             onPaymentConfirmed={reloadBookings}
+                            onNoShowRescheduled={reloadBookings}
                           />
                         ))}
                       </div>

@@ -31,6 +31,20 @@ const DEFAULT_FEES = { OPD: 250, SURGICAL: 300 };
 const FEE_LABELS = { OPD: "General OPD", SURGICAL: "Surgical" };
 const MAX_FEE = 5000; // typo guard: 2500 instead of 250 is refused
 
+// No-show policy (admin Control panel; shown to patients in the booking
+// card, reminders and terms). Keep in step with DEFAULT_NO_SHOW in
+// src/siteSettings.js.
+//   waitMinutes     how long after the start (or after the doctor joined,
+//                   if later) the patient has to join an online call
+//   forfeitPercent  share of the fee kept when a no-show asks for a refund
+//   rescheduleFee   GHS a no-show pays to book a new time
+const DEFAULT_NO_SHOW = { waitMinutes: 5, forfeitPercent: 20, rescheduleFee: 50 };
+const NO_SHOW_LIMITS = {
+  waitMinutes: [1, 30],
+  forfeitPercent: [0, 100],
+  rescheduleFee: [0, MAX_FEE],
+};
+
 const MAX_SLIDES = 8;
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 
@@ -71,6 +85,22 @@ function readPrices(data) {
 async function loadPrices() {
   const snap = await settingsDoc().get();
   return readPrices(snap.exists ? snap.data() : null);
+}
+
+/** Valid no-show policy from a settings document, falling back per field. */
+function readNoShowPolicy(data) {
+  const p = data?.noShow || {};
+  const out = {};
+  for (const [key, [min, max]] of Object.entries(NO_SHOW_LIMITS)) {
+    const n = p[key];
+    out[key] = typeof n === "number" && Number.isFinite(n) && n >= min && n <= max ? n : DEFAULT_NO_SHOW[key];
+  }
+  return out;
+}
+
+async function loadNoShowPolicy() {
+  const snap = await settingsDoc().get();
+  return readNoShowPolicy(snap.exists ? snap.data() : null);
 }
 
 function publicUrl(bucketName, path) {
@@ -145,6 +175,52 @@ exports.updateConsultationPrices = onCall({ region: REGION }, async (request) =>
   });
 
   return { changed: changes.length > 0, prices: next };
+});
+
+/* ------------------------------------------------------------------ */
+/* updateNoShowPolicy                                                  */
+/* ------------------------------------------------------------------ */
+
+/**
+ * data: { waitMinutes, forfeitPercent, rescheduleFee }  (all required)
+ * Applies to no-shows from now on: each no-show keeps a copy of the policy
+ * it was marked under, so later changes never alter what a patient was told.
+ */
+exports.updateNoShowPolicy = onCall({ region: REGION }, async (request) => {
+  const uid = await requireAdmin(request);
+  const d = request.data || {};
+  const labels = {
+    waitMinutes: "the waiting time (minutes)",
+    forfeitPercent: "the share kept on a refund (%)",
+    rescheduleFee: "the reschedule fee (GHS)",
+  };
+  const next = {};
+  for (const [key, [min, max]] of Object.entries(NO_SHOW_LIMITS)) {
+    const n = d[key];
+    if (typeof n !== "number" || !Number.isFinite(n) || n < min || n > max) {
+      throw new HttpsError("invalid-argument", `Enter ${labels[key]} between ${min} and ${max}.`);
+    }
+    next[key] = key === "rescheduleFee" ? Math.round(n) : Math.round(n);
+  }
+
+  const ref = settingsDoc();
+  const db = getDb();
+  await db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    const before = readNoShowPolicy(snap.exists ? snap.data() : null);
+    tx.set(ref, { noShow: next, updatedAt: SERVER_TIME(), updatedBy: uid }, { merge: true });
+    tx.set(db.collection("auditLog").doc(), {
+      actorId: uid,
+      actorRole: "admin",
+      action: "Changed the no-show policy",
+      code: "settings.no_show_policy",
+      category: "payment",
+      result: "success",
+      targetId: `wait ${before.waitMinutes}→${next.waitMinutes} min; kept ${before.forfeitPercent}→${next.forfeitPercent}%; fee GHS ${before.rescheduleFee}→${next.rescheduleFee}`,
+      timestamp: SERVER_TIME(),
+    });
+  });
+  return { noShow: next };
 });
 
 /* ------------------------------------------------------------------ */
@@ -284,4 +360,7 @@ async function doctorSelectionEnabled() {
 
 exports.doctorSelectionEnabled = doctorSelectionEnabled;
 exports.loadPrices = loadPrices;
+exports.loadNoShowPolicy = loadNoShowPolicy;
+exports.readNoShowPolicy = readNoShowPolicy;
+exports.DEFAULT_NO_SHOW = DEFAULT_NO_SHOW;
 exports.DEFAULT_FEES = DEFAULT_FEES;
