@@ -280,6 +280,8 @@ async function closeConsultation({ consultationId, outcome, actor, meta = null, 
       // patient's chance to reschedule or ask for a refund has ended.
       refundClosed: c.status === "no_show",
       paystackReference: booking.paystackReference || null,
+      // Lets refundSync.js trace a refund of this payment on Paystack.
+      paystackTransactionId: booking.paystackTransactionId || null,
       closedByUid: actor.uid,
       closedByRole: actor.role,
       createdAt: serverTime(),

@@ -33,28 +33,40 @@ function refundOutcome(status) {
 /**
  * Asks Paystack to refund `amount` GHS of the payment `reference`.
  * Resolves { id, status }; throws an Error with Paystack's message.
+ * err.definite is true only when Paystack itself answered "no" (a 4xx):
+ * then nothing was refunded. Otherwise (no answer, network error, 5xx) the
+ * refund MAY have been created, so callers must not treat it as refused;
+ * refundSync.js finds out from Paystack.
  */
 async function createRefund({ reference, amount, customerNote, merchantNote }) {
-  const res = await fetch(`${PAYSTACK_API}/refund`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${secretKey()}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      transaction: reference,
-      amount: Math.round(Number(amount) * 100),
-      currency: "GHS",
-      customer_note: String(customerNote || "Refund from Holy Family Catholic Hospital").slice(0, 200),
-      merchant_note: String(merchantNote || "").slice(0, 200),
-    }),
-  });
+  let res;
+  try {
+    res = await fetch(`${PAYSTACK_API}/refund`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${secretKey()}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        transaction: reference,
+        amount: Math.round(Number(amount) * 100),
+        currency: "GHS",
+        customer_note: String(customerNote || "Refund from Holy Family Catholic Hospital").slice(0, 200),
+        merchant_note: String(merchantNote || "").slice(0, 200),
+      }),
+    });
+  } catch (cause) {
+    const err = new Error(`No answer from Paystack (${cause.message})`);
+    err.definite = false;
+    throw err;
+  }
   const body = await res.json().catch(() => null);
   if (!res.ok || !body?.status) {
     const message = body?.message || `Paystack refund failed (${res.status})`;
     logger.error("Paystack refund request failed", { reference, status: res.status, message });
     const err = new Error(message);
     err.status = res.status;
+    err.definite = res.status >= 400 && res.status < 500;
     throw err;
   }
   return { id: String(body.data?.id ?? ""), status: body.data?.status || "pending" };

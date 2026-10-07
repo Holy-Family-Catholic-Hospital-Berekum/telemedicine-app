@@ -205,6 +205,14 @@ async function startIssueRefund(reference, { actorId, actorRole = null, meta = n
     });
     return "refund_processing";
   } catch (err) {
+    if (!err.definite) {
+      // Paystack may have accepted it: stay "refund_starting" so nobody
+      // retries; refundSync.js confirms with Paystack within ~15 minutes
+      // (or puts it back to "refund_due" if Paystack never got it).
+      await ref.update({ lastRefundError: "Waiting for Paystack to confirm the refund." });
+      logger.warn("Refund outcome unknown; refundSync will confirm", { reference, err: err.message });
+      return "refund_starting";
+    }
     await ref.update({ status: "refund_due", lastRefundError: String(err.message).slice(0, 300) });
     await audit(null, {
       actorId,
@@ -295,9 +303,11 @@ async function checkAttempts(bookingRef, booking, { strict = false } = {}) {
 /**
  * Deletes an unpaid booking draft: its personal details, its payment
  * reference lookups, and its hold on a time slot. Only for drafts whose
- * attempts have clearly failed or never started (checkAttempts "failed" /
- * "none"): a payment that still lands later finds no booking and is
- * refunded automatically (recordPaymentIssue).
+ * attempts have clearly failed, never started, or succeeded with the wrong
+ * amount (checkAttempts "failed" / "none" / "rejected": that money is
+ * already flagged in paymentIssues and refunded on its own). A payment
+ * that still lands later finds no booking and is refunded automatically
+ * (recordPaymentIssue).
  * reason: "expired" (hourly cleanup) | "replaced" (the patient started a
  * new booking).
  */
@@ -417,9 +427,12 @@ async function markBookingPaid(bookingRef, paystackData, via) {
     }
 
     // Revenue record. Survives the booking (which is deleted when the
-    // consultation closes) and carries no personal details.
+    // consultation closes) and carries no personal details. `fees` is what
+    // Paystack keeps (from its own verify data), so amount - fees is what
+    // reaches the hospital's settlement.
     tx.set(db.collection("confirmedPayments").doc(paystackData.reference), {
       amount: amountPaid,
+      fees: Number(paystackData.fees || 0) / 100,
       type: booking.type,
       mode: booking.mode,
       channel: paystackData.channel || null,
@@ -561,10 +574,10 @@ exports.createBookingDraft = onCall({ secrets: [PAYSTACK_SECRET_KEY] }, async (r
         "We're still waiting for an earlier payment to go through. So you don't pay twice, please approve or decline the prompt on your phone and wait for it to finish, then try again. You can check it in My appointments.",
       );
     }
-    if (state === "failed" || state === "none") {
+    if (state === "failed" || state === "none" || state === "rejected") {
       await discardDraft(draft.ref, draft.data(), "replaced");
     } else {
-      kept += 1; // "rejected": flagged for the hospital to sort out
+      kept += 1; // defensive: any other state stays until it settles
     }
   }
   if (kept >= MAX_OPEN_DRAFTS) {
@@ -802,10 +815,9 @@ exports.initializePayment = onCall({ secrets: [PAYSTACK_SECRET_KEY] }, async (re
   const last = await checkAttempts(ref, booking);
   if (last === "paid") return { status: "confirmed" };
   if (last === "rejected") {
-    throw new HttpsError(
-      "failed-precondition",
-      "We couldn't match your earlier payment to this booking. Please contact the hospital before paying again.",
-    );
+    // The mismatched payment is flagged and refunded on its own.
+    await discardDraft(ref, booking, "replaced");
+    throw new HttpsError("failed-precondition", "Your earlier payment didn't match this booking, so it is being refunded to you automatically. Please start your booking again.");
   }
   if (last === "in_flight" || last === "unknown") {
     throw new HttpsError(
@@ -846,6 +858,65 @@ exports.initializePayment = onCall({ secrets: [PAYSTACK_SECRET_KEY] }, async (re
     },
   };
 });
+
+/* ------------------------------------------------------------------ */
+/* applying a Paystack transaction                                     */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Applies a transaction already RE-READ from Paystack (never a webhook
+ * body) to whatever it was for: a booking, a no-show fee, or nothing we
+ * can use (then it's flagged and refunded automatically). Idempotent.
+ * Used by the webhook (push) and the daily reconciliation (reconcile.js),
+ * so a payment is handled the same way whichever finds it first.
+ * Resolves "applied" | "flagged" | "ignored".
+ */
+async function applyPaystackTransaction(tx, via) {
+  if (!isOurReference(tx?.reference)) return "ignored";
+  const refSnap = await db.collection("paymentRefs").doc(tx.reference).get();
+  if (!refSnap.exists) {
+    // A real payment we can't attach to a booking (e.g. paid after the
+    // attempt was deleted). Refund it.
+    if (tx.status === "success") {
+      await recordPaymentIssue(tx, { reason: "no_matching_booking" });
+      return "flagged";
+    }
+    return "ignored";
+  }
+
+  // deepcode ignore Sqli: Firestore document ID, not SQL; booking id comes from the server-written paymentRefs document.
+  const bookingRef = db.collection("bookings").doc(refSnap.data().bookingId);
+  const ids = { bookingId: bookingRef.id, patientUid: refSnap.data().patientUid };
+
+  // A no-show reschedule fee (noShow.js), not a consultation fee.
+  if (refSnap.data().purpose === "noshow_fee") {
+    const { markNoShowFeePaid } = require("./noShow");
+    const fee = await markNoShowFeePaid(bookingRef, tx, via);
+    if (tx.status === "success" && (fee.status === "rejected" || fee.status === "missing" || fee.duplicate)) {
+      await recordPaymentIssue(tx, {
+        reason: fee.duplicate ? "duplicate_payment" : fee.status === "missing" ? "no_matching_booking" : "amount_mismatch",
+        ...ids,
+      });
+      return "flagged";
+    }
+    return "applied";
+  }
+
+  const result = await markBookingPaid(bookingRef, tx, via);
+  if (result.status === "rejected") {
+    await recordPaymentIssue(tx, { reason: "amount_mismatch", ...ids });
+    return "flagged";
+  }
+  if (result.duplicate) {
+    await recordPaymentIssue(tx, { reason: "duplicate_payment", ...ids });
+    return "flagged";
+  }
+  if (result.status === "missing" && tx.status === "success") {
+    await recordPaymentIssue(tx, { reason: "no_matching_booking", ...ids });
+    return "flagged";
+  }
+  return "applied";
+}
 
 /* ------------------------------------------------------------------ */
 /* paystackWebhook                                                     */
@@ -912,42 +983,7 @@ exports.paystackWebhook = onRequest(
         return;
       }
 
-      const refSnap = await db.collection("paymentRefs").doc(tx.reference).get();
-      if (!refSnap.exists) {
-        // A real payment we can't attach to a booking (e.g. paid after
-        // the draft expired). Flag it so finance can refund.
-        if (tx.status === "success") {
-          await recordPaymentIssue(tx, { reason: "no_matching_booking" });
-        }
-        res.status(200).send("Unknown reference");
-        return;
-      }
-
-      const bookingRef = db.collection("bookings").doc(refSnap.data().bookingId);
-      const ids = { bookingId: bookingRef.id, patientUid: refSnap.data().patientUid };
-
-      // A no-show reschedule fee (noShow.js), not a consultation fee.
-      if (refSnap.data().purpose === "noshow_fee") {
-        const { markNoShowFeePaid } = require("./noShow");
-        const fee = await markNoShowFeePaid(bookingRef, tx, "webhook");
-        if (tx.status === "success" && (fee.status === "rejected" || fee.status === "missing" || fee.duplicate)) {
-          await recordPaymentIssue(tx, {
-            reason: fee.duplicate ? "duplicate_payment" : fee.status === "missing" ? "no_matching_booking" : "amount_mismatch",
-            ...ids,
-          });
-        }
-        res.status(200).send("OK");
-        return;
-      }
-
-      const result = await markBookingPaid(bookingRef, tx, "webhook");
-      if (result.status === "rejected") {
-        await recordPaymentIssue(tx, { reason: "amount_mismatch", ...ids });
-      } else if (result.duplicate) {
-        await recordPaymentIssue(tx, { reason: "duplicate_payment", ...ids });
-      } else if (result.status === "missing" && tx.status === "success") {
-        await recordPaymentIssue(tx, { reason: "no_matching_booking", ...ids });
-      }
+      await applyPaystackTransaction(tx, "webhook");
       res.status(200).send("OK");
     } catch (err) {
       logger.error("Webhook processing failed", err);
@@ -977,11 +1013,9 @@ exports.getBookingStatus = onCall(
     const state = await checkAttempts(ref, snap.data());
     if (state === "paid") return { status: "confirmed" };
     if (state === "rejected") {
-      return {
-        status: "failed",
-        message:
-          "We couldn't match your payment to this booking. Please contact the hospital before paying again.",
-      };
+      // The mismatched payment is flagged and refunded on its own.
+      await discardDraft(ref, snap.data(), "replaced");
+      return { status: "failed", message: "Your earlier payment didn't match this booking, so it is being refunded to you automatically. Please start your booking again." };
     }
     if (state === "failed") {
       // No confirmed payment, no booking: delete the attempt now, unless
@@ -1063,6 +1097,7 @@ exports.resolvePaymentIssue = onCall({ secrets: [PAYSTACK_SECRET_KEY] }, async (
 // Shared with maintenance.js. Not Cloud Functions: index.js only re-exports
 // the functions above by name.
 exports.markBookingPaid = markBookingPaid;
+exports.applyPaystackTransaction = applyPaystackTransaction;
 exports.recordPaymentIssue = recordPaymentIssue;
 exports.startIssueRefund = startIssueRefund;
 exports.isOurReference = isOurReference;

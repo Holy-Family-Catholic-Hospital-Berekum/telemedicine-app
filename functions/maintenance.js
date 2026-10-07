@@ -33,8 +33,10 @@ exports.cleanupExpiredBookings = onSchedule(
       // A mobile-money payment can land late. Last chance to honour it,
       // and never delete while a charge might still complete (try again
       // next run).
+      // ("rejected": a wrong-amount payment, already flagged and refunded
+      // on its own, so the draft goes like any other.)
       const state = await checkAttempts(doc.ref, booking);
-      if (state === "paid" || state === "rejected" || state === "in_flight" || state === "unknown") {
+      if (state === "paid" || state === "in_flight" || state === "unknown") {
         continue;
       }
 

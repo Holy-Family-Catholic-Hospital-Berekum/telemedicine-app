@@ -177,6 +177,7 @@ async function markNoShowFeePaid(bookingRef, paystackData, via) {
     // Revenue record, like the consultation fee (no personal details).
     tx.set(db.collection("confirmedPayments").doc(paystackData.reference), {
       amount,
+      fees: Number(paystackData.fees || 0) / 100, // kept by Paystack
       type: "NO_SHOW_FEE",
       mode: booking.mode,
       channel: paystackData.channel || null,

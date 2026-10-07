@@ -261,6 +261,12 @@ exports.resolveRefundRequest = onCall({ secrets: [PAYSTACK_SECRET_KEY] }, async 
       merchantNote: `refundRequest ${consultationId}`,
     });
   } catch (err) {
+    if (!err.definite) {
+      // Paystack may have accepted it: stay "refund_starting" (no second
+      // attempt possible); refundSync.js confirms within ~15 minutes.
+      await ref.update({ lastRefundError: "Waiting for Paystack to confirm the refund." });
+      return { status: "refund_starting" };
+    }
     await ref.update({ status: "requested", lastRefundError: String(err.message).slice(0, 300) });
     await audit(null, {
       actorId: caller.uid,

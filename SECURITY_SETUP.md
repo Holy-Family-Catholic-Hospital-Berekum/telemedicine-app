@@ -152,10 +152,37 @@ dashboard. Their hospital admin account is enough.
    built-in throttling, the password policy and the staff authenticator.
 4. **Replace the placeholders** in `components/shared/contact.js`: the
    hospital phone number and the WhatsApp support number.
-5. **Paystack live keys** at go-live: the live secret key via
-   `firebase functions:secrets:set PAYSTACK_SECRET_KEY`, the live public key
-   in Vercel (`VITE_PAYSTACK_PUBLIC_KEY`), and the webhook URL in the
-   Paystack dashboard. Refunds are sent through the Paystack Refund
-   API from the same balance, so keep enough in it; refunds Paystack can't
-   make show as "Paystack couldn't refund" in Revenue (retry, or record a
-   manual refund). The webhook must stay subscribed to refund events.
+5. **Paystack go-live** (in this order; see "Payments go-live checklist"
+   below for the detail).
+
+## Payments go-live checklist
+
+Everything paid before go-live is Paystack TEST money. Do these in order.
+
+1. **Ask Paystack** (one email): can they make PARTIAL refunds of mobile
+   money payments (no-show refunds keep a share)? Does the hospital get
+   Paystack's charge back when a payment is refunded? What is the hospital's
+   Paystack settlement schedule? Refunds are paid from the Paystack balance,
+   so keep enough in it.
+2. **Clear the test data** (owner, from `functions/`):
+   `node scripts/resetTestPayments.js` (dry run, shows counts), then
+   `node scripts/resetTestPayments.js --confirm telemedicine-hfch`.
+   Test call recordings are not touched: delete them in the app (two admins).
+3. **Live secret key**: `firebase functions:secrets:set PAYSTACK_SECRET_KEY`
+   (paste the LIVE secret key), then redeploy:
+   `firebase deploy --only functions`.
+4. **Live public key**: in Vercel, set `VITE_PAYSTACK_PUBLIC_KEY` to the
+   LIVE public key (Production), then redeploy the site.
+5. **Live webhook** in the Paystack dashboard, switched to Live mode:
+   Settings → API Keys & Webhooks → Live Webhook URL =
+   `https://europe-west1-telemedicine-hfch.cloudfunctions.net/paystackWebhook`.
+   Test and live each have their own webhook URL; set the live one.
+6. **One real test**: book a video call with a real wallet for a small
+   price (set a low price in Control panel first, then put it back), check
+   the booking appears, then refund it from Revenue → Refund requests (or
+   wait for it as a no-show) and check the money arrives.
+7. **Next morning**: in Google Cloud Logging, the `reconcilePaystack` job
+   logs "Paystack reconciliation done" with how many payments it saw. If it
+   ever reports payments the webhook had missed (audit code
+   `payment.reconciled`), check the webhook URL in step 5.
+

@@ -195,11 +195,15 @@ function useAllTimeTotals(enabled) {
     let active = true;
     const col = collection(db, "confirmedPayments");
     const agg = (q) => getAggregateFromServer(q, { amount: sum("amount"), count: count() });
-    Promise.all([agg(col), ...TYPES.map((t) => agg(query(col, where("type", "==", t))))])
+    Promise.all([
+      getAggregateFromServer(col, { amount: sum("amount"), fees: sum("fees"), count: count() }),
+      ...TYPES.map((t) => agg(query(col, where("type", "==", t)))),
+    ])
       .then(([all, ...perType]) => {
         if (!active) return;
         setTotals({
           total: all.data().amount || 0,
+          fees: all.data().fees || 0,
           count: all.data().count || 0,
           byType: TYPES.map((t, i) => [t, { amount: perType[i].data().amount || 0, count: perType[i].data().count || 0 }])
             .filter(([, v]) => v.count > 0),
@@ -236,6 +240,10 @@ export default function RevenuePanel() {
   const totals = useAllTimeTotals(allTime);
 
   const total = allTime ? (totals?.total ?? 0) : rows.reduce((s, p) => s + p.amount, 0);
+  // Paystack's charges (recorded per payment from Paystack's own data);
+  // net is what reaches the hospital's Paystack settlement.
+  const fees = allTime ? (totals?.fees ?? 0) : rows.reduce((s, p) => s + Number(p.fees || 0), 0);
+  const net = total - fees;
   const paymentCount = allTime ? (totals?.count ?? 0) : rows.length;
 
   const byType = useMemo(() => {
@@ -260,7 +268,8 @@ export default function RevenuePanel() {
 
   const entered = parseFloat(settlementTotal.replace(/[^\d.]/g, ""));
   const hasSettlement = Number.isFinite(entered);
-  const variance = hasSettlement ? entered - total : null;
+  // Paystack settles the amount after its charges.
+  const variance = hasSettlement ? entered - net : null;
   const reconciled = hasSettlement && Math.abs(variance) < 0.01;
 
   return (
@@ -304,6 +313,14 @@ export default function RevenuePanel() {
           <div>
             <span className="summary-value">{ghs(total)}</span>
             <span className="summary-label">Total confirmed</span>
+          </div>
+          <div>
+            <span className="summary-value">{ghs(fees)}</span>
+            <span className="summary-label">Paystack charges</span>
+          </div>
+          <div>
+            <span className="summary-value">{ghs(net)}</span>
+            <span className="summary-label">Received after charges</span>
           </div>
           <div>
             <span className="summary-value">{paymentCount}</span>
@@ -402,8 +419,8 @@ export default function RevenuePanel() {
 
             <dl className="reconcile-rows">
               <div>
-                <dt>Confirmed in this system</dt>
-                <dd>{ghs(total)}</dd>
+                <dt>Received after Paystack charges (this system)</dt>
+                <dd>{ghs(net)}</dd>
               </div>
               <div>
                 <dt>Settled per Paystack</dt>

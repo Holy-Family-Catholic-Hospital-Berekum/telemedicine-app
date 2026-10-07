@@ -72,6 +72,7 @@ exports.autoMarkNoShows = noShow.autoMarkNoShows;
 exports.closeExpiredNoShows = noShow.closeExpiredNoShows;
 exports.startNoShowReschedule = noShow.startNoShowReschedule;
 exports.getNoShowFeeStatus = noShow.getNoShowFeeStatus;
+exports.reconcilePaystack = require("./reconcile").reconcilePaystack;
 exports.syncPaystackRefunds = refundSync.syncPaystackRefunds;
 exports.reportCaptureAttempt = consultations.reportCaptureAttempt;
 

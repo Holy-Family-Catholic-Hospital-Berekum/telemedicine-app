@@ -32,14 +32,21 @@ const KINDS = {
 };
 const STUCK_MINUTES = 15;
 
-/** Refunds Paystack holds for a transaction id (newest first). */
+/**
+ * Refunds Paystack holds for a transaction id (newest first), or null when
+ * Paystack couldn't be asked (then nothing is decided; try again later).
+ */
 async function refundsForTransaction(transactionId) {
-  if (!transactionId) return [];
-  const res = await fetch(`${PAYSTACK_API}/refund?transaction=${encodeURIComponent(transactionId)}`, {
-    headers: { Authorization: `Bearer ${secretKey()}` },
-  });
-  const body = await res.json().catch(() => null);
-  return res.ok && Array.isArray(body?.data) ? body.data : [];
+  if (!transactionId) return null;
+  try {
+    const res = await fetch(`${PAYSTACK_API}/refund?transaction=${encodeURIComponent(transactionId)}`, {
+      headers: { Authorization: `Bearer ${secretKey()}` },
+    });
+    const body = await res.json().catch(() => null);
+    return res.ok && Array.isArray(body?.data) ? body.data : null;
+  } catch {
+    return null;
+  }
 }
 
 /** Brings one tracked refund up to date. */
@@ -51,7 +58,17 @@ async function syncOne(collection, doc) {
   if (!refund && d.status === "refund_starting") {
     const startedAt = d.refundStartingAt?.toMillis?.() ?? 0;
     if (Date.now() - startedAt < STUCK_MINUTES * 60 * 1000) return;
-    const found = (await refundsForTransaction(d.transactionId))[0];
+    const list = await refundsForTransaction(d.transactionId);
+    if (list === null) {
+      if (!d.transactionId) {
+        logger.error("Stuck refund has no transaction id; an admin must check Paystack", { collection, id: doc.id });
+        await doc.ref.update({
+          lastRefundError: "Couldn't confirm with Paystack automatically. Check this payment in the Paystack dashboard.",
+        });
+      }
+      return; // couldn't ask Paystack: decide nothing, try again next run
+    }
+    const found = list[0];
     if (!found) {
       // Paystack never got it: back to waiting for an admin.
       await doc.ref.update({
