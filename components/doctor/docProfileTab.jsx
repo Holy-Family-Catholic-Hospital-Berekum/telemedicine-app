@@ -6,7 +6,6 @@ import {
   X,
   UserRound,
   BadgeCheck,
-  Globe2,
 } from "lucide-react";
 import {
   fetchDoctorProfile,
@@ -372,9 +371,9 @@ export default function ProfileTab({ doctor, onToast }) {
             Public profile
           </h2>
           <p className="mt-1 text-xs text-[#5C6B72]">
-            Patients see your photo, name, specialty, the languages you speak
-            and what you see patients for. Ghana's rules on advertising doctors
-            don't allow more (no biography, qualifications or experience).
+            Patients see your photo, name, specialty and what you see patients
+            for. Ghana's rules on advertising doctors don't allow more (no
+            biography, qualifications, experience or languages).
           </p>
 
           <div className="mt-4 space-y-5">
@@ -383,13 +382,6 @@ export default function ProfileTab({ doctor, onToast }) {
               placeholder="Add a specialty and press Enter"
               values={form.specialties}
               onChange={(v) => updateField("specialties", v)}
-            />
-
-            <TagEditor
-              label="Languages spoken"
-              placeholder="Add a language and press Enter"
-              values={form.languages}
-              onChange={(v) => updateField("languages", v)}
             />
 
           </div>
@@ -487,12 +479,6 @@ export default function ProfileTab({ doctor, onToast }) {
             </div>
           )}
 
-          {form.languages.length > 0 && (
-            <p className="mt-3 flex items-center gap-1.5 text-[11px] text-[#5C6B72]">
-              <Globe2 size={12} strokeWidth={1.75} />
-              {form.languages.join(", ")}
-            </p>
-          )}
         </div>
       </aside>
     </div>

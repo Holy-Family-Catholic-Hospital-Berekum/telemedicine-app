@@ -26,9 +26,12 @@ const logger = require("firebase-functions/logger");
 const { onCall, admin, db, FieldValue, REGION, requireRole } = require("./lib/core");
 
 // Fallback fees, used until an admin sets prices. Keep in step with
-// DEFAULT_PRICES in src/siteSettings.js.
-const DEFAULT_FEES = { OPD: 250, SURGICAL: 300 };
-const FEE_LABELS = { OPD: "General OPD", SURGICAL: "Surgical" };
+// DEFAULT_PRICES in src/siteSettings.js. The fee depends on HOW the patient
+// sees the doctor (video call or hospital visit); General OPD and Surgical
+// cost the same (hospital decision). Stored as siteSettings/public.prices
+// { online, in_person }; older OPD/SURGICAL keys there are ignored.
+const DEFAULT_FEES = { online: 150, in_person: 150 };
+const FEE_LABELS = { online: "Video call", in_person: "Hospital visit" };
 const MAX_FEE = 5000; // typo guard: 2500 instead of 250 is refused
 
 // No-show policy (admin Control panel; shown to patients in the booking
@@ -70,13 +73,13 @@ async function requireAdmin(request) {
   return caller.uid;
 }
 
-/** Pull valid prices out of a settings document, falling back per type. */
+/** Pull valid prices out of a settings document, falling back per mode. */
 function readPrices(data) {
   const p = data?.prices || {};
   const out = {};
-  for (const type of Object.keys(DEFAULT_FEES)) {
-    const n = p[type];
-    out[type] = typeof n === "number" && Number.isFinite(n) && n > 0 ? n : DEFAULT_FEES[type];
+  for (const mode of Object.keys(DEFAULT_FEES)) {
+    const n = p[mode];
+    out[mode] = typeof n === "number" && Number.isFinite(n) && n > 0 ? n : DEFAULT_FEES[mode];
   }
   return out;
 }
@@ -131,7 +134,7 @@ async function describeImage(bucket, path, expectedFolder) {
 /* ------------------------------------------------------------------ */
 
 /**
- * data: { OPD: number, SURGICAL: number }  (both required, in GHS)
+ * data: { online: number, in_person: number }  (both required, in GHS)
  * Bookings already created keep the amount they were created with (the fee
  * is copied onto the booking in createBookingDraft), so a price change never
  * alters what a patient mid-payment is asked for.
@@ -141,15 +144,15 @@ exports.updateConsultationPrices = onCall({ region: REGION }, async (request) =>
   const d = request.data || {};
 
   const next = {};
-  for (const type of Object.keys(DEFAULT_FEES)) {
-    const n = d[type];
+  for (const mode of Object.keys(DEFAULT_FEES)) {
+    const n = d[mode];
     if (typeof n !== "number" || !Number.isFinite(n) || n <= 0 || n > MAX_FEE) {
       throw new HttpsError(
         "invalid-argument",
-        `Enter a fee between 1 and ${MAX_FEE} for ${FEE_LABELS[type]}.`,
+        `Enter a fee between 1 and ${MAX_FEE} for ${FEE_LABELS[mode]}.`,
       );
     }
-    next[type] = Math.round(n * 100) / 100;
+    next[mode] = Math.round(n * 100) / 100;
   }
 
   const ref = settingsDoc();

@@ -216,6 +216,8 @@ exports.resolveRefundRequest = onCall({ secrets: [PAYSTACK_SECRET_KEY] }, async 
         note,
         resolvedByUid: caller.uid,
         resolvedAt: serverTime(),
+        // What the Revenue tab totals (refundSync.js sets it for Paystack).
+        ...(decision === "manual" ? { refundedAt: serverTime() } : {}),
       });
       audit(tx, {
         actorId: caller.uid,

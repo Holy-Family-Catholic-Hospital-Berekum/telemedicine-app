@@ -112,6 +112,22 @@
         { "fieldPath": "status", "order": "ASCENDING" },
         { "fieldPath": "noShowExpiresAt", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "refundRequests",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "refundedAt", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "paymentIssues",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "refundedAt", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

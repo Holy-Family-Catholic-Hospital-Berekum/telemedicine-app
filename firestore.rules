@@ -203,6 +203,12 @@ service cloud.firestore {
       allow read: if isAdmin();
       allow write: if false; // requestRecordingDeletion, decideDeletionRequest
     }
+    // One line per confirmed booking (type, mode, time; no personal
+    // details), kept after the booking closes: admin "Bookings today".
+    match /bookingLog/{bookingId} {
+      allow read: if isAdmin();
+      allow write: if false; // markBookingPaid, createBookingDraft
+    }
     // Requests to play/download a recording, approved by a second admin
     // (recordings.js).
     match /accessRequests/{requestId} {

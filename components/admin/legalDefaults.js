@@ -166,7 +166,7 @@ If you are not happy with how we handle your information, you can complain to Gh
       {
         id: "fees",
         title: "Fees and payment",
-        body: `- The fee is shown before you pay. It depends only on the consultation type (General OPD or surgical), not on the doctor you choose.
+        body: `- The fee is shown before you pay. It depends only on whether you see the doctor by video call or at the hospital. General OPD and surgical consultations cost the same, whichever doctor you choose.
 - You pay by mobile money through Paystack. We do not see or store your mobile money PIN.
 - For a visit at the hospital, the hospital may let you book without paying online. Then you pay the fee at the hospital when you come, and you can have one such visit booked at a time. A missed visit of this kind has no fee and nothing to refund; you can simply book again.
 - The amount charged is decided by our system, not by your browser, and your booking is only created once the payment is confirmed.

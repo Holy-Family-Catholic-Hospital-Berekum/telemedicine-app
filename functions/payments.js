@@ -384,6 +384,15 @@ async function markBookingPaid(bookingRef, paystackData, via) {
       reference: paystackData.reference,
       paidAt: serverTime(),
     });
+    // One line per confirmed booking, kept after the booking closes, for
+    // the admin "Bookings today" count. No personal details.
+    tx.set(db.collection("bookingLog").doc(bookingRef.id), {
+      type: booking.type,
+      mode: booking.mode,
+      payAtHospital: false,
+      amount: amountPaid,
+      confirmedAt: serverTime(),
+    });
 
     audit(tx, {
       actorId: "system",
@@ -526,8 +535,9 @@ exports.createBookingDraft = onCall({ secrets: [PAYSTACK_SECRET_KEY] }, async (r
     throw new HttpsError("invalid-argument", "Enter a phone number we can call you on.");
   }
 
+  // The fee depends on the mode (video call or hospital visit), not the type.
   const prices = await loadPrices();
-  let amount = prices[type];
+  let amount = prices[mode];
   const meta = requestMeta(request);
   const bookingRef = db.collection("bookings").doc();
   const consentRef = db.collection("consents").doc();
@@ -558,7 +568,7 @@ exports.createBookingDraft = onCall({ secrets: [PAYSTACK_SECRET_KEY] }, async (r
       if (slot.mode !== mode) {
         throw new HttpsError("failed-precondition", "That slot has changed. Please reload the page.");
       }
-      amount = prices[type];
+      amount = prices[mode];
     }
 
     // Free hospital visits: one open visit per patient.
@@ -681,6 +691,16 @@ exports.createBookingDraft = onCall({ secrets: [PAYSTACK_SECRET_KEY] }, async (r
             expiresAt: Timestamp.fromMillis(now + DRAFT_LIFETIME_HOURS * 3600 * 1000),
           }),
     });
+    if (payAtHospital) {
+      // Confirmed now (see markBookingPaid for paid bookings).
+      tx.set(db.collection("bookingLog").doc(bookingRef.id), {
+        type,
+        mode,
+        payAtHospital: true,
+        amount,
+        confirmedAt: serverTime(),
+      });
+    }
 
     audit(tx, {
       actorId: uid,
@@ -967,11 +987,15 @@ exports.resolvePaymentIssue = onCall({ secrets: [PAYSTACK_SECRET_KEY] }, async (
       throw new HttpsError("failed-precondition", "This one is already resolved or being refunded.");
     }
     // deepcode ignore Sqli: Firestore document ID, not SQL; reference validated by isOurReference (REFERENCE_RE, no '/').
+    // refundedAt / amountRefunded: what the Revenue tab totals (refundSync.js
+    // writes the same two fields for Paystack refunds).
     tx.update(ref, {
       status: "refunded",
       refundMethod: "manual",
       resolvedByUid: caller.uid,
       resolvedAt: serverTime(),
+      refundedAt: serverTime(),
+      amountRefunded: Number(snap.data().amount || 0),
       note,
     });
     audit(tx, {

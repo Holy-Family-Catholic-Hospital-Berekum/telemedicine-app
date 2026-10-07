@@ -53,16 +53,18 @@ const ACCEPTED_TYPES = ["image/jpeg", "image/png", "image/webp"];
 const MAX_UPLOAD_MB = 15; // size of the file picked, before we shrink it
 const MIN_LONG_EDGE = 600; // smaller than this looks soft on a wide screen
 
+// Priced by how the patient sees the doctor; General OPD and Surgical
+// cost the same.
 const PRICE_ROWS = [
   {
-    key: "OPD",
-    label: "General OPD",
-    hint: "Everyday health concerns and check-ups",
+    key: "online",
+    label: "Video call",
+    hint: "General OPD or Surgical, by video call",
   },
   {
-    key: "SURGICAL",
-    label: "Surgical consultation",
-    hint: "Pre- and post-surgery consultations",
+    key: "in_person",
+    label: "Hospital visit",
+    hint: "General OPD or Surgical, at the hospital",
   },
 ];
 
@@ -233,14 +235,14 @@ function PricesCard({ current, onAudit }) {
   const [note, setNote] = useState(null);
 
   const shown = draft ?? {
-    OPD: String(current.OPD),
-    SURGICAL: String(current.SURGICAL),
+    online: String(current.online),
+    in_person: String(current.in_person),
   };
   const parsed = {
-    OPD: parsePrice(shown.OPD),
-    SURGICAL: parsePrice(shown.SURGICAL),
+    online: parsePrice(shown.online),
+    in_person: parsePrice(shown.in_person),
   };
-  const allValid = parsed.OPD !== null && parsed.SURGICAL !== null;
+  const allValid = parsed.online !== null && parsed.in_person !== null;
   const changed = PRICE_ROWS.filter(
     (r) => parsed[r.key] !== null && parsed[r.key] !== current[r.key],
   );
@@ -264,9 +266,9 @@ function PricesCard({ current, onAudit }) {
     setBusy(true);
     setNote(null);
     try {
-      await callUpdatePrices({ OPD: parsed.OPD, SURGICAL: parsed.SURGICAL });
+      await callUpdatePrices({ online: parsed.online, in_person: parsed.in_person });
       // Keep showing what was saved until the live snapshot catches up.
-      setDraft({ OPD: String(parsed.OPD), SURGICAL: String(parsed.SURGICAL) });
+      setDraft({ online: String(parsed.online), in_person: String(parsed.in_person) });
       setNote({
         tone: "ok",
         text: "Prices updated. New bookings use them now.",
@@ -290,8 +292,9 @@ function PricesCard({ current, onAudit }) {
       <header className="cp-card-head">
         <h2 id="cp-prices-title">Consultation prices</h2>
         <p>
-          The fee patients pay when they book. A booking that is already waiting
-          for payment keeps the price it started with.
+          The fee for a video call and for a hospital visit. General OPD and
+          Surgical cost the same. A booking that is already waiting for payment
+          keeps the price it started with.
         </p>
       </header>
 
@@ -913,8 +916,8 @@ export default function ControlPanel({ onAudit }) {
   }
 
   const prices = {
-    OPD: raw?.prices?.OPD ?? DEFAULT_PRICES.OPD,
-    SURGICAL: raw?.prices?.SURGICAL ?? DEFAULT_PRICES.SURGICAL,
+    online: raw?.prices?.online ?? DEFAULT_PRICES.online,
+    in_person: raw?.prices?.in_person ?? DEFAULT_PRICES.in_person,
   };
 
   return (

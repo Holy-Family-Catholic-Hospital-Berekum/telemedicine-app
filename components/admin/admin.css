@@ -893,6 +893,23 @@
   border-color: var(--color-secondary);
 }
 
+/* Day / Month / Year dropdowns (components/shared/dateSelect.jsx) used
+   outside an .admin-field, e.g. the recordings filters. */
+.admin-date-part {
+  padding: 7px 9px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-size: 13.5px;
+  font-family: inherit;
+  color: var(--color-ink);
+  background: #fff;
+  min-width: 0;
+}
+.admin-date-part:focus {
+  outline: 0;
+  border-color: var(--color-secondary);
+}
+
 .admin-modal-actions {
   display: flex;
   justify-content: flex-end;

@@ -1,5 +1,5 @@
 import { useMemo, useState, useCallback } from "react";
-import { collection, query, orderBy, where, limit } from "firebase/firestore";
+import { Timestamp, collection, query, orderBy, where, limit } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
 import { sendPasswordResetEmail } from "firebase/auth";
 
@@ -136,6 +136,18 @@ export default function Admin() {
     () => query(collection(db, "availableSlots"), where("date", "==", todayDate)),
     [todayDate],
   );
+  // Bookings confirmed today (paid, or booked to pay at the hospital),
+  // counted from bookingLog so closed consultations still count. Hospital
+  // time is UTC, so today starts at UTC midnight.
+  const bookingLogTodayQuery = useMemo(
+    () =>
+      query(
+        collection(db, "bookingLog"),
+        where("confirmedAt", ">=", Timestamp.fromMillis(Date.parse(`${todayDate}T00:00:00Z`))),
+      ),
+    [todayDate],
+  );
+  const { data: bookingLogToday } = useFirestoreCollection(bookingLogTodayQuery);
   const bookingsWin = useWindowedCollection(bookingsWindow, WINDOW);
   const { data: bookingDocs, error: bookingsError } = bookingsWin;
   // "Loading" only before the first rows arrive, not while loading older ones.
@@ -267,10 +279,7 @@ export default function Admin() {
   );
 
   const stats = useMemo(() => {
-    const todayKey = new Date().toDateString();
-    const todaysBookings = bookings.filter(
-      (b) => b.createdAt && new Date(b.createdAt).toDateString() === todayKey,
-    ).length;
+    const todaysBookings = bookingLogToday.length;
     const activeConsultations = bookings.filter(
       (b) => b.status === "scheduled" && b.callStartedAt,
     ).length;
@@ -296,7 +305,7 @@ export default function Admin() {
       activeConsultations,
       doctorsOnDuty: onDuty.size,
     };
-  }, [bookings, todaySlots, todayDate]);
+  }, [bookings, todaySlots, todayDate, bookingLogToday]);
 
   const heading = TAB_TITLES[tab] ?? TAB_TITLES.overview;
 
@@ -319,11 +328,12 @@ export default function Admin() {
 
           <div className="admin-topbar-actions">
             <span className="admin-today">
-              {new Date().toLocaleDateString(undefined, {
+              {new Date().toLocaleDateString("en-GB", {
                 timeZone: "Africa/Accra",
                 weekday: "long",
                 day: "numeric",
                 month: "long",
+                year: "numeric",
               })}
             </span>
             <button className="admin-icon-btn" title="Refresh data" onClick={() => window.location.reload()}>

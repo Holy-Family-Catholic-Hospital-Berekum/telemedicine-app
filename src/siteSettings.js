@@ -51,7 +51,9 @@ export const DEFAULT_IMAGES = {
  * DEFAULT_FEES in functions/siteSettings.js. The server is what actually
  * charges; this is display only.
  */
-export const DEFAULT_PRICES = { OPD: 250, SURGICAL: 300 };
+// By mode: video call or hospital visit (General OPD and Surgical cost
+// the same).
+export const DEFAULT_PRICES = { online: 150, in_person: 150 };
 
 /**
  * No-show policy, until an admin sets it (Control panel). Keep in step with
@@ -78,8 +80,8 @@ export function normaliseSettings(data) {
   const d = data || {};
   return {
     prices: {
-      OPD: goodPrice(d.prices?.OPD) ?? DEFAULT_PRICES.OPD,
-      SURGICAL: goodPrice(d.prices?.SURGICAL) ?? DEFAULT_PRICES.SURGICAL,
+      online: goodPrice(d.prices?.online) ?? DEFAULT_PRICES.online,
+      in_person: goodPrice(d.prices?.in_person) ?? DEFAULT_PRICES.in_person,
     },
     heroImage: goodUrl(d.heroImage),
     authImage: goodUrl(d.authImage),
@@ -176,7 +178,7 @@ const getSnapshot = () => state;
 
 /**
  * @returns {{ ready: boolean, settings: {
- *   prices: { OPD: number, SURGICAL: number },
+ *   prices: { online: number, in_person: number },
  *   heroImage: string|null, authImage: string|null, sliderImages: string[],
  *   doctorSelectionEnabled: boolean, inPersonPaymentRequired: boolean,
  *   noShow: { waitMinutes, forfeitPercent, rescheduleFee }

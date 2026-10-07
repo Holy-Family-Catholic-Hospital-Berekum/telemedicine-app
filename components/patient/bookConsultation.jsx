@@ -20,6 +20,7 @@ import {
 } from "../../src/consentText";
 import { usePageMeta } from "../../src/seo.js";
 import { openPaystackCheckout } from "../../src/paystackCheckout";
+import DateSelect from "../shared/dateSelect";
 
 /** "+233241234567" -> "0241234567"; other numbers as stored; none -> "". */
 function localPhone(e164) {
@@ -56,7 +57,7 @@ function ageFrom(dob) {
  * useState initialisers, rather than in an effect — so arriving via a link
  * never triggers a second render pass just to copy the URL into state.
  *
- * The fee depends only on the consultation type (siteSettings prices);
+ * The fee depends only on the mode, video call or hospital visit (siteSettings prices);
  * choosing a doctor doesn't change it. The amount actually charged is
  * always decided by the server.
  *
@@ -381,7 +382,7 @@ export default function BookConsultation() {
       active = false;
     };
   }, [user]);
-  const prices = settings.prices; // { OPD, SURGICAL } — live, admin-editable
+  const prices = settings.prices; // { online, in_person } — live, admin-editable
 
   // { message, id } — the id makes repeated identical errors re-announce.
   const [error, setError] = useState(null);
@@ -526,7 +527,7 @@ export default function BookConsultation() {
 
   // Live estimate before a booking draft exists: the site's price for this
   // type. Once a booking exists, its server-returned amount is authoritative.
-  const liveFee = prices[type];
+  const liveFee = prices[mode];
   const fee = booking?.amount ?? liveFee;
   const paying =
     paymentState === "starting" ||
@@ -1166,14 +1167,13 @@ export default function BookConsultation() {
                         >
                           Date of birth
                         </label>
-                        <input
+                        <DateSelect
                           id="dateOfBirth"
-                          type="date"
-                          required
                           value={dateOfBirth}
-                          onChange={(e) => setDateOfBirth(e.target.value)}
-                          className="w-full rounded-xl border border-black/20 px-4 py-3 text-[16px]
-                                     focus:outline-none focus:border-[#F88535] focus:ring-1 focus:ring-[#F88535]"
+                          onChange={setDateOfBirth}
+                          fromYear={new Date().getUTCFullYear() - 120}
+                          toYear={new Date().getUTCFullYear()}
+                          newestFirst
                         />
                       </div>
 

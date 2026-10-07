@@ -9,6 +9,7 @@ import { useWindowedCollection } from "./hooks/useWindowedCollection.js";
 import { IconSearch, IconTrash, IconAlert } from "./icons.jsx";
 import { Pagination, LoadOlder } from "../shared/pagination.jsx";
 import { usePagination } from "../shared/usePagination.js";
+import DateSelect from "../shared/dateSelect";
 
 // Call recordings, admin only (rules deny everyone else). Nothing here can
 // read the files directly. Every sensitive step needs two admins:
@@ -531,9 +532,9 @@ export default function RecordingsPanel({ callAdmin }) {
 
         <div className="admin-subtabs" style={{ gap: 12, alignItems: "center", flexWrap: "wrap" }}>
           <label className="admin-cell-sub" htmlFor="rec-from">From</label>
-          <input id="rec-from" type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
+          <DateSelect id="rec-from" value={from} onChange={setFrom} fromYear={2026} toYear={new Date().getUTCFullYear()} newestFirst selectClassName="admin-date-part" />
           <label className="admin-cell-sub" htmlFor="rec-to">To</label>
-          <input id="rec-to" type="date" value={to} onChange={(e) => setTo(e.target.value)} />
+          <DateSelect id="rec-to" value={to} onChange={setTo} fromYear={2026} toYear={new Date().getUTCFullYear()} newestFirst selectClassName="admin-date-part" />
         </div>
 
         {error ? (
@@ -633,12 +634,14 @@ export default function RecordingsPanel({ callAdmin }) {
         </div>
         <div className="admin-panel-body" style={{ display: "flex", gap: 12, alignItems: "center", padding: "16px 22px" }}>
           <label htmlFor="rec-bulk" className="admin-cell-sub">Recorded before</label>
-          <input
+          <DateSelect
             id="rec-bulk"
-            type="date"
             value={bulkBefore}
-            max={new Date().toISOString().slice(0, 10)}
-            onChange={(e) => setBulkBefore(e.target.value)}
+            onChange={setBulkBefore}
+            fromYear={2026}
+            toYear={new Date().getUTCFullYear()}
+            newestFirst
+            selectClassName="admin-date-part"
           />
           <button className="btn btn-outline danger" disabled={!bulkBefore} onClick={startBulk}>
             <IconTrash size={14} /> Find and request deletion…

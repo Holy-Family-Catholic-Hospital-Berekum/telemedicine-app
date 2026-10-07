@@ -26,38 +26,48 @@ export function toDate(value) {
 // viewer abroad sees hospital time.
 export const HOSPITAL_TIME_ZONE = "Africa/Accra";
 
+// Dates always read day, month, year (hospital decision), whatever the
+// device's language, e.g. "Thu 8 Oct 2026, 3:00 pm". Times use am/pm.
+const DATE_LOCALE = "en-GB";
+
 export function formatDateTime(value, options) {
   const d = toDate(value);
   if (!d) return "—";
-  return d.toLocaleString(undefined, {
+  return d.toLocaleString(DATE_LOCALE, {
     timeZone: HOSPITAL_TIME_ZONE,
     weekday: "short",
     day: "numeric",
     month: "short",
+    year: "numeric",
     hour: "numeric",
     minute: "2-digit",
+    hour12: true,
     ...options,
   });
 }
 
-export function formatDate(value) {
+/** e.g. "8 Oct 2026". */
+export function formatDate(value, options) {
   const d = toDate(value);
   if (!d) return "—";
-  return d.toLocaleDateString(undefined, {
+  return d.toLocaleDateString(DATE_LOCALE, {
     timeZone: HOSPITAL_TIME_ZONE,
     day: "numeric",
     month: "short",
     year: "numeric",
+    ...options,
   });
 }
 
+/** e.g. "3:00 pm". */
 export function formatTime(value) {
   const d = toDate(value);
   if (!d) return "—";
-  return d.toLocaleTimeString(undefined, {
+  return d.toLocaleTimeString(DATE_LOCALE, {
     timeZone: HOSPITAL_TIME_ZONE,
     hour: "numeric",
     minute: "2-digit",
+    hour12: true,
   });
 }
 

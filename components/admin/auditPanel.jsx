@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { formatDateTime } from "../../src/constants";
 import { IconSearch, IconShield } from "./icons.jsx";
 import { actorLabel } from "./actorName.js";
 import { Pagination, LoadOlder } from "../shared/pagination.jsx";
@@ -96,7 +97,7 @@ export default function AuditPanel({ entries, window: win, names }) {
                       )}
                     </td>
                     <td className="admin-cell-sub">
-                      {e.timestamp ? new Date(e.timestamp).toLocaleString() : "—"}
+                      {e.timestamp ? formatDateTime(e.timestamp) : "—"}
                     </td>
                   </tr>
                 ))}

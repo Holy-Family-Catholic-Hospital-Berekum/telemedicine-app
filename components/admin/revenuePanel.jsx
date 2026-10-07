@@ -52,7 +52,140 @@ const RANGES = [
   { key: "90", label: "Last 90 days" },
   { key: "all", label: "All time" },
 ];
-const TYPES = ["OPD", "SURGICAL"];
+const TYPES = ["OPD", "SURGICAL", "NO_SHOW_FEE"];
+const TYPE_NAME = { OPD: "General OPD", SURGICAL: "Surgical", NO_SHOW_FEE: "No-show fees" };
+
+// Refunds (refundRequests: patients' requests; paymentIssues: payments we
+// couldn't use, refunded automatically). A refund counts as done when its
+// status is "refunded"; refundedAt / amountRefunded are set by the server
+// for Paystack and manual refunds alike.
+const REFUND_SOURCES = [
+  { col: "refundRequests", inProgress: ["refund_starting", "processing"], waiting: ["requested", "failed"], waitingAmount: "suggestedRefund" },
+  { col: "paymentIssues", inProgress: ["refund_starting", "refund_processing"], waiting: ["refund_due", "refund_failed"], waitingAmount: "amount" },
+];
+const refundAmount = (r) => Number(r.amountRefunded ?? r.amount ?? 0);
+
+/** All-time refunded totals (Firestore aggregation, nothing downloaded). */
+function useAllTimeRefunds(enabled) {
+  const [totals, setTotals] = useState(null);
+  useEffect(() => {
+    if (!enabled) return undefined;
+    let active = true;
+    Promise.all(
+      REFUND_SOURCES.map((s) =>
+        getAggregateFromServer(
+          query(collection(db, s.col), where("status", "==", "refunded")),
+          { amount: sum("amountRefunded"), count: count() },
+        ),
+      ),
+    )
+      .then((parts) => {
+        if (!active) return;
+        setTotals({
+          amount: parts.reduce((t, p) => t + (p.data().amount || 0), 0),
+          count: parts.reduce((t, p) => t + (p.data().count || 0), 0),
+        });
+      })
+      .catch(() => active && setTotals({ error: true }));
+    return () => {
+      active = false;
+    };
+  }, [enabled]);
+  return totals;
+}
+
+/** Refund figures for the chosen period, plus what is open right now. */
+function RefundsSection({ allTime, since, confirmedTotal }) {
+  const periodQueries = useMemo(
+    () =>
+      REFUND_SOURCES.map((s) =>
+        allTime
+          ? null
+          : query(
+              collection(db, s.col),
+              where("status", "==", "refunded"),
+              where("refundedAt", ">=", Timestamp.fromMillis(since)),
+            ),
+      ),
+    [allTime, since],
+  );
+  const openQueries = useMemo(
+    () =>
+      REFUND_SOURCES.map((s) =>
+        query(collection(db, s.col), where("status", "in", [...s.inProgress, ...s.waiting])),
+      ),
+    [],
+  );
+  const { data: periodRequests } = useFirestoreCollection(periodQueries[0]);
+  const { data: periodIssues } = useFirestoreCollection(periodQueries[1]);
+  const { data: openRequests } = useFirestoreCollection(openQueries[0]);
+  const { data: openIssues } = useFirestoreCollection(openQueries[1]);
+  const allTimeTotals = useAllTimeRefunds(allTime);
+
+  const refunded = allTime
+    ? { amount: allTimeTotals?.amount ?? 0, count: allTimeTotals?.count ?? 0 }
+    : {
+        amount: [...periodRequests, ...periodIssues].reduce((t, r) => t + refundAmount(r), 0),
+        count: periodRequests.length + periodIssues.length,
+      };
+
+  const tally = (rows, source, which) =>
+    rows
+      .filter((r) => source[which].includes(r.status))
+      .reduce(
+        (t, r) => ({
+          count: t.count + 1,
+          amount: t.amount + Number((which === "waiting" ? r[source.waitingAmount] : r.amountRefunded ?? r.amount) ?? 0),
+        }),
+        { count: 0, amount: 0 },
+      );
+  const add = (a, b) => ({ count: a.count + b.count, amount: a.amount + b.amount });
+  const inProgress = add(
+    tally(openRequests, REFUND_SOURCES[0], "inProgress"),
+    tally(openIssues, REFUND_SOURCES[1], "inProgress"),
+  );
+  const waiting = add(
+    tally(openRequests, REFUND_SOURCES[0], "waiting"),
+    tally(openIssues, REFUND_SOURCES[1], "waiting"),
+  );
+
+  return (
+    <section className="admin-panel">
+      <div className="admin-panel-head">
+        <div>
+          <h2>Refunds</h2>
+          <p>
+            Refunded in the selected period, and refunds open right now
+            (patients' requests and payments refunded automatically)
+          </p>
+        </div>
+      </div>
+      {allTime && allTimeTotals?.error && (
+        <div className="admin-empty" role="alert">
+          Couldn't load the all-time refund totals. Refresh the page or pick a period.
+        </div>
+      )}
+      <div className="summary-grid">
+        <div>
+          <span className="summary-value">{ghs(refunded.amount)}</span>
+          <span className="summary-label">Refunded · {refunded.count}</span>
+        </div>
+        <div>
+          <span className="summary-value">{ghs(Math.max(0, confirmedTotal - refunded.amount))}</span>
+          <span className="summary-label">Net after refunds</span>
+        </div>
+        <div>
+          <span className="summary-value">{ghs(inProgress.amount)}</span>
+          <span className="summary-label">Being refunded now · {inProgress.count}</span>
+        </div>
+        <div>
+          <span className="summary-value">{ghs(waiting.amount)}</span>
+          <span className="summary-label">Waiting for an admin · {waiting.count}</span>
+        </div>
+      </div>
+    </section>
+  );
+}
 
 /** All-time totals computed by Firestore (no documents downloaded). */
 function useAllTimeTotals(enabled) {
@@ -180,12 +313,18 @@ export default function RevenuePanel() {
             <div key={type}>
               <span className="summary-value">{ghs(v.amount)}</span>
               <span className="summary-label">
-                {type} · {v.count}
+                {TYPE_NAME[type] ?? type} · {v.count}
               </span>
             </div>
           ))}
         </div>
       </section>
+
+      <RefundsSection
+        allTime={allTime}
+        since={allTime ? 0 : openedAt - parseInt(range, 10) * 86400000}
+        confirmedTotal={total}
+      />
 
       <div className="metrics-grid">
         <section className="admin-panel">

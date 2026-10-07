@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 
 import { TYPE_LABELS } from "../../src/constants";
+import DateSelect from "../shared/dateSelect";
 
 // Admin creates an open slot — a doctor, a consultation type, and a time
 // window when that doctor is free. Patients see this as a specific
@@ -113,14 +114,24 @@ export default function CreateScheduleModal({ doctors, existingSlots, onClose, o
           <label htmlFor="cs-mode">Mode</label>
           <select id="cs-mode" value={form.mode} onChange={set("mode")}>
             <option value="">Select how the doctor is available…</option>
-            <option value="online">Online</option>
-            <option value="in_person">In person</option>
+            <option value="online">Video call</option>
+            <option value="in_person">At the hospital</option>
           </select>
         </div>
 
         <div className="admin-field">
           <label htmlFor="cs-date">Date</label>
-          <input id="cs-date" type="date" value={form.date} onChange={set("date")} />
+          <DateSelect
+            id="cs-date"
+            value={form.date}
+            onChange={(date) => {
+              setForm((f) => ({ ...f, date }));
+              setError(null);
+            }}
+            fromYear={new Date().getUTCFullYear()}
+            toYear={new Date().getUTCFullYear() + 1}
+            selectClassName="admin-date-part"
+          />
         </div>
 
         <div className="verify-grid">

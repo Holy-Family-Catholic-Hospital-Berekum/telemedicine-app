@@ -3,12 +3,12 @@
 // Live list of doctors shown on the home page and in the booking picker,
 // read from the public `doctorProfiles` collection (isListed == true).
 // Admins control listing and consultation types; each doctor edits their
-// own photo, specialties and languages from the doctor portal. Bio,
+// own photo and specialties from the doctor portal. Bio, languages,
 // qualifications and years of experience are not shown anywhere (Ghana's
 // rules on advertising doctors).
 //
 // Shape returned for each doctor:
-//   { id, name, role, availableFor, specialties, languages, image,
+//   { id, name, role, availableFor, specialties, image,
 //     initials, isAvailable, availability }
 
 import { useEffect, useState } from "react";
@@ -33,7 +33,6 @@ function toDoctor(id, data) {
     role: data.roleTitle || "",
     availableFor: Array.isArray(data.availableFor) ? data.availableFor : [],
     specialties: Array.isArray(data.specialties) ? data.specialties : [],
-    languages: Array.isArray(data.languages) ? data.languages : [],
     // Only our own Storage URLs (rules enforce this on write as well).
     image:
       typeof data.photoURL === "string" &&

@@ -82,6 +82,7 @@ beforeEach(async () => {
     await put("auditLog/a1", { code: "x" });
     await put("deletionRequests/r1", { status: "pending" });
     await put("accessRequests/q1", { status: "pending", purpose: "play" });
+    await put("bookingLog/b1", { type: "OPD", mode: "online" });
     await put("rateLimits/x_pat1", { count: 1 });
     await put("mail/m1", { to: "x@y.z" });
     await put("recordings/rec1", { doctorUid: "doc1", status: "recording" });
@@ -178,6 +179,12 @@ describe("server-owned collections", () => {
   test("deletion requests: admins read, doctors don't", async () => {
     await assertSucceeds(get(admin(), "deletionRequests/r1"));
     await assertFails(get(doctor(), "deletionRequests/r1"));
+  });
+  test("booking log: admins read only; nobody writes", async () => {
+    await assertSucceeds(get(admin(), "bookingLog/b1"));
+    await assertFails(get(doctor(), "bookingLog/b1"));
+    await assertFails(get(patient("pat1"), "bookingLog/b1"));
+    await assertFails(setDoc(doc(admin().firestore(), "bookingLog/b2"), { type: "OPD" }));
   });
   test("recording access requests: admins read only; nobody writes", async () => {
     await assertSucceeds(get(admin(), "accessRequests/q1"));

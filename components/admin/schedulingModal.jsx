@@ -1,14 +1,15 @@
 import { useState } from "react";
 import { TYPE_LABELS, MODE_LABELS, toDate } from "../../src/constants";
+import DateSelect from "../shared/dateSelect";
 
 // Admin assigns a doctor and time to a paid booking (or moves a scheduled
 // one). scheduleConsultation / rescheduleConsultation on the server check
 // the doctor, the time and clashes, and generate the consultation ID; the
 // browser never makes one up.
 //
-// Times are entered as hospital time. Ghana is UTC+0 all year, so the
-// datetime-local value is read as UTC regardless of the admin's own
-// computer clock zone.
+// Times are entered as hospital time: a Day / Month / Year date and a time
+// box. Ghana is UTC+0 all year, so they are sent as UTC regardless of the
+// admin's own computer clock zone.
 
 function toInputValue(value) {
   const d = toDate(value);
@@ -27,9 +28,10 @@ export default function SchedulingModal({
     () =>
       (reschedule ? booking.doctorUid : booking.requestedDoctorUid) || "",
   );
-  const [dateTime, setDateTime] = useState(() =>
-    toInputValue(reschedule ? booking.scheduledTime : booking.preferredTime),
-  );
+  const initial = toInputValue(reschedule ? booking.scheduledTime : booking.preferredTime);
+  const [date, setDate] = useState(initial.slice(0, 10));
+  const [time, setTime] = useState(initial.slice(11, 16));
+  const dateTime = date && time ? `${date}T${time}` : "";
 
   const eligible = doctors.filter(
     (d) =>
@@ -74,12 +76,23 @@ export default function SchedulingModal({
         </div>
 
         <div className="admin-field">
-          <label htmlFor="sched-time">Date & time (hospital time)</label>
+          <label htmlFor="sched-date">Date</label>
+          <DateSelect
+            id="sched-date"
+            value={date}
+            onChange={setDate}
+            fromYear={new Date().getUTCFullYear()}
+            toYear={new Date().getUTCFullYear() + 1}
+            selectClassName="admin-date-part"
+          />
+        </div>
+        <div className="admin-field">
+          <label htmlFor="sched-time">Time (hospital time)</label>
           <input
             id="sched-time"
-            type="datetime-local"
-            value={dateTime}
-            onChange={(e) => setDateTime(e.target.value)}
+            type="time"
+            value={time}
+            onChange={(e) => setTime(e.target.value)}
           />
         </div>
 

@@ -1,4 +1,5 @@
 import StatCard from "./statCard.jsx";
+import { formatDateTime } from "../../src/constants";
 import { actorLabel } from "./actorName.js";
 import { BarChart } from "./miniCharts.jsx";
 import {
@@ -100,7 +101,7 @@ export default function OverviewPanel({
                       </div>
                       <div className="activity-meta">
                         {actorLabel(a.actorId, names).name} ·{" "}
-                        {a.timestamp ? new Date(a.timestamp).toLocaleString() : "Just now"}
+                        {a.timestamp ? formatDateTime(a.timestamp) : "Just now"}
                       </div>
                     </div>
                   </div>

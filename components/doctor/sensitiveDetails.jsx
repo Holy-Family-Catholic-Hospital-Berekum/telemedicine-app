@@ -42,7 +42,7 @@ export default function SensitiveDetails({ details }) {
             <p className="text-[#12242C]">
               {details.dateOfBirth ? (
                 <>
-                  {new Date(`${details.dateOfBirth}T00:00:00Z`).toLocaleDateString(undefined, {
+                  {new Date(`${details.dateOfBirth}T00:00:00Z`).toLocaleDateString("en-GB", {
                     timeZone: "UTC",
                     year: "numeric",
                     month: "short",

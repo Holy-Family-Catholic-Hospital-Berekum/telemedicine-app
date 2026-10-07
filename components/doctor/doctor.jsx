@@ -288,11 +288,12 @@ export default function DoctorDashboard() {
             </div>
           </div>
           <div className="flex items-center gap-2 text-xs text-[#5C6B72]">
-            {today.toLocaleDateString(undefined, {
+            {today.toLocaleDateString("en-GB", {
               timeZone: HOSPITAL_TIME_ZONE,
               weekday: "long",
-              month: "long",
               day: "numeric",
+              month: "long",
+              year: "numeric",
             })}
           </div>
         </div>

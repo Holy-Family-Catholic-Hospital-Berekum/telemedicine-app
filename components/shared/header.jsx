@@ -145,11 +145,11 @@ export default function Header({
               />
 
               <span className="min-w-0 leading-tight">
-                <span className="block font-display font-medium truncate text-[16px] sm:text-[17px]">
+                <span className="block font-display font-medium text-[16px] sm:text-[17px]">
                   Holy Family Catholic Hospital
                 </span>
 
-                <span className="block truncate text-[13px] sm:text-[14px] text-[#142138a0]">
+                <span className="block text-[13px] sm:text-[14px] text-[#142138a0]">
                   Telemedicine · Berekum, Ghana
                 </span>
               </span>
@@ -161,11 +161,7 @@ export default function Header({
                 <>
                   <Link
                     to="/dashboard"
-                    className={`rounded-full px-4 py-2 text-[15px] sm:text-[16px] font-semibold transition ${
-                      isDashboard
-                        ? "bg-[#E7F4EF] text-[var(--teal)]"
-                        : "bg-[var(--teal)] text-white shadow-sm hover:brightness-95"
-                    }`}
+                    className="px-3 py-2 text-[15px] sm:text-[16px] font-medium text-[var(--ink)] hover:underline underline-offset-4"
                   >
                     Dashboard
                   </Link>
@@ -216,11 +212,8 @@ export default function Header({
               {isLoggedIn && (
                 <Link
                   to="/dashboard"
-                  className="inline-flex items-center gap-1 whitespace-nowrap rounded-full border border-[var(--teal)]/30 bg-[#E7F4EF] px-2.5 py-1.5 text-[13px] font-semibold text-[var(--teal)]"
+                  className="whitespace-nowrap text-[14px] font-medium text-[var(--ink)]"
                 >
-                  <svg width="13" height="13" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-                    <path d="M3.5 4.5h13v12h-13zM3.5 8h13M7 2.5v3M13 2.5v3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
                   Dashboard
                 </Link>
               )}
@@ -337,7 +330,14 @@ export default function Header({
           </a>
 
           <div className="flex items-center gap-2 shrink-0">
-            {isLoggedIn ? null : (
+            {isLoggedIn ? (
+              <Link
+                to="/dashboard"
+                className="whitespace-nowrap font-semibold text-white hover:underline underline-offset-2"
+              >
+                Dashboard
+              </Link>
+            ) : (
               <>
                 <Link
                   to="/signin"
@@ -371,10 +371,10 @@ export default function Header({
               />
 
               <span className="leading-tight min-w-0">
-                <span className="block font-display font-medium truncate text-[16px] sm:text-[17px]">
+                <span className="block font-display font-medium text-[16px] sm:text-[17px]">
                   Holy Family Catholic Hospital
                 </span>
-                <span className="block truncate text-[13px] sm:text-[15px] text-[#14213899]">
+                <span className="block text-[13px] sm:text-[15px] text-[#14213899]">
                   Berekum, Ghana
                 </span>
               </span>
@@ -396,10 +396,8 @@ export default function Header({
               {isLoggedIn && (
                 <Link
                   to="/dashboard"
-                  className={`rounded-full px-4 py-2 text-[16px] font-semibold transition ${
-                    isDashboard
-                      ? "bg-[#E7F4EF] text-[var(--teal)]"
-                      : "bg-[var(--teal)] text-white shadow-[0_8px_20px_-8px_rgba(31,122,108,0.55)] hover:brightness-95"
+                  className={`px-3 py-2 text-[16px] font-semibold transition-colors hover:text-[var(--teal)] ${
+                    isDashboard ? "text-[var(--teal)]" : "text-[var(--ink)]"
                   }`}
                 >
                   Dashboard
@@ -458,19 +456,8 @@ export default function Header({
               </Link>
             </nav>
 
-            {/* Mobile: Dashboard always in view when signed in, then the menu. */}
+            {/* Mobile menu button (Dashboard sits in the orange strip above). */}
             <div className="md:hidden flex items-center gap-2 shrink-0">
-            {isLoggedIn && (
-                <Link
-                  to="/dashboard"
-                  className="inline-flex items-center gap-1 whitespace-nowrap rounded-full border border-[var(--teal)]/30 bg-[#E7F4EF] px-2.5 py-1.5 text-[13px] font-semibold text-[var(--teal)]"
-                >
-                  <svg width="13" height="13" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-                    <path d="M3.5 4.5h13v12h-13zM3.5 8h13M7 2.5v3M13 2.5v3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                  Dashboard
-                </Link>
-            )}
             <button
               type="button"
               onClick={() => setMobileMenuOpen((value) => !value)}

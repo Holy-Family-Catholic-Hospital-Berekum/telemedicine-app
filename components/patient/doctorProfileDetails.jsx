@@ -2,8 +2,7 @@ import { TYPE_LABELS } from "../../src/constants";
 
 // What a doctor card on the home page shows. Ghana's rules on advertising
 // doctors (hospital decision, medical director): only the doctor's name
-// (on the card), specialty, languages spoken and what they see patients
-// for. No bio, qualifications or years of experience, and no full-profile
+// (on the card), specialty and what they see patients for. No bio, qualifications or years of experience, and no full-profile
 // page. Comes from the public doctorProfiles document (src/doctorDirectory.js).
 
 function Row({ label, children }) {
@@ -14,7 +13,7 @@ function Row({ label, children }) {
   );
 }
 
-/** Specialty, what they see patients for, and languages. */
+/** Specialty and what they see patients for. */
 export function DoctorCardSummary({ doctor }) {
   const specialty = doctor.specialties.length ? doctor.specialties.join(", ") : doctor.role;
   const types = doctor.availableFor.map((t) => TYPE_LABELS[t] ?? t);
@@ -22,7 +21,6 @@ export function DoctorCardSummary({ doctor }) {
     <>
       {specialty && <Row label="Specialty">{specialty}</Row>}
       {types.length > 0 && <Row label="Sees patients for">{types.join(", ")}</Row>}
-      {doctor.languages.length > 0 && <Row label="Speaks">{doctor.languages.join(", ")}</Row>}
     </>
   );
 }
