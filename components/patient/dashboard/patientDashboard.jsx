@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   LogOut,
-  Home as HomeIcon,
+  ArrowLeft,
   CalendarCheck,
   Hourglass,
   CreditCard,
@@ -243,8 +243,8 @@ export default function Dashboard() {
           }}
         >
           {/* Phones: greeting first (truncates), hospital name on its own
-              smaller line, icon-only buttons with 44px tap targets. Labels
-              appear from the sm breakpoint up. */}
+              smaller line. One clear "Back to Home" button; signing out
+              lives at the bottom of Settings so nobody does it by mistake. */}
           <div className="mx-auto flex h-16 max-w-4xl items-center justify-between gap-2 px-4 sm:h-[68px] sm:gap-3 sm:px-8">
             <div className="flex min-w-0 items-center gap-2.5 sm:gap-3">
               <img
@@ -260,27 +260,13 @@ export default function Dashboard() {
               </div>
             </div>
 
-            <div className="flex shrink-0 items-center gap-1 sm:gap-2">
-              <a
-                href="/"
-                aria-label="Home"
-                title="Home"
-                className="flex h-11 w-11 items-center justify-center gap-1.5 rounded-full text-sm font-medium text-white transition hover:bg-white/15 sm:h-auto sm:w-auto sm:px-3 sm:py-2"
-              >
-                <HomeIcon size={20} strokeWidth={1.9} className="sm:h-4 sm:w-4" />
-                <span className="hidden sm:inline">Home</span>
-              </a>
-              <button
-                type="button"
-                onClick={handleSignOut}
-                aria-label="Sign out"
-                title="Sign out"
-                className="flex h-11 w-11 items-center justify-center gap-1.5 rounded-full text-sm font-medium text-white transition hover:bg-white/15 sm:h-auto sm:w-auto sm:border sm:border-white/50 sm:px-3 sm:py-2"
-              >
-                <LogOut size={20} strokeWidth={1.9} className="sm:h-4 sm:w-4" />
-                <span className="hidden sm:inline">Sign out</span>
-              </button>
-            </div>
+            <a
+              href="/"
+              className="flex shrink-0 items-center gap-1.5 rounded-full border border-white/60 px-3 py-2 text-[14px] font-semibold text-white transition hover:bg-white/15 sm:px-4 sm:text-[15px]"
+            >
+              <ArrowLeft size={17} strokeWidth={2.2} />
+              Back to Home
+            </a>
           </div>
         </header>
 
@@ -313,6 +299,16 @@ export default function Dashboard() {
           {tab === "settings" ? (
             <div className="mt-8">
               <PatientSettings />
+              <div className="mt-12 border-t border-black/10 pt-5">
+                <button
+                  type="button"
+                  onClick={handleSignOut}
+                  className="inline-flex items-center gap-1.5 text-[15px] text-black/70 underline-offset-2 hover:text-black hover:underline"
+                >
+                  <LogOut size={15} strokeWidth={1.9} />
+                  Sign out of this device
+                </button>
+              </div>
             </div>
           ) : tab === "history" ? (
             <section className="mt-8">

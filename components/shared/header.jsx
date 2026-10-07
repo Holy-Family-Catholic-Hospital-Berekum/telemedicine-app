@@ -25,25 +25,6 @@ const backArrowPath = (
   />
 );
 
-const signOutIconPath = (
-  <>
-    <path
-      d="M8 4.5H4.8A1.3 1.3 0 0 0 3.5 5.8v8.4a1.3 1.3 0 0 0 1.3 1.3H8"
-      stroke="currentColor"
-      strokeWidth="1.5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
-    <path
-      d="M12.7 13.3 16.5 10l-3.8-3.3M16.5 10H8"
-      stroke="currentColor"
-      strokeWidth="1.5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
-  </>
-);
-
 const menuIconPath = (
   <path
     d="M4 6.5h12M4 10h12M4 13.5h12"
@@ -61,35 +42,6 @@ const closeIconPath = (
     strokeLinecap="round"
   />
 );
-
-// Hoisted out of Header so it isn't redefined (and therefore remounted by
-// React, losing any internal state/focus) on every Header render — e.g.
-// every time mobileMenuOpen toggles.
-function SignOutButton({ onSignOut, className = "" }) {
-  return (
-    <button
-      type="button"
-      onClick={onSignOut}
-      className={`inline-flex items-center justify-center gap-1.5 rounded-full border border-[#14213822]
-                  px-3.5 py-2 text-[15px] sm:text-[16px] font-medium text-[#142138b8]
-                  hover:border-[#c0392b55] hover:text-[#c0392b]
-                  transition-colors focus-visible:outline focus-visible:outline-2
-                  focus-visible:outline-offset-2 focus-visible:outline-[var(--ink)]
-                  ${className}`}
-    >
-      <svg
-        width="14"
-        height="14"
-        viewBox="0 0 20 20"
-        fill="none"
-        aria-hidden="true"
-      >
-        {signOutIconPath}
-      </svg>
-      Sign out
-    </button>
-  );
-}
 
 export default function Header({
   variant = "full",
@@ -209,16 +161,14 @@ export default function Header({
                 <>
                   <Link
                     to="/dashboard"
-                    className={`rounded-full px-3.5 py-2 text-[15px] sm:text-[16px] font-semibold transition ${
+                    className={`rounded-full px-4 py-2 text-[15px] sm:text-[16px] font-semibold transition ${
                       isDashboard
                         ? "bg-[#E7F4EF] text-[var(--teal)]"
-                        : "text-[var(--ink)] hover:bg-[#F2F7F5] hover:text-[var(--teal)]"
+                        : "bg-[var(--teal)] text-white shadow-sm hover:brightness-95"
                     }`}
                   >
                     Dashboard
                   </Link>
-
-                  <SignOutButton onSignOut={handleSignOut} />
                 </>
               ) : (
                 <>
@@ -266,8 +216,11 @@ export default function Header({
               {isLoggedIn && (
                 <Link
                   to="/dashboard"
-                  className="rounded-full bg-[#E7F4EF] px-3 py-2 text-[14px] font-semibold text-[var(--teal)]"
+                  className="inline-flex items-center gap-1.5 rounded-full bg-[var(--teal)] px-3.5 py-2 text-[14px] font-semibold text-white shadow-sm"
                 >
+                  <svg width="15" height="15" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                    <path d="M3.5 4.5h13v12h-13zM3.5 8h13M7 2.5v3M13 2.5v3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
                   Dashboard
                 </Link>
               )}
@@ -306,15 +259,6 @@ export default function Header({
                     >
                       Dashboard
                     </Link>
-
-                    <button
-                      type="button"
-                      onClick={handleSignOut}
-                      className="text-left rounded-xl px-4 py-3 text-[16px] font-medium text-[#c0392b]
-                                 hover:bg-[#c0392b0d]"
-                    >
-                      Sign out
-                    </button>
                   </>
                 ) : (
                   <>
@@ -343,6 +287,18 @@ export default function Header({
                 >
                   ← {cancelLabel}
                 </Link>
+
+                {/* Kept small and last so nobody signs out by mistake. */}
+                {isLoggedIn && (
+                  <button
+                      type="button"
+                      onClick={handleSignOut}
+                      className="mt-2 self-start border-t border-[#14213810] px-4 pt-3 pb-1 text-left text-[14px] text-[#14213880]
+                                 underline-offset-2 hover:text-[var(--ink)] hover:underline"
+                    >
+                      Sign out
+                    </button>
+                )}
               </div>
             </div>
           )}
@@ -381,24 +337,7 @@ export default function Header({
           </a>
 
           <div className="flex items-center gap-2 shrink-0">
-            {isLoggedIn ? (
-              <>
-                <Link
-                  to="/dashboard"
-                  className="hover:text-white whitespace-nowrap"
-                >
-                  Dashboard
-                </Link>
-                <span className="text-white/25">|</span>
-                <button
-                  type="button"
-                  onClick={handleSignOut}
-                  className="hover:text-white whitespace-nowrap"
-                >
-                  Sign out
-                </button>
-              </>
-            ) : (
+            {isLoggedIn ? null : (
               <>
                 <Link
                   to="/signin"
@@ -457,10 +396,10 @@ export default function Header({
               {isLoggedIn && (
                 <Link
                   to="/dashboard"
-                  className={`rounded-full px-3.5 py-2 text-[16px] font-semibold transition ${
+                  className={`rounded-full px-4 py-2 text-[16px] font-semibold transition ${
                     isDashboard
                       ? "bg-[#E7F4EF] text-[var(--teal)]"
-                      : "text-[var(--ink)] hover:bg-[#F3F7F6] hover:text-[var(--teal)]"
+                      : "bg-[var(--teal)] text-white shadow-[0_8px_20px_-8px_rgba(31,122,108,0.55)] hover:brightness-95"
                   }`}
                 >
                   Dashboard
@@ -506,8 +445,6 @@ export default function Header({
                 </>
               )}
 
-              {isLoggedIn && <SignOutButton onSignOut={handleSignOut} />}
-
               <Link
                 to="/book"
                 className={`inline-flex items-center gap-1.5 rounded-full px-5 py-2.5
@@ -521,7 +458,19 @@ export default function Header({
               </Link>
             </nav>
 
-            {/* Mobile menu button */}
+            {/* Mobile: Dashboard always in view when signed in, then the menu. */}
+            <div className="md:hidden flex items-center gap-2 shrink-0">
+            {isLoggedIn && (
+                <Link
+                  to="/dashboard"
+                  className="inline-flex items-center gap-1.5 rounded-full bg-[var(--teal)] px-3.5 py-2 text-[14px] font-semibold text-white shadow-sm"
+                >
+                  <svg width="15" height="15" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                    <path d="M3.5 4.5h13v12h-13zM3.5 8h13M7 2.5v3M13 2.5v3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                  Dashboard
+                </Link>
+            )}
             <button
               type="button"
               onClick={() => setMobileMenuOpen((value) => !value)}
@@ -541,6 +490,7 @@ export default function Header({
                 {mobileMenuOpen ? closeIconPath : menuIconPath}
               </svg>
             </button>
+            </div>
           </div>
 
           {/* Mobile navigation */}
@@ -605,14 +555,15 @@ export default function Header({
                     </Link>
                   </>
                 ) : (
+                  // Kept small and last so nobody signs out by mistake.
                   <button
-                    type="button"
-                    onClick={handleSignOut}
-                    className="text-left rounded-xl px-4 py-3 text-[16px] font-medium text-[#c0392b]
-                               hover:bg-[#c0392b0d]"
-                  >
-                    Sign out
-                  </button>
+                      type="button"
+                      onClick={handleSignOut}
+                      className="mt-2 self-start border-t border-[#14213810] px-4 pt-3 pb-1 text-left text-[14px] text-[#14213880]
+                                 underline-offset-2 hover:text-[var(--ink)] hover:underline"
+                    >
+                      Sign out
+                    </button>
                 )}
               </nav>
             </div>
