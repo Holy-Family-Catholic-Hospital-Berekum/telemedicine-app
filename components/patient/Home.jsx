@@ -343,12 +343,14 @@ function BookingSlip({
           Holy Family Catholic Hospital
         </p>
         <div
-          className={`flex items-start justify-between gap-3 ${
+          className={`flex flex-wrap items-start justify-between gap-x-3 gap-y-2 ${
             compact ? "mt-2" : "mt-3"
           }`}
         >
+          {/* The mode badge drops under the title when the card is too
+              narrow for both on one line (phones). */}
           <span
-            className={`font-display font-medium leading-tight ${
+            className={`min-w-0 font-display font-medium leading-tight ${
               compact
                 ? "text-[16px] sm:text-[17px]"
                 : "text-[19px] sm:text-[20px]"
@@ -356,7 +358,7 @@ function BookingSlip({
           >
             {type}
           </span>
-          <span className="shrink-0 rounded-full bg-[var(--forest)] px-3 py-1 text-[14px] font-medium text-[var(--parchment)]">
+          <span className="max-w-full rounded-full bg-[var(--forest)] px-3 py-1 text-[14px] font-medium text-[var(--parchment)]">
             {mode}
           </span>
         </div>
