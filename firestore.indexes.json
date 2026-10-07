@@ -122,6 +122,30 @@
       ]
     },
     {
+      "collectionGroup": "confirmedPayments",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "type", "order": "ASCENDING" },
+        { "fieldPath": "amount", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "refundRequests",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "amountRefunded", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "paymentIssues",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "amountRefunded", "order": "ASCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "paymentIssues",
       "queryScope": "COLLECTION",
       "fields": [
