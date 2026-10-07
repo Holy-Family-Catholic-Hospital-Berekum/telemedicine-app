@@ -352,6 +352,52 @@ exports.updateDoctorSelection = onCall({ region: REGION }, async (request) => {
   return { enabled };
 });
 
+/* ------------------------------------------------------------------ */
+/* updateInPersonPayment                                               */
+/* ------------------------------------------------------------------ */
+
+/**
+ * data: { required: boolean }
+ * Whether patients pay online when booking a visit AT THE HOSPITAL. Off:
+ * in-person bookings are free to book and the patient pays at the hospital
+ * (createBookingDraft books them straight away, one open visit per
+ * patient). Video calls are always paid online.
+ */
+exports.updateInPersonPayment = onCall({ region: REGION }, async (request) => {
+  const uid = await requireAdmin(request);
+  const required = request.data?.required;
+  if (typeof required !== "boolean") {
+    throw new HttpsError("invalid-argument", "Choose on or off.");
+  }
+  const db = getDb();
+  const batch = db.batch();
+  batch.set(
+    settingsDoc(),
+    { inPersonPaymentRequired: required, updatedAt: SERVER_TIME(), updatedBy: uid },
+    { merge: true },
+  );
+  batch.set(db.collection("auditLog").doc(), {
+    actorId: uid,
+    actorRole: "admin",
+    action: required
+      ? "Patients now pay online for hospital visits"
+      : "Patients now pay at the hospital for hospital visits (booking is free)",
+    code: "settings.in_person_payment",
+    category: "account",
+    targetId: "In-person payment",
+    result: "success",
+    timestamp: SERVER_TIME(),
+  });
+  await batch.commit();
+  return { required };
+});
+
+/** Missing setting = paid online (the original behaviour). */
+async function inPersonPaymentRequired() {
+  const snap = await settingsDoc().get();
+  return !(snap.exists && snap.data().inPersonPaymentRequired === false);
+}
+
 /** Missing setting = allowed (the original behaviour). */
 async function doctorSelectionEnabled() {
   const snap = await settingsDoc().get();
@@ -359,6 +405,7 @@ async function doctorSelectionEnabled() {
 }
 
 exports.doctorSelectionEnabled = doctorSelectionEnabled;
+exports.inPersonPaymentRequired = inPersonPaymentRequired;
 exports.loadPrices = loadPrices;
 exports.loadNoShowPolicy = loadNoShowPolicy;
 exports.readNoShowPolicy = readNoShowPolicy;

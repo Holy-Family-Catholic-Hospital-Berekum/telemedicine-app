@@ -203,6 +203,12 @@ service cloud.firestore {
       allow read: if isAdmin();
       allow write: if false; // requestRecordingDeletion, decideDeletionRequest
     }
+    // Requests to play/download a recording, approved by a second admin
+    // (recordings.js).
+    match /accessRequests/{requestId} {
+      allow read: if isAdmin();
+      allow write: if false; // requestRecordingAccess, decideRecordingAccess, getRecordingUrl
+    }
     match /auditLog/{entryId} {
       allow read: if isAdmin();
       allow write: if false;

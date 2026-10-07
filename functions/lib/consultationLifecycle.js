@@ -124,7 +124,11 @@ async function markNoShow({ consultationId, actor, meta = null, expectDoctorUid 
         );
       }
     }
-    const holdUntil = Timestamp.fromMillis(Date.now() + NO_SHOW_HOLD_DAYS * 86400 * 1000);
+    // A free hospital visit (pay at the hospital) has no fee or refund to
+    // hold for: it closes at the next hourly run and the patient can book
+    // again.
+    const free = booking?.payAtHospital === true;
+    const holdUntil = Timestamp.fromMillis(Date.now() + (free ? 0 : NO_SHOW_HOLD_DAYS * 86400 * 1000));
     // The policy the patient is held to, fixed at this moment.
     const noShowTerms = {
       forfeitPercent: policy.forfeitPercent,
@@ -139,7 +143,15 @@ async function markNoShow({ consultationId, actor, meta = null, expectDoctorUid 
       noShowExpiresAt: holdUntil,
       updatedAt: serverTime(),
     });
-    if (booking) {
+    if (booking && free) {
+      tx.update(bookingRef, {
+        status: "no_show",
+        noShowAt: serverTime(),
+        noShowExpiresAt: holdUntil,
+        rescheduleRequest: FieldValue.delete(),
+        updatedAt: serverTime(),
+      });
+    } else if (booking) {
       tx.update(bookingRef, {
         status: "no_show",
         noShowAt: serverTime(),

@@ -27,7 +27,7 @@ export const DEFAULT_LEGAL = {
         body: `We only collect what we need to run your consultation.
 
 - Account details: your name, phone number and email address, and a password that is handled by our sign-in provider (we never see or store it in readable form).
-- Booking details: consultation type, online or in-person mode, your date of birth, sex, town or city, area or nearest landmark, phone number, and the doctor you choose, if any. When you book for your child, these are your child's details, plus your child's name.
+- Booking details: consultation type, whether you see the doctor by video call or at the hospital, your phone number, and the doctor you choose, if any. For a video call we also ask for your date of birth, sex, town or city and area or nearest landmark; for a visit at the hospital we don't. When you book for your child, these are your child's details, plus your child's name.
 - Your confirmation that you are 18 or older, given when you create an account, and, when you book for a child, your consent as their parent or guardian.
 - Payment details: the amount, the payment reference and whether the payment succeeded, and for refunds, the amount and its progress. Payment is made by mobile money through Paystack, and refunds go back through Paystack to the wallet you paid from. We never see or store your mobile money PIN.
 - Consultation information: what you share with your doctor during the consultation and, when the hospital has call recording switched on, a recording of online consultations (video with sound, or sound only) (see "Consultation recording" below).
@@ -64,12 +64,12 @@ We do not sell your information and we do not use it for advertising.`,
       {
         id: "recording",
         title: "Consultation recording",
-        body: `When the hospital has call recording switched on, online video consultations are recorded (video with sound, or sound only, as the hospital chooses) for legal and security purposes. A REC sign shows on screen for both you and your doctor whenever a call is being recorded. Recordings are stored securely, can only be opened by authorised hospital administrators, and every time one is played, downloaded or deleted it is logged with the reason. They are never used for marketing or for any purpose unrelated to the consultation. In-person consultations are not recorded.`,
+        body: `When the hospital has call recording switched on, online video consultations are recorded (video with sound, or sound only, as the hospital chooses) for legal and security purposes. A REC sign shows on screen for both you and your doctor whenever a call is being recorded. Recordings are stored securely and can only be opened by authorised hospital administrators. No single administrator can play, download or delete a recording: each request needs a second administrator's approval, and every step is logged with both names and the reason. They are never used for marketing or for any purpose unrelated to the consultation. In-person consultations are not recorded.`,
       },
       {
         id: "retention",
         title: "How long we keep it",
-        body: `- The details you give when booking (date of birth, sex, location and phone number) are permanently deleted once your consultation is closed. If a consultation is marked as missed, they are kept for up to 14 days so you can book a new time or ask for a refund, then deleted when it closes. Unpaid bookings are deleted after 24 hours.
+        body: `- The details you give when booking (phone number and, for a video call, date of birth, sex and location) are permanently deleted once your consultation is closed. If a consultation is marked as missed, they are kept for up to 14 days so you can book a new time or ask for a refund, then deleted when it closes. Unpaid bookings are deleted after 24 hours.
 - To protect against data loss, we keep encrypted backups of our database for 7 days. Information deleted from the platform can remain in these backups until they expire, at most 7 days later, and is only used to restore the service after a fault.
 - A short record of each consultation (doctor, date, start and end time, outcome and amount paid) is kept so you and the hospital can see your history.
 - A record that you agreed to this policy, and when, is kept as proof of your consent.
@@ -168,6 +168,7 @@ If you are not happy with how we handle your information, you can complain to Gh
         title: "Fees and payment",
         body: `- The fee is shown before you pay. It depends only on the consultation type (General OPD or surgical), not on the doctor you choose.
 - You pay by mobile money through Paystack. We do not see or store your mobile money PIN.
+- For a visit at the hospital, the hospital may let you book without paying online. Then you pay the fee at the hospital when you come, and you can have one such visit booked at a time. A missed visit of this kind has no fee and nothing to refund; you can simply book again.
 - The amount charged is decided by our system, not by your browser, and your booking is only created once the payment is confirmed.
 - If a payment fails, your booking is not created and you can try again. If money leaves your account but your booking does not appear, contact the hospital with your payment details and we will investigate.`,
       },

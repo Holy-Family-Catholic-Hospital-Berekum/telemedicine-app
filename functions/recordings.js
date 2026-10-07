@@ -9,7 +9,10 @@
 //   setCallRecordingMode     admin chooses the mode (audited)
 //   startRecording           doctor's browser asks to record; server decides
 //   finalizeRecording        doctor's browser has uploaded every segment
-//   getRecordingUrl          admin plays or downloads (reason required, audited)
+//   requestRecordingAccess   admin asks to play or download one recording
+//   decideRecordingAccess    a DIFFERENT admin approves or rejects
+//   getRecordingUrl          the asking admin uses an approval (once, within
+//                            24 h) for a 10-minute signed link (audited)
 //   requestRecordingDeletion admin asks to delete one recording, or every
 //                            recording older than a date (audited)
 //   decideDeletionRequest    a DIFFERENT admin approves (the deletion runs
@@ -358,14 +361,27 @@ exports.recoverStaleRecordings = onSchedule(
 /* getRecordingUrl                                                     */
 /* ------------------------------------------------------------------ */
 
+/*
+ * Two-admin rule for viewing too: no single admin can play or download a
+ * recording. One admin asks (requestRecordingAccess, with a reason; stored
+ * in accessRequests/{id}, readable by admins), a DIFFERENT admin approves
+ * or rejects (decideRecordingAccess). An approval lets the admin who asked
+ * do what they asked for (play OR download) once, within
+ * ACCESS_APPROVAL_HOURS (getRecordingUrl with the request ID). Unanswered
+ * requests expire after ACCESS_REQUEST_HOURS. Every step is audited.
+ */
+const ACCESS_REQUEST_HOURS = 72;
+const ACCESS_APPROVAL_HOURS = 24;
+const accessRef = (id) => db.collection("accessRequests").doc(id);
+
 /** data: { recordingId, purpose: "play" | "download", reason } */
-exports.getRecordingUrl = onCall(async (request) => {
+exports.requestRecordingAccess = onCall(async (request) => {
   const caller = await requireRole(request, ["admin"]);
   const d = request.data || {};
   const recordingId = docId(d.recordingId, "Recording");
   const purpose = d.purpose === "download" ? "download" : "play";
   const reason = str(d.reason, { field: "Reason", max: 300, min: 3 });
-  await rateLimit(caller.uid, "getRecordingUrl", { max: 60, windowSeconds: 3600 });
+  await rateLimit(caller.uid, "requestRecordingAccess", { max: 30, windowSeconds: 3600 });
 
   const snap = await recordingRef(recordingId).get();
   if (!snap.exists) throw new HttpsError("not-found", "Recording not found.");
@@ -374,6 +390,144 @@ exports.getRecordingUrl = onCall(async (request) => {
     throw new HttpsError("failed-precondition", "This recording isn't ready.");
   }
 
+  const ref = db.collection("accessRequests").doc();
+  await db.runTransaction(async (tx) => {
+    const open = await tx.get(
+      db.collection("accessRequests")
+        .where("recordingId", "==", recordingId)
+        .where("requestedByUid", "==", caller.uid)
+        .where("status", "in", ["pending", "approved"])
+        .limit(5),
+    );
+    const live = open.docs.some((doc) => {
+      const r = doc.data();
+      if (r.purpose !== purpose) return false;
+      const until = r.status === "approved" ? r.usableUntil : r.expiresAt;
+      return (until?.toMillis?.() ?? 0) > Date.now();
+    });
+    if (live) {
+      throw new HttpsError(
+        "already-exists",
+        `You already have a request to ${purpose} this recording. Wait for another admin, or use the approval you have.`,
+      );
+    }
+    tx.set(ref, {
+      recordingId,
+      purpose,
+      reason,
+      status: "pending",
+      requestedByUid: caller.uid,
+      requestedByName: caller.profile.name || null,
+      consultationId: rec.consultationId || null,
+      patientName: rec.patientName || null,
+      doctorName: rec.doctorName || null,
+      recordingStartedAt: rec.startedAt || null,
+      patientUid: rec.patientUid || null,
+      createdAt: serverTime(),
+      expiresAt: Timestamp.fromMillis(Date.now() + ACCESS_REQUEST_HOURS * 3600 * 1000),
+    });
+    audit(tx, {
+      actorId: caller.uid,
+      actorRole: "admin",
+      action: purpose === "download"
+        ? "Asked to download a call recording (needs a second admin)"
+        : "Asked to play a call recording (needs a second admin)",
+      code: "recording.access_requested",
+      category: "recording",
+      targetType: "recording",
+      targetId: recordingId,
+      patientUid: rec.patientUid || null,
+      reason,
+      meta: requestMeta(request),
+    });
+  });
+  return { requestId: ref.id };
+});
+
+/** data: { requestId, decision: "approve" | "reject", note? } */
+exports.decideRecordingAccess = onCall(async (request) => {
+  const caller = await requireRole(request, ["admin"]);
+  const d = request.data || {};
+  const requestId = docId(d.requestId, "Request");
+  const approve = d.decision === "approve";
+  const note = str(d.note, { field: "Note", max: 300, optional: true });
+  await rateLimit(caller.uid, "decideRecordingAccess", { max: 60, windowSeconds: 3600 });
+
+  const status = await db.runTransaction(async (tx) => {
+    const snap = await tx.get(accessRef(requestId));
+    if (!snap.exists) throw new HttpsError("not-found", "Request not found.");
+    const r = snap.data();
+    if (r.status !== "pending") throw new HttpsError("failed-precondition", "This request has already been handled.");
+    if ((r.expiresAt?.toMillis?.() ?? 0) < Date.now()) {
+      tx.update(accessRef(requestId), { status: "expired", decidedAt: serverTime() });
+      return "expired";
+    }
+    if (r.requestedByUid === caller.uid) {
+      throw new HttpsError("permission-denied", "Another admin must approve or reject a request you made.");
+    }
+    tx.update(accessRef(requestId), {
+      status: approve ? "approved" : "rejected",
+      decidedByUid: caller.uid,
+      decidedByName: caller.profile.name || null,
+      decisionNote: note,
+      decidedAt: serverTime(),
+      ...(approve
+        ? { usableUntil: Timestamp.fromMillis(Date.now() + ACCESS_APPROVAL_HOURS * 3600 * 1000) }
+        : {}),
+    });
+    audit(tx, {
+      actorId: caller.uid,
+      actorRole: "admin",
+      action: approve
+        ? `Approved another admin's request to ${r.purpose} a call recording`
+        : `Rejected another admin's request to ${r.purpose} a call recording`,
+      code: approve ? "recording.access_approved" : "recording.access_rejected",
+      category: "recording",
+      targetType: "recording",
+      targetId: r.recordingId,
+      patientUid: r.patientUid || null,
+      reason: note,
+      details: { requestId, requestedByUid: r.requestedByUid, purpose: r.purpose },
+      meta: requestMeta(request),
+    });
+    return approve ? "approved" : "rejected";
+  });
+  if (status === "expired") {
+    throw new HttpsError("failed-precondition", "This request expired. The admin can ask again if it's still needed.");
+  }
+  return { status };
+});
+
+/**
+ * data: { requestId } — an approved access request of the caller's.
+ * Uses it up and returns a 10-minute signed link.
+ */
+exports.getRecordingUrl = onCall(async (request) => {
+  const caller = await requireRole(request, ["admin"]);
+  const requestId = docId(request.data?.requestId, "Request");
+  await rateLimit(caller.uid, "getRecordingUrl", { max: 60, windowSeconds: 3600 });
+
+  const usable = (r) =>
+    r &&
+    r.status === "approved" &&
+    r.requestedByUid === caller.uid &&
+    (r.usableUntil?.toMillis?.() ?? 0) > Date.now();
+
+  const first = (await accessRef(requestId).get()).data();
+  if (!usable(first)) {
+    throw new HttpsError(
+      "permission-denied",
+      "You need another admin's approval, used within 24 hours, to open this recording.",
+    );
+  }
+  const snap = await recordingRef(first.recordingId).get();
+  if (!snap.exists) throw new HttpsError("not-found", "Recording not found.");
+  const rec = snap.data();
+  if (!["available", "partial"].includes(rec.status) || !rec.storagePath) {
+    throw new HttpsError("failed-precondition", "This recording isn't ready.");
+  }
+
+  const purpose = first.purpose === "download" ? "download" : "play";
   const started = toDate(rec.startedAt);
   const filename = `consultation-${rec.consultationId}-${started ? started.toISOString().slice(0, 10) : "recording"}.webm`;
   const [url] = await bucket()
@@ -387,20 +541,29 @@ exports.getRecordingUrl = onCall(async (request) => {
         purpose === "download" ? `attachment; filename="${filename}"` : "inline",
     });
 
-  await audit(null, {
-    actorId: caller.uid,
-    actorRole: "admin",
-    action: purpose === "download" ? "Downloaded a call recording" : "Played a call recording",
-    code: purpose === "download" ? "recording.downloaded" : "recording.accessed",
-    category: "recording",
-    targetType: "recording",
-    targetId: recordingId,
-    patientUid: rec.patientUid,
-    reason,
-    meta: requestMeta(request),
+  // One use: claim the approval before handing the link out.
+  await db.runTransaction(async (tx) => {
+    const fresh = (await tx.get(accessRef(requestId))).data();
+    if (!usable(fresh)) {
+      throw new HttpsError("failed-precondition", "This approval has already been used. Ask again if you need it.");
+    }
+    tx.update(accessRef(requestId), { status: "used", usedAt: serverTime() });
+    audit(tx, {
+      actorId: caller.uid,
+      actorRole: "admin",
+      action: purpose === "download" ? "Downloaded a call recording" : "Played a call recording",
+      code: purpose === "download" ? "recording.downloaded" : "recording.accessed",
+      category: "recording",
+      targetType: "recording",
+      targetId: first.recordingId,
+      patientUid: rec.patientUid,
+      reason: first.reason,
+      details: { requestId, approvedByUid: fresh.decidedByUid },
+      meta: requestMeta(request),
+    });
   });
 
-  return { url, expiresInSeconds: URL_TTL_MS / 1000, filename };
+  return { url, expiresInSeconds: URL_TTL_MS / 1000, filename, purpose, recordingId: first.recordingId };
 });
 
 /* ------------------------------------------------------------------ */

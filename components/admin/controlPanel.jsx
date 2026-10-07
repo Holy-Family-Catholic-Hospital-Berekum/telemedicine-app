@@ -41,6 +41,7 @@ import RecordingSwitchCard from "./recordingSwitchCard.jsx";
 import RoomDevicesCard from "./roomDevicesCard.jsx";
 import NoShowPolicyCard from "./noShowPolicyCard.jsx";
 import DoctorSelectionCard from "./doctorSelectionCard.jsx";
+import InPersonPaymentCard from "./inPersonPaymentCard.jsx";
 
 const callUpdatePrices = httpsCallable(functions, "updateConsultationPrices");
 const callUpdateImages = httpsCallable(functions, "updateSiteImages");
@@ -923,6 +924,7 @@ export default function ControlPanel({ onAudit }) {
       <RoomDevicesCard />
 
       <DoctorSelectionCard enabled={raw?.doctorSelectionEnabled !== false} />
+      <InPersonPaymentCard required={raw?.inPersonPaymentRequired !== false} />
 
       <SingleImageCard
         slot="hero"

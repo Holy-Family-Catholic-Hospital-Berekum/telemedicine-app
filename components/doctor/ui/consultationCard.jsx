@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import SensitiveDetails from "../sensitiveDetails";
 import { getCallWindow } from "../docUtils";
-import { TYPE_LABELS, formatTime } from "../../../src/constants";
+import { TYPE_LABELS, formatTime, formatDateTime } from "../../../src/constants";
 
 const MODE_STYLE = {
   online: { spine: "#0095D9", chipText: "#0095D9", label: "Online" },
@@ -22,6 +22,8 @@ export default function ConsultationCard({
   onStartCall,
   onMarkDone,
   inRoom,
+  // Upcoming (not today): show the date with the time.
+  showDate = false,
 }) {
   const [expandedHistory, setExpandedHistory] = useState(false);
   const mode = MODE_STYLE[consultation.mode] ?? MODE_STYLE.in_person;
@@ -58,7 +60,9 @@ export default function ConsultationCard({
           <div>
             <div className="flex items-center gap-2 text-sm text-[#5C6B72]">
               <span className="font-medium text-[#12242C]">
-                {formatTime(consultation.scheduledTime)}
+                {showDate
+                  ? formatDateTime(consultation.scheduledTime)
+                  : formatTime(consultation.scheduledTime)}
               </span>
               <span>·</span>
               <span>{TYPE_LABELS[consultation.type] ?? consultation.type}</span>
@@ -114,8 +118,8 @@ export default function ConsultationCard({
               <ul className="mt-1.5 space-y-1 border-l border-[#DCE6EC] pl-3 text-xs text-[#5C6B72]">
                 {consultation.rescheduleHistory.map((entry, idx) => (
                   <li key={idx}>
-                    Moved from {formatTime(entry.from)} to{" "}
-                    {formatTime(entry.to)} — {entry.reason}
+                    Moved from {formatDateTime(entry.from)} to{" "}
+                    {formatDateTime(entry.to)} — {entry.reason}
                   </li>
                 ))}
               </ul>

@@ -216,9 +216,9 @@ export default function Header({
               {isLoggedIn && (
                 <Link
                   to="/dashboard"
-                  className="inline-flex items-center gap-1.5 rounded-full bg-[var(--teal)] px-3.5 py-2 text-[14px] font-semibold text-white shadow-sm"
+                  className="inline-flex items-center gap-1 whitespace-nowrap rounded-full border border-[var(--teal)]/30 bg-[#E7F4EF] px-2.5 py-1.5 text-[13px] font-semibold text-[var(--teal)]"
                 >
-                  <svg width="15" height="15" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                  <svg width="13" height="13" viewBox="0 0 20 20" fill="none" aria-hidden="true">
                     <path d="M3.5 4.5h13v12h-13zM3.5 8h13M7 2.5v3M13 2.5v3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
                   Dashboard
@@ -362,7 +362,7 @@ export default function Header({
             {/* Logo */}
             <Link
               to="/"
-              className="flex items-center gap-2 sm:gap-3 min-w-0 shrink-0"
+              className="flex items-center gap-2 sm:gap-3 min-w-0 md:shrink-0"
             >
               <img
                 src={logo}
@@ -463,9 +463,9 @@ export default function Header({
             {isLoggedIn && (
                 <Link
                   to="/dashboard"
-                  className="inline-flex items-center gap-1.5 rounded-full bg-[var(--teal)] px-3.5 py-2 text-[14px] font-semibold text-white shadow-sm"
+                  className="inline-flex items-center gap-1 whitespace-nowrap rounded-full border border-[var(--teal)]/30 bg-[#E7F4EF] px-2.5 py-1.5 text-[13px] font-semibold text-[var(--teal)]"
                 >
-                  <svg width="15" height="15" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                  <svg width="13" height="13" viewBox="0 0 20 20" fill="none" aria-hidden="true">
                     <path d="M3.5 4.5h13v12h-13zM3.5 8h13M7 2.5v3M13 2.5v3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
                   Dashboard

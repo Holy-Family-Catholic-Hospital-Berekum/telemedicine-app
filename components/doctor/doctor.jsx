@@ -389,6 +389,7 @@ export default function DoctorDashboard() {
                     <ConsultationCard
                       key={c.consultationId}
                       consultation={c}
+                      showDate
                       startingCall={startingCallId === c.consultationId}
                       onStartCall={handleStartCall}
                       inRoom={Boolean(roomDevice)}

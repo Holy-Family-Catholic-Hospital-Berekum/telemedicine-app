@@ -11,6 +11,7 @@ import HealthcarePreloader from "../../src/components/common/healthcarePreloader
 // page's doctor picker.
 import { useListedDoctors } from "../../src/doctorDirectory";
 import { DoctorCardSummary } from "./doctorProfileDetails";
+import EmergencyNotice from "./emergencyNotice";
 import heroDefault from "../../src/assets/hero-consult.jpg";
 import { useSiteSettings } from "../../src/siteSettings";
 import { fetchAvailableSlots } from "./dashboard/patientFirestoreService";
@@ -1215,6 +1216,7 @@ function HomeContent({ isLoggedIn }) {
   return (
     <div className="font-body text-[#142138] bg-white overflow-x-hidden">
       <Header variant="full" isLoggedIn={isLoggedIn} />
+      <EmergencyNotice />
 
       <main
         id="top"

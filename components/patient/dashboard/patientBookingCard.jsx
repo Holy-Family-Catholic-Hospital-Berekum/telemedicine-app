@@ -80,7 +80,9 @@ export default function BookingCard({
   const meta =
     didNotHappen && !refund && !rescheduleRequested
       ? MISSED_META
-      : (STATE_META[booking.state] ?? STATE_META.scheduled);
+      : booking.payAtHospital && booking.state === "pending_assignment"
+        ? { ...STATE_META.pending_assignment, label: "Booked · pay at the hospital" }
+        : (STATE_META[booking.state] ?? STATE_META.scheduled);
 
   return (
     <div className="rounded-md border border-[#DCE6EC] overflow-hidden">
@@ -168,8 +170,10 @@ export default function BookingCard({
           {booking.state === "pending_assignment" && (
             <p className="flex items-center gap-2 text-sm text-[#3E4E56]">
               <ShieldCheck size={15} strokeWidth={1.75} />
-              Paid {formatCurrency(booking.amountPaid ?? booking.amount)}. The hospital is
-              choosing your doctor and time. We'll email you soon.
+              {booking.payAtHospital
+                ? `Booked. You pay ${formatCurrency(booking.amount)} at the hospital when you come.`
+                : `Paid ${formatCurrency(booking.amountPaid ?? booking.amount)}.`}{" "}
+              The hospital is choosing your doctor and time. We'll email you soon.
             </p>
           )}
 

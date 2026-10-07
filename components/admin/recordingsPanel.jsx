@@ -11,11 +11,13 @@ import { Pagination, LoadOlder } from "../shared/pagination.jsx";
 import { usePagination } from "../shared/usePagination.js";
 
 // Call recordings, admin only (rules deny everyone else). Nothing here can
-// read the files directly: play and download ask getRecordingUrl for a
-// 10-minute signed link, which requires a reason and is written to the
-// audit log. Deleting needs two admins: one requests it (with a reason),
-// a different admin approves it, and only then are the files deleted
-// (recordings.js requestRecordingDeletion / decideDeletionRequest).
+// read the files directly. Every sensitive step needs two admins:
+//   - play / download: one admin asks (with a reason), a DIFFERENT admin
+//     approves, then the asking admin can do it once within 24 hours
+//     (recordings.js requestRecordingAccess / decideRecordingAccess /
+//     getRecordingUrl, which hands out a 10-minute signed link);
+//   - delete: one admin asks, another approves, then the files are deleted
+//     (requestRecordingDeletion / decideDeletionRequest).
 // Requests expire after 72 hours. Every step is audited.
 
 const LIST_STEP = 300;
@@ -84,6 +86,157 @@ function ReasonDialog({ title, body, confirmLabel, tone, requireTyped, busy, err
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * Play/download requests: other admins' requests to approve or reject, and
+ * the caller's own (waiting, or approved and ready to use once).
+ */
+function AccessRequests({ callAdmin, onMessage, onOpen }) {
+  const { user } = useAuth();
+  const openQuery = useMemo(
+    () => query(collection(db, "accessRequests"), where("status", "in", ["pending", "approved"])),
+    [],
+  );
+  const { data: open } = useFirestoreCollection(openQuery);
+  const [deciding, setDeciding] = useState(null); // { request, decision }
+  const [busy, setBusy] = useState(false);
+  const [using, setUsing] = useState(null); // request id being opened
+  const [error, setError] = useState(null);
+  const [openedAt] = useState(() => Date.now());
+
+  const alive = (r) => {
+    const until = r.status === "approved" ? r.usableUntil : r.expiresAt;
+    return !until || new Date(until).getTime() > openedAt;
+  };
+  const live = open
+    .filter(alive)
+    .filter((r) => r.status === "pending" || r.requestedByUid === user?.uid)
+    .sort((a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0));
+  if (live.length === 0) return null;
+
+  async function decide(note) {
+    setBusy(true);
+    setError(null);
+    try {
+      const data = await callAdmin("decideRecordingAccess", {
+        requestId: deciding.request.id,
+        decision: deciding.decision,
+        note,
+      });
+      onMessage(
+        data.status === "approved"
+          ? "Approved. The admin who asked can now use it once within 24 hours."
+          : "Request rejected.",
+      );
+      setDeciding(null);
+    } catch {
+      setError("That didn't go through. See the message above.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function use(r) {
+    setUsing(r.id);
+    try {
+      const data = await callAdmin("getRecordingUrl", { requestId: r.id });
+      onOpen(data, r);
+    } catch {
+      // banner shown by callAdmin
+    } finally {
+      setUsing(null);
+    }
+  }
+
+  const describe = (r) =>
+    `${r.purpose === "download" ? "Download" : "Play"}: ${r.patientName || "Patient"} with ${
+      r.doctorName || "doctor"
+    }, ${formatDateTime(r.recordingStartedAt)}`;
+
+  return (
+    <section className="admin-panel">
+      <div className="admin-panel-head">
+        <div>
+          <h2>Requests to play or download ({live.length})</h2>
+          <p>
+            A recording can be played or downloaded only after a second admin
+            approves. An approval can be used once, within 24 hours, by the
+            admin who asked.
+          </p>
+        </div>
+      </div>
+      <div className="admin-panel-body">
+        <table className="admin-table">
+          <thead>
+            <tr>
+              <th>What</th>
+              <th>Asked by</th>
+              <th>Reason</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {live.map((r) => {
+              const mine = r.requestedByUid === user?.uid;
+              return (
+                <tr key={r.id}>
+                  <td>{describe(r)}</td>
+                  <td>
+                    {r.requestedByName || "Admin"}
+                    <div className="admin-cell-sub">{formatDateTime(r.createdAt)}</div>
+                  </td>
+                  <td className="admin-cell-sub">{r.reason}</td>
+                  <td>
+                    {r.status === "approved" && mine ? (
+                      <div>
+                        <button className="btn btn-primary" disabled={using === r.id} onClick={() => use(r)}>
+                          {using === r.id ? "Opening…" : r.purpose === "download" ? "Download now" : "Play now"}
+                        </button>
+                        <div className="admin-cell-sub">
+                          Approved by {r.decidedByName || "another admin"} · use by {formatDateTime(r.usableUntil)}
+                        </div>
+                      </div>
+                    ) : mine ? (
+                      <span className="admin-cell-sub">Waiting for another admin</span>
+                    ) : (
+                      <div className="admin-row-actions">
+                        <button
+                          className="btn btn-outline"
+                          onClick={() => setDeciding({ request: r, decision: "approve" })}
+                        >
+                          Approve
+                        </button>
+                        <button
+                          className="btn btn-outline danger"
+                          onClick={() => setDeciding({ request: r, decision: "reject" })}
+                        >
+                          Reject
+                        </button>
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {deciding && (
+        <ReasonDialog
+          title={deciding.decision === "approve" ? "Approve this request?" : "Reject this request?"}
+          body={`${describe(deciding.request)}. Asked by ${deciding.request.requestedByName || "another admin"}: "${deciding.request.reason}".`}
+          confirmLabel={deciding.decision === "approve" ? "Approve" : "Reject"}
+          tone={deciding.decision === "reject" ? "danger" : undefined}
+          busy={busy}
+          error={error}
+          onConfirm={decide}
+          onClose={() => !busy && setDeciding(null)}
+        />
+      )}
+    </section>
   );
 }
 
@@ -268,22 +421,14 @@ export default function RecordingsPanel({ callAdmin }) {
     const r = action.recording;
     if (action.kind === "play" || action.kind === "download") {
       return run(async () => {
-        const data = await callAdmin("getRecordingUrl", {
+        await callAdmin("requestRecordingAccess", {
           recordingId: r.id,
           purpose: action.kind,
           reason,
         });
-        if (action.kind === "play") {
-          setPlayer({ url: data.url, recording: r });
-        } else {
-          const a = document.createElement("a");
-          a.href = data.url;
-          a.download = data.filename;
-          a.rel = "noopener";
-          document.body.appendChild(a);
-          a.click();
-          a.remove();
-        }
+        setMessage(
+          `Request sent. Another admin must approve it; then you can ${action.kind} the recording once, within 24 hours, from "Requests to play or download".`,
+        );
       });
     }
     if (action.kind === "delete") {
@@ -303,6 +448,27 @@ export default function RecordingsPanel({ callAdmin }) {
       });
     }
     return undefined;
+  }
+
+  // An approved request was used: play it here, or start the download.
+  function openApproved(data, request) {
+    const recording =
+      recordings.find((x) => x.id === data.recordingId) ?? {
+        patientName: request.patientName,
+        doctorName: request.doctorName,
+        startedAt: request.recordingStartedAt,
+      };
+    if (data.purpose === "play") {
+      setPlayer({ url: data.url, recording });
+    } else {
+      const a = document.createElement("a");
+      a.href = data.url;
+      a.download = data.filename;
+      a.rel = "noopener";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    }
   }
 
   async function startBulk() {
@@ -328,9 +494,10 @@ export default function RecordingsPanel({ callAdmin }) {
       <div className="admin-banner">
         <IconAlert size={18} />
         <p>
-          Recordings contain identifiable patient video and audio. Open them
-          only for a legitimate reason. Every play, download and deletion is
-          recorded in the audit log with your name and reason.
+          Recordings contain identifiable patient video and audio. Playing,
+          downloading and deleting each need a second admin's approval, and
+          every step is recorded in the audit log with both names and the
+          reason.
         </p>
       </div>
 
@@ -340,6 +507,7 @@ export default function RecordingsPanel({ callAdmin }) {
         </div>
       )}
 
+      <AccessRequests callAdmin={callAdmin} onMessage={setMessage} onOpen={openApproved} />
       <PendingDeletions callAdmin={callAdmin} onMessage={setMessage} />
 
       <section className="admin-panel">
@@ -424,10 +592,10 @@ export default function RecordingsPanel({ callAdmin }) {
                           {ready && (
                             <>
                               <button className="btn btn-secondary" onClick={() => setAction({ kind: "play", recording: r })}>
-                                Play
+                                Ask to play
                               </button>
                               <button className="btn btn-outline" onClick={() => setAction({ kind: "download", recording: r })}>
-                                Download
+                                Ask to download
                               </button>
                             </>
                           )}
@@ -482,9 +650,9 @@ export default function RecordingsPanel({ callAdmin }) {
         <ReasonDialog
           title={
             action.kind === "play"
-              ? "Play this recording?"
+              ? "Ask to play this recording?"
               : action.kind === "download"
-                ? "Download this recording?"
+                ? "Ask to download this recording?"
                 : action.kind === "delete"
                   ? "Request deletion of this recording?"
                   : `Request deletion of ${action.count} recording${action.count === 1 ? "" : "s"}?`
@@ -496,14 +664,14 @@ export default function RecordingsPanel({ callAdmin }) {
                 }. Another admin must approve; once they do, it cannot be undone.`
               : action.kind === "delete"
                 ? `${action.recording.patientName || "Patient"} with ${action.recording.doctorName || "doctor"}, ${formatDateTime(action.recording.startedAt)}. Another admin must approve; once they do, it cannot be undone.`
-                : `${action.recording.patientName || "Patient"} with ${action.recording.doctorName || "doctor"}, ${formatDateTime(action.recording.startedAt)}.${
+                : `${action.recording.patientName || "Patient"} with ${action.recording.doctorName || "doctor"}, ${formatDateTime(action.recording.startedAt)}. Another admin must approve before you can ${action.kind} it.${
                     action.kind === "download"
                       ? " A downloaded copy leaves the platform's protections: store it securely."
                       : ""
                   }`
           }
           confirmLabel={
-            action.kind === "play" ? "Play" : action.kind === "download" ? "Download" : "Request deletion"
+            action.kind === "play" || action.kind === "download" ? "Send request" : "Request deletion"
           }
           tone={action.kind === "delete" || action.kind === "bulk" ? "danger" : undefined}
           requireTyped={undefined}

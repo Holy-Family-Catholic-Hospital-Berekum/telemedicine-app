@@ -92,7 +92,17 @@ function patientContent(kind, data, when) {
       ? `Please be on time. If you haven't joined within ${ns.waitMinutes} minutes of the start (or of your doctor joining, if later), the consultation is marked as missed (a no-show). To book a new time after that, you pay an extra fee of ${fee}; or you can ask for a refund, minus ${ns.forfeitPercent}% of what you paid.`
       : `Please be on time. If you don't arrive within ${ns.waitMinutes} minutes of the start, the consultation may be marked as missed (a no-show). To book a new time after that, you pay an extra fee of ${fee}; or you can ask for a refund, minus ${ns.forfeitPercent}% of what you paid.`
     : null;
-  const withRule = (list) => (noShowRule ? [...list, noShowRule] : list);
+  // A free hospital visit: say what to pay at the hospital, and that a
+  // missed visit simply needs booking again (no fee, nothing to refund).
+  const payNote = data.payAtHospital
+    ? `You pay${data.amountDue ? ` GHS ${data.amountDue}` : ""} at the hospital when you come for your visit.`
+    : null;
+  const rule = data.payAtHospital
+    ? ns
+      ? `Please be on time. If you don't arrive within ${ns.waitMinutes} minutes of the start, the visit may be marked as missed and you will need to book again.`
+      : null
+    : noShowRule;
+  const withRule = (list) => [...list, ...(payNote ? [payNote] : []), ...(rule ? [rule] : [])];
 
   switch (kind) {
     case "appointment_rescheduled":

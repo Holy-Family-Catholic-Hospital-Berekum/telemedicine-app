@@ -88,6 +88,9 @@ export function normaliseSettings(data) {
       : [],
     // Admin switch; missing = allowed. The server enforces it too.
     doctorSelectionEnabled: d.doctorSelectionEnabled !== false,
+    // Admin switch; missing = pay online. Off: hospital visits are free to
+    // book and paid at the hospital. The server enforces it too.
+    inPersonPaymentRequired: d.inPersonPaymentRequired !== false,
     noShow: {
       waitMinutes: inRange(d.noShow?.waitMinutes, 1, 30) ? d.noShow.waitMinutes : DEFAULT_NO_SHOW.waitMinutes,
       forfeitPercent: inRange(d.noShow?.forfeitPercent, 0, 100) ? d.noShow.forfeitPercent : DEFAULT_NO_SHOW.forfeitPercent,
@@ -116,6 +119,7 @@ function writeCache(data) {
         authImage: data?.authImage ? { url: data.authImage.url } : null,
         sliderImages: (data?.sliderImages || []).map((i) => ({ url: i.url })),
         doctorSelectionEnabled: data?.doctorSelectionEnabled !== false,
+        inPersonPaymentRequired: data?.inPersonPaymentRequired !== false,
         noShow: data?.noShow ?? null,
       }),
     );
@@ -174,7 +178,8 @@ const getSnapshot = () => state;
  * @returns {{ ready: boolean, settings: {
  *   prices: { OPD: number, SURGICAL: number },
  *   heroImage: string|null, authImage: string|null, sliderImages: string[],
- *   doctorSelectionEnabled: boolean
+ *   doctorSelectionEnabled: boolean, inPersonPaymentRequired: boolean,
+ *   noShow: { waitMinutes, forfeitPercent, rescheduleFee }
  * }}}
  */
 export function useSiteSettings() {

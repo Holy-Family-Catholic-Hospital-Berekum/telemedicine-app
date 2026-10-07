@@ -449,6 +449,11 @@ export default function BookingsPanel({
                         </div>
                       )}
                       <div className="admin-cell-sub">{b.phone}</div>
+                      {b.payAtHospital && (
+                        <div className="admin-cell-sub" style={{ color: "var(--color-warning, #A85420)", fontWeight: 600 }}>
+                          Pays at the hospital · {b.currency || "GHS"} {b.amount}
+                        </div>
+                      )}
                     </td>
                     <td>
                       <div>{TYPE_LABELS[b.type] ?? b.type}</div>

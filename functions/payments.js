@@ -58,7 +58,7 @@ const {
   rateLimit,
   onCall,
 } = require("./lib/core");
-const { loadPrices, doctorSelectionEnabled } = require("./siteSettings");
+const { loadPrices, doctorSelectionEnabled, inPersonPaymentRequired } = require("./siteSettings");
 const {
   BOOKING_CONSENT_TEXT,
   CURRENT_BOOKING_CONSENT,
@@ -405,16 +405,29 @@ async function markBookingPaid(bookingRef, paystackData, via) {
 /* ------------------------------------------------------------------ */
 
 /**
- * data: { type, mode, dateOfBirth, sex, town, area, phone,
+ * data: { type, mode, dateOfBirth?, sex?, town?, area?, phone?,
  *         doctorUid?, slotId?, consentVersion,
  *         forChild?, childName?, guardianConsentVersion? }
  *
  * Accounts belong to adults. A booking is either for the account holder
- * (who must then be 18 or older by the date of birth given) or for their
- * child under 18 (Ghana Data Protection Act, 2012 (Act 843): a child's
- * data needs a parent's or guardian's consent). A child's booking carries
- * the child's name and a guardian consent record; the account holder is
- * kept as guardianName and is the one emailed.
+ * or for their child under 18 (Ghana Data Protection Act, 2012 (Act 843):
+ * a child's data needs a parent's or guardian's consent). A child's booking
+ * carries the child's name and a guardian consent record; the account
+ * holder is kept as guardianName and is the one emailed.
+ *
+ * What we ask for depends on the mode (medical director):
+ *   video call       date of birth, sex and location (the doctor needs them
+ *                    before the call; the age check uses the date of birth).
+ *                    The phone (the mobile money number) comes with
+ *                    initializePayment, on the payment page.
+ *   at the hospital  nothing clinical: the hospital takes details at the
+ *                    visit. Only a phone number, sent here if the visit is
+ *                    free to book, otherwise with initializePayment.
+ * When the admin has switched in-person payment off
+ * (siteSettings/public.inPersonPaymentRequired === false), a hospital visit
+ * is booked straight away (status "paid", payAtHospital: true, amount due
+ * at the hospital), limited to one open visit per patient so free bookings
+ * can't block the calendar.
  */
 exports.createBookingDraft = onCall({ secrets: [PAYSTACK_SECRET_KEY] }, async (request) => {
   const caller = await requireRole(request, ["patient"]);
@@ -424,12 +437,19 @@ exports.createBookingDraft = onCall({ secrets: [PAYSTACK_SECRET_KEY] }, async (r
 
   let type = oneOf(d.type, TYPES, "consultation type");
   let mode = oneOf(d.mode, MODES, "consultation mode");
-  const dob = dateOfBirth(d.dateOfBirth);
-  const sex = oneOf(d.sex, SEXES, "sex");
-  const town = str(d.town, { field: "Town", max: 80 });
-  const area = str(d.area, { field: "Area", max: 120 });
-  const phone = phoneE164(d.phone);
   const slotId = d.slotId ? docId(d.slotId, "Slot") : null;
+  // A slot decides the mode (read again in the transaction); until then,
+  // trust what was sent only to pick which details to check.
+  if (slotId) {
+    const slotSnap = await db.collection("availableSlots").doc(slotId).get();
+    if (slotSnap.exists && MODES.includes(slotSnap.data().mode)) mode = slotSnap.data().mode;
+  }
+  const online = mode === "online";
+  const dob = online ? dateOfBirth(d.dateOfBirth) : null;
+  const sex = online ? oneOf(d.sex, SEXES, "sex") : null;
+  const town = online ? str(d.town, { field: "Town", max: 80 }) : null;
+  const area = online ? str(d.area, { field: "Area", max: 120 }) : null;
+  const phone = d.phone ? phoneE164(d.phone) : null;
   let doctorUid = d.doctorUid ? docId(d.doctorUid, "Doctor") : null;
 
   if (d.consentVersion !== CURRENT_BOOKING_CONSENT) {
@@ -439,11 +459,13 @@ exports.createBookingDraft = onCall({ secrets: [PAYSTACK_SECRET_KEY] }, async (r
     );
   }
   const forChild = d.forChild === true;
-  const age = ageInYears(dob);
+  // Age is checked only where a date of birth is asked for (video calls);
+  // every account holder has declared they are 18 or over at sign-up.
+  const age = dob ? ageInYears(dob) : null;
   let childName = null;
   if (forChild) {
     childName = str(d.childName, { field: "Child's full name", max: 100, min: 2 });
-    if (age >= 18) {
+    if (age !== null && age >= 18) {
       throw new HttpsError(
         "invalid-argument",
         "This date of birth is 18 or over. Adults book from their own account.",
@@ -455,7 +477,7 @@ exports.createBookingDraft = onCall({ secrets: [PAYSTACK_SECRET_KEY] }, async (r
         "Please confirm you are the child's parent or guardian and give consent for them.",
       );
     }
-  } else if (age < 18) {
+  } else if (age !== null && age < 18) {
     throw new HttpsError(
       "invalid-argument",
       "You must be 18 or older to book for yourself. If this booking is for your child, choose \"My child\".",
@@ -499,6 +521,11 @@ exports.createBookingDraft = onCall({ secrets: [PAYSTACK_SECRET_KEY] }, async (r
     doctorUid = null;
   }
 
+  const payAtHospital = mode === "in_person" && !(await inPersonPaymentRequired());
+  if (payAtHospital && !phone) {
+    throw new HttpsError("invalid-argument", "Enter a phone number we can call you on.");
+  }
+
   const prices = await loadPrices();
   let amount = prices[type];
   const meta = requestMeta(request);
@@ -528,8 +555,27 @@ exports.createBookingDraft = onCall({ secrets: [PAYSTACK_SECRET_KEY] }, async (r
       // The slot decides the doctor, type and mode.
       doctorUid = slot.doctorUid;
       type = slot.type;
-      mode = slot.mode;
+      if (slot.mode !== mode) {
+        throw new HttpsError("failed-precondition", "That slot has changed. Please reload the page.");
+      }
       amount = prices[type];
+    }
+
+    // Free hospital visits: one open visit per patient.
+    if (payAtHospital) {
+      const open = await tx.get(
+        db.collection("bookings")
+          .where("patientUid", "==", uid)
+          .where("payAtHospital", "==", true)
+          .where("status", "in", ["paid", "scheduled"])
+          .limit(1),
+      );
+      if (!open.empty) {
+        throw new HttpsError(
+          "failed-precondition",
+          "You already have a hospital visit booked. You can book another one after that visit.",
+        );
+      }
     }
 
     let doctorName = null;
@@ -553,13 +599,18 @@ exports.createBookingDraft = onCall({ secrets: [PAYSTACK_SECRET_KEY] }, async (r
 
     // --- writes ---
     if (slotRef) {
-      tx.update(slotRef, {
-        status: "held",
-        heldByUid: uid,
-        bookingId: bookingRef.id,
-        heldUntil: Timestamp.fromMillis(now + SLOT_HOLD_MINUTES * 60 * 1000),
-        updatedAt: serverTime(),
-      });
+      tx.update(
+        slotRef,
+        payAtHospital
+          ? { status: "booked", bookingId: bookingRef.id, heldUntil: FieldValue.delete(), updatedAt: serverTime() }
+          : {
+              status: "held",
+              heldByUid: uid,
+              bookingId: bookingRef.id,
+              heldUntil: Timestamp.fromMillis(now + SLOT_HOLD_MINUTES * 60 * 1000),
+              updatedAt: serverTime(),
+            },
+      );
     }
 
     tx.set(consentRef, {
@@ -600,10 +651,11 @@ exports.createBookingDraft = onCall({ secrets: [PAYSTACK_SECRET_KEY] }, async (r
       email: caller.token.email || null,
       type,
       mode,
-      // Personal details: deleted with the booking when it closes.
+      // Personal details (video calls only): deleted with the booking when
+      // it closes.
       dateOfBirth: dob,
       sex,
-      location: `${area}, ${town}`,
+      location: online ? `${area}, ${town}` : null,
       phone,
       requestedDoctorUid: doctorUid,
       requestedDoctorName: doctorName,
@@ -611,18 +663,29 @@ exports.createBookingDraft = onCall({ secrets: [PAYSTACK_SECRET_KEY] }, async (r
       preferredTime: slot?.startAt || null,
       amount, // whole GHS
       currency: CURRENCY,
-      status: "awaiting_payment",
       txRefs: [],
       consentId: consentRef.id,
       createdAt: serverTime(),
       updatedAt: serverTime(),
-      expiresAt: Timestamp.fromMillis(now + DRAFT_LIFETIME_HOURS * 3600 * 1000),
+      ...(payAtHospital
+        ? {
+            // Booked now; the patient pays `amount` at the hospital.
+            status: "paid",
+            payAtHospital: true,
+            amountPaid: 0,
+            bookedAt: serverTime(),
+            ...(slotRef ? { slotLost: false } : {}),
+          }
+        : {
+            status: "awaiting_payment",
+            expiresAt: Timestamp.fromMillis(now + DRAFT_LIFETIME_HOURS * 3600 * 1000),
+          }),
     });
 
     audit(tx, {
       actorId: uid,
       actorRole: "patient",
-      action: "Started a booking",
+      action: payAtHospital ? "Booked a hospital visit (pays at the hospital)" : "Started a booking",
       code: "booking.created",
       category: "booking",
       targetType: "booking",
@@ -632,7 +695,15 @@ exports.createBookingDraft = onCall({ secrets: [PAYSTACK_SECRET_KEY] }, async (r
     });
   });
 
-  return { bookingId: bookingRef.id, amount, currency: CURRENCY, type, mode };
+  return {
+    bookingId: bookingRef.id,
+    amount,
+    currency: CURRENCY,
+    type,
+    mode,
+    status: payAtHospital ? "booked" : "awaiting_payment",
+    payAtHospital,
+  };
 });
 
 /* ------------------------------------------------------------------ */
@@ -640,6 +711,9 @@ exports.createBookingDraft = onCall({ secrets: [PAYSTACK_SECRET_KEY] }, async (r
 /* ------------------------------------------------------------------ */
 
 /**
+ * data: { bookingId, phone? } — phone: the mobile money number the patient
+ * will pay with (asked for on the payment page; kept on the booking as the
+ * contact number too).
  * A fresh reference for every attempt, so a failed attempt's reference
  * can never be reused to claim a later success.
  */
@@ -658,6 +732,10 @@ exports.initializePayment = onCall({ secrets: [PAYSTACK_SECRET_KEY] }, async (re
   const booking = snap.data();
   if (booking.status !== "awaiting_payment") {
     throw new HttpsError("failed-precondition", "This booking has already been paid for.");
+  }
+  const phone = request.data?.phone ? phoneE164(request.data.phone) : booking.phone;
+  if (!phone) {
+    throw new HttpsError("invalid-argument", "Enter the mobile money number you will pay with.");
   }
   // Don't open a second charge while the previous one may still complete.
   const last = await checkAttempts(ref, booking);
@@ -687,6 +765,7 @@ exports.initializePayment = onCall({ secrets: [PAYSTACK_SECRET_KEY] }, async (re
     txRefs: FieldValue.arrayUnion(reference),
     lastTxRef: reference,
     lastAttemptAt: serverTime(),
+    phone,
   });
   // Reverse lookup for the webhook. Deleted with the booking.
   batch.set(db.collection("paymentRefs").doc(reference), {
@@ -703,7 +782,7 @@ exports.initializePayment = onCall({ secrets: [PAYSTACK_SECRET_KEY] }, async (re
     customer: {
       name: booking.patientName || "",
       email: booking.email || "",
-      phone: booking.phone,
+      phone,
     },
   };
 });

@@ -119,6 +119,8 @@ exports.sendAppointmentReminders = onSchedule(
                   // The account holder (a child's parent or guardian).
                   patientName: booking.guardianName || booking.patientName || c.patientName || "",
                   noShow,
+                  payAtHospital: booking.payAtHospital === true,
+                  amountDue: booking.payAtHospital ? booking.amount : null,
                   consultationId: doc.id,
                 },
                 sendBefore: late ? start + LATE_TO : start,

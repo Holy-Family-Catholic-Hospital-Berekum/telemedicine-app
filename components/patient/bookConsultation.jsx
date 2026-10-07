@@ -177,8 +177,8 @@ async function createBookingDraft(payload) {
 // returns what the popup needs. A new reference per attempt is what
 // makes retries after a failed payment safe.
 // Resolves: { reference, amount, currency, customer }
-async function initializePayment({ bookingId }) {
-  const { data } = await callInitializePayment({ bookingId });
+async function initializePayment({ bookingId, phone }) {
+  const { data } = await callInitializePayment({ bookingId, phone });
   return data;
 }
 
@@ -505,7 +505,20 @@ export default function BookConsultation() {
     );
   }, [doctorsForType, doctorSearch]);
 
-  // { bookingId, amount, currency }
+  // What we ask for depends on how they'll see the doctor (medical
+  // director): a video call needs date of birth, sex and location; a
+  // hospital visit needs none of that. When the admin has switched
+  // in-person payment off, a hospital visit is booked without paying (the
+  // patient pays at the hospital), so we ask for a phone number here.
+  // Otherwise the phone is the mobile money number, asked on the payment
+  // page. The server applies the same rules.
+  const online = mode === "online";
+  const payAtHospital = mode === "in_person" && !settings.inPersonPaymentRequired;
+  const stepLabels = payAtHospital
+    ? ["Your details", "Pay at the hospital", "Done"]
+    : STEP_LABELS;
+
+  // { bookingId, amount, currency, status, payAtHospital }
   const [booking, setBooking] = useState(null);
 
   // "idle" | "starting" | "checkout" | "verifying" | "pending" | "confirmed"
@@ -534,7 +547,7 @@ export default function BookConsultation() {
       showError("Enter your child's full name to continue.");
       return;
     }
-    if (!dateOfBirth) {
+    if (online && !dateOfBirth) {
       showError(
         forChild
           ? "Enter your child's date of birth to continue."
@@ -542,33 +555,33 @@ export default function BookConsultation() {
       );
       return;
     }
-    const age = ageFrom(dateOfBirth);
-    if (!forChild && age < 18) {
+    const age = online ? ageFrom(dateOfBirth) : null;
+    if (online && !forChild && age < 18) {
       showError(
         "You must be 18 or older to book for yourself. If this consultation is for your child, choose \"My child (under 18)\" above.",
       );
       return;
     }
-    if (forChild && age >= 18) {
+    if (online && forChild && age >= 18) {
       showError(
         "This date of birth is 18 or over. Adults need to book from their own account.",
       );
       return;
     }
-    if (!sex) {
+    if (online && !sex) {
       showError("Select your sex to continue.");
       return;
     }
-    if (!town.trim()) {
+    if (online && !town.trim()) {
       showError("Enter your town or city to continue.");
       return;
     }
-    if (!area.trim()) {
-      showError("Enter your area, suburb or nearest landmark to continue.");
+    if (online && !area.trim()) {
+      showError("Enter your area, or a place near you, to continue.");
       return;
     }
-    if (!phone.trim()) {
-      showError("Enter a phone number (WhatsApp preferred) to continue.");
+    if (payAtHospital && !phone.trim()) {
+      showError("Enter a phone number we can call you on.");
       return;
     }
     if (!consent) {
@@ -589,11 +602,10 @@ export default function BookConsultation() {
       const payload = {
         type,
         mode,
-        dateOfBirth,
-        sex,
-        town: town.trim(),
-        area: area.trim(),
-        phone,
+        ...(online
+          ? { dateOfBirth, sex, town: town.trim(), area: area.trim() }
+          : {}),
+        ...(payAtHospital ? { phone: phone.trim() } : {}),
         doctorUid: selectedDoctor?.id || null,
         slotId: slotId || null,
         consentVersion: CURRENT_BOOKING_CONSENT,
@@ -608,7 +620,8 @@ export default function BookConsultation() {
       const result = await createBookingDraft(payload);
       setBooking(result);
       setPaymentState("idle");
-      setStep(1);
+      // A free hospital visit is booked already: nothing to pay here.
+      setStep(result.status === "booked" ? 2 : 1);
     } catch (err) {
       showError(
         callableMessage(
@@ -629,9 +642,16 @@ export default function BookConsultation() {
    */
   async function handlePay() {
     clearError();
+    if (phone.replace(/\D/g, "").length < 9) {
+      showError("Enter the mobile money number you will pay with.");
+      return;
+    }
     setPaymentState("starting");
     try {
-      const session = await initializePayment({ bookingId: booking.bookingId });
+      const session = await initializePayment({
+        bookingId: booking.bookingId,
+        phone: phone.trim(),
+      });
       // An earlier attempt on this booking turned out to have succeeded.
       if (session.status === "confirmed") {
         setPaymentState("confirmed");
@@ -786,7 +806,7 @@ export default function BookConsultation() {
                 Book a consultation
               </p>
               <h1 className="mt-1 font-display text-[24px] sm:text-[28px] font-medium">
-                {STEP_LABELS[step]}
+                {stepLabels[step]}
               </h1>
             </div>
           </div>
@@ -794,7 +814,7 @@ export default function BookConsultation() {
           <main className="mx-auto max-w-3xl px-5 sm:px-8 py-8 sm:py-12 w-full">
             {/* ---------- Step indicator ---------- */}
             <ol className="flex items-center gap-2 sm:gap-3 mb-3 sm:mb-12">
-              {STEP_LABELS.map((label, i) => (
+              {stepLabels.map((label, i) => (
                 <li
                   key={label}
                   className="flex items-center flex-1 last:flex-none"
@@ -840,7 +860,7 @@ export default function BookConsultation() {
                       {label}
                     </span>
                   </div>
-                  {i < STEP_LABELS.length - 1 && (
+                  {i < stepLabels.length - 1 && (
                     <span className="flex-1 h-px bg-black/10 mx-2 sm:mx-3" />
                   )}
                 </li>
@@ -848,7 +868,7 @@ export default function BookConsultation() {
             </ol>
             {/* Mobile equivalent of the desktop step labels. */}
             <p className="sm:hidden mb-9 text-[16px] text-black/75">
-              Step {step + 1} of {STEP_LABELS.length} — {STEP_LABELS[step]}
+              Step {step + 1} of {stepLabels.length} — {stepLabels[step]}
             </p>
 
             <div
@@ -1112,6 +1132,7 @@ export default function BookConsultation() {
                     )}
                   </fieldset>
 
+                  {(online || forChild || payAtHospital) && (
                   <fieldset className="mt-8">
                     <legend className="text-[16px] font-medium mb-3">
                       {forChild ? "Your child's details" : "Your details"}
@@ -1136,6 +1157,7 @@ export default function BookConsultation() {
                         />
                       </div>
                     )}
+                    {online && (
                     <div className="grid sm:grid-cols-2 gap-4">
                       <div>
                         <label
@@ -1222,16 +1244,24 @@ export default function BookConsultation() {
                         </p>
                       </div>
 
-                      <div>
+                    </div>
+                    )}
+
+                    {/* Free hospital visit: no payment page, so the
+                        contact number is asked for here. */}
+                    {payAtHospital && (
+                      <div className="mt-4 sm:max-w-sm">
                         <label
                           htmlFor="phone"
                           className="block text-[16px] font-medium mb-1.5"
                         >
-                          Phone number (WhatsApp preferred)
+                          Phone number
                         </label>
                         <input
                           id="phone"
                           type="tel"
+                          inputMode="tel"
+                          autoComplete="tel"
                           required
                           value={phone}
                           onChange={(e) => setPhone(e.target.value)}
@@ -1240,27 +1270,47 @@ export default function BookConsultation() {
                                      focus:outline-none focus:border-[#F88535] focus:ring-1 focus:ring-[#F88535]"
                         />
                         <p className="mt-1.5 text-[15px] text-black/75">
-                          We'll also use this number for your mobile money
-                          payment.
+                          We'll call this number if we need to reach you about
+                          your visit.
                         </p>
                       </div>
-                    </div>
+                    )}
                   </fieldset>
+                  )}
+
+                  {payAtHospital && (
+                    <div className="mt-8 rounded-2xl border border-[#0095D9]/30 bg-[#0095D9]/5 p-5">
+                      <p className="text-[16px] font-medium">No payment now</p>
+                      <p className="mt-1.5 text-[16px] text-black/80">
+                        You pay {CURRENCY} {fee} at the hospital when you come
+                        for your visit.
+                      </p>
+                    </div>
+                  )}
 
                   {/* ---------- Missed appointments (no-show policy, admin-set) ---------- */}
                   <div className="mt-8 rounded-2xl border border-[#F88535]/40 bg-[#F88535]/5 p-5">
                     <p className="text-[16px] font-medium">Please be on time</p>
+                    {payAtHospital ? (
+                      <p className="mt-1.5 text-[16px] text-black/80">
+                        If you don't arrive within {settings.noShow.waitMinutes} minutes
+                        of the start, the visit may be marked as missed and you
+                        will need to book again. If you can't make it, change
+                        the time from your dashboard before the visit.
+                      </p>
+                    ) : (
                     <p className="mt-1.5 text-[16px] text-black/80">
-                      If you haven't joined within {settings.noShow.waitMinutes} minutes
-                      of the start (or of your doctor joining the video call, if
-                      later), the consultation is marked as missed.
+                      {online
+                        ? `If you haven't joined within ${settings.noShow.waitMinutes} minutes of the start (or of your doctor joining the video call, if later), the consultation is marked as missed.`
+                        : `If you don't arrive within ${settings.noShow.waitMinutes} minutes of the start, the visit may be marked as missed.`}
                       {settings.noShow.rescheduleFee > 0
                         ? ` To book a new time after that, you pay an extra GHS ${settings.noShow.rescheduleFee}`
                         : " You can then book a new time"}
                       {`, or you can ask for a refund minus ${settings.noShow.forfeitPercent}% of what you paid.`}{" "}
-                      If you can't make it, reschedule free of charge from your
-                      dashboard before the appointment.
+                      If you can't make it, change the time free of charge from
+                      your dashboard before the appointment.
                     </p>
+                    )}
                   </div>
 
                   {/* ---------- Data consent ---------- */}
@@ -1332,8 +1382,12 @@ export default function BookConsultation() {
                                  hover:brightness-95 active:brightness-90 transition disabled:opacity-60"
                     >
                       {loading
-                        ? "Setting up your booking…"
-                        : "Next: pay"}
+                        ? payAtHospital
+                          ? "Booking your visit…"
+                          : "Setting up your booking…"
+                        : payAtHospital
+                          ? "Book my visit"
+                          : "Next: pay"}
                     </button>
                   </div>
                 </section>
@@ -1364,7 +1418,7 @@ export default function BookConsultation() {
                       <span className="text-right text-[16px] font-medium">
                         {type === "OPD" ? "General OPD" : "Surgical"}
                         <span className="block text-[16px] font-normal text-black/75">
-                          {mode === "online" ? "Online" : "In person"}
+                          {mode === "online" ? "Video call" : "At the hospital"}
                         </span>
                       </span>
                     </div>
@@ -1391,6 +1445,29 @@ export default function BookConsultation() {
                         {booking.currency} {booking.amount}
                       </span>
                     </div>
+                  </div>
+
+                  <div className="mt-7 sm:max-w-sm">
+                    <label htmlFor="momo-phone" className="block text-[16px] font-medium mb-1.5">
+                      Mobile money number you will pay with
+                    </label>
+                    <input
+                      id="momo-phone"
+                      type="tel"
+                      inputMode="tel"
+                      autoComplete="tel"
+                      required
+                      value={phone}
+                      disabled={paying}
+                      onChange={(e) => setPhone(e.target.value)}
+                      placeholder="e.g. 024 000 0000"
+                      className="w-full rounded-xl border border-black/20 px-4 py-3 text-[16px]
+                                     focus:outline-none focus:border-[#F88535] focus:ring-1 focus:ring-[#F88535]"
+                    />
+                    <p className="mt-1.5 text-[15px] text-black/75">
+                      Type the same number again in the payment window. We'll
+                      also call this number if we need to reach you.
+                    </p>
                   </div>
 
                   <p className="mt-5 text-[16px] bg-[#0095D9] px-4 py-2.5 rounded text-white leading-relaxed">
@@ -1471,22 +1548,26 @@ export default function BookConsultation() {
                     </svg>
                   </div>
                   <h2 className="mt-5 font-display text-[22px] sm:text-[24px] font-medium">
-                    Payment received. Your booking is done
+                    {booking.payAtHospital
+                      ? "Your visit is booked"
+                      : "Payment received. Your booking is done"}
                   </h2>
                   <p className="mt-2 text-[16px] text-black/80 max-w-md mx-auto sm:mx-0">
-                    We've received {booking.currency} {booking.amount}. You will
-                    receive an email with your appointment time
-                    {selectedDoctor ? "" : " and doctor"} the moment your
-                    schedule is confirmed.
+                    {booking.payAtHospital
+                      ? `You pay ${booking.currency} ${booking.amount} at the hospital when you come. `
+                      : `We've received ${booking.currency} ${booking.amount}. `}
+                    You will receive an email with your appointment time
+                    {selectedDoctor ? "" : " and doctor"} as soon as it is set.
                   </p>
 
                   <div className="mt-7 rounded-2xl border border-black/10 px-5 py-4 max-w-md mx-auto sm:mx-0 text-left space-y-3">
                     <div>
                       <span className="block text-[16px] text-black/75">
-                        Paid
+                        {booking.payAtHospital ? "To pay at the hospital" : "Paid"}
                       </span>
                       <span className="mt-0.5 block font-display text-[19px] font-medium">
-                        {booking.currency} {booking.amount} by mobile money
+                        {booking.currency} {booking.amount}
+                        {booking.payAtHospital ? "" : " by mobile money"}
                       </span>
                     </div>
                     {selectedDoctor && (

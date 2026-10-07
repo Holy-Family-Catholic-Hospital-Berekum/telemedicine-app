@@ -90,6 +90,29 @@ export default function NoShowPanel({ booking, refund, defaultPhone, onRefundReq
     }
   }
 
+  if (booking.payAtHospital) {
+    return (
+      <div className="rounded-md border border-[#B23A3A]/30 bg-[#B23A3A]/5 p-4">
+        <p className="flex items-center gap-2 text-base font-semibold text-[#12242C]">
+          <CalendarX2 size={18} strokeWidth={1.75} className="text-[#B23A3A]" />
+          You missed this visit
+        </p>
+        <p className="mt-1 text-sm text-[#3E4E56]">
+          You didn't arrive in time, so it was marked as missed. You can book a
+          new visit whenever you're ready.
+        </p>
+        <a
+          href="/book?mode=in_person"
+          className="mt-3 inline-flex items-center gap-2 rounded-md px-4 py-3 text-sm font-semibold text-white"
+          style={{ backgroundColor: "#0095D9" }}
+        >
+          <RefreshCw size={16} strokeWidth={2} />
+          Book a new visit
+        </a>
+      </div>
+    );
+  }
+
   if (done) {
     return (
       <p className="rounded-md bg-[#1E8E5A]/10 px-4 py-3 text-sm text-[#12242C]">

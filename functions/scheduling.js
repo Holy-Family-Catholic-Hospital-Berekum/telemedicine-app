@@ -197,6 +197,8 @@ exports.scheduleConsultation = onCall(async (request) => {
         scheduledAt: when.getTime(),
         consultationId: id,
         noShow,
+        payAtHospital: booking.payAtHospital === true,
+        amountDue: booking.payAtHospital ? booking.amount : null,
       },
     });
     queueEmail(tx, {
@@ -376,7 +378,9 @@ exports.requestReschedule = onCall({ secrets: [PAYSTACK_SECRET_KEY] }, async (re
     }
     // Too late for a free reschedule (a request made before the start
     // still stands and can be updated).
+    // (Free hospital visits have no fee: always a plain request.)
     if (
+      !booking.payAtHospital &&
       booking.rescheduleRequest?.status !== "requested" &&
       rescheduleCountsAsNoShow(consultationSnap.data() || {}, policy.waitMinutes)
     ) {
@@ -533,6 +537,8 @@ exports.rescheduleConsultation = onCall(async (request) => {
         scheduledAt: when.getTime(),
         consultationId: booking.consultationId,
         noShow,
+        payAtHospital: booking.payAtHospital === true,
+        amountDue: booking.payAtHospital ? booking.amount : null,
       },
     });
     queueEmail(tx, {

@@ -83,6 +83,8 @@ exports.revokeRoomDevice = roomDevices.revokeRoomDevice;
 exports.setCallRecordingMode = recordings.setCallRecordingMode;
 exports.startRecording = recordings.startRecording;
 exports.finalizeRecording = recordings.finalizeRecording;
+exports.requestRecordingAccess = recordings.requestRecordingAccess;
+exports.decideRecordingAccess = recordings.decideRecordingAccess;
 exports.getRecordingUrl = recordings.getRecordingUrl;
 exports.requestRecordingDeletion = recordings.requestRecordingDeletion;
 exports.decideDeletionRequest = recordings.decideDeletionRequest;
@@ -92,6 +94,7 @@ exports.recoverStaleRecordings = recordings.recoverStaleRecordings;
 exports.updateConsultationPrices = siteSettings.updateConsultationPrices;
 exports.updateNoShowPolicy = siteSettings.updateNoShowPolicy;
 exports.updateSiteImages = siteSettings.updateSiteImages;
+exports.updateInPersonPayment = siteSettings.updateInPersonPayment;
 exports.updateDoctorSelection = siteSettings.updateDoctorSelection;
 exports.updateLegalDocument = legalDocs.updateLegalDocument;
 

@@ -81,6 +81,7 @@ beforeEach(async () => {
     await put("availableSlots/held1", { status: "held", heldByUid: "pat2" });
     await put("auditLog/a1", { code: "x" });
     await put("deletionRequests/r1", { status: "pending" });
+    await put("accessRequests/q1", { status: "pending", purpose: "play" });
     await put("rateLimits/x_pat1", { count: 1 });
     await put("mail/m1", { to: "x@y.z" });
     await put("recordings/rec1", { doctorUid: "doc1", status: "recording" });
@@ -177,6 +178,13 @@ describe("server-owned collections", () => {
   test("deletion requests: admins read, doctors don't", async () => {
     await assertSucceeds(get(admin(), "deletionRequests/r1"));
     await assertFails(get(doctor(), "deletionRequests/r1"));
+  });
+  test("recording access requests: admins read only; nobody writes", async () => {
+    await assertSucceeds(get(admin(), "accessRequests/q1"));
+    await assertFails(get(doctor(), "accessRequests/q1"));
+    await assertFails(get(patient("pat1"), "accessRequests/q1"));
+    await assertFails(updateDoc(doc(admin().firestore(), "accessRequests/q1"), { status: "approved" }));
+    await assertFails(setDoc(doc(admin().firestore(), "accessRequests/q2"), { status: "approved" }));
   });
   test("rate limits and the mail outbox are closed to everyone", async () => {
     await assertFails(get(admin(), "rateLimits/x_pat1"));
