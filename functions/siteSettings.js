@@ -356,6 +356,55 @@ exports.updateDoctorSelection = onCall({ region: REGION }, async (request) => {
 });
 
 /* ------------------------------------------------------------------ */
+/* updateHospitalServices                                              */
+/* ------------------------------------------------------------------ */
+
+const MAX_SERVICES = 40;
+
+/**
+ * data: { services: string[] }
+ * The hospital's services listed on the home page ("Our services"), in the
+ * order given. Plain names only: 2 to 60 characters each, no duplicates,
+ * at most MAX_SERVICES. Shown as text (React escapes it).
+ */
+exports.updateHospitalServices = onCall({ region: REGION }, async (request) => {
+  const uid = await requireAdmin(request);
+  const list = request.data?.services;
+  if (!Array.isArray(list) || list.length > MAX_SERVICES) {
+    throw new HttpsError("invalid-argument", `Send a list of up to ${MAX_SERVICES} services.`);
+  }
+  const seen = new Set();
+  const services = [];
+  for (const raw of list) {
+    const name = typeof raw === "string" ? raw.replace(/\s+/g, " ").trim() : "";
+    if (name.length < 2 || name.length > 60 || /[<>{}]/.test(name)) {
+      throw new HttpsError("invalid-argument", "Each service must be 2 to 60 characters of plain text.");
+    }
+    const key = name.toLowerCase();
+    if (seen.has(key)) {
+      throw new HttpsError("invalid-argument", `"${name}" is listed twice.`);
+    }
+    seen.add(key);
+    services.push(name);
+  }
+  const db = getDb();
+  const batch = db.batch();
+  batch.set(settingsDoc(), { services, updatedAt: SERVER_TIME(), updatedBy: uid }, { merge: true });
+  batch.set(db.collection("auditLog").doc(), {
+    actorId: uid,
+    actorRole: "admin",
+    action: "Updated the hospital services shown on the home page",
+    code: "settings.services",
+    category: "account",
+    targetId: `${services.length} services`,
+    result: "success",
+    timestamp: SERVER_TIME(),
+  });
+  await batch.commit();
+  return { services };
+});
+
+/* ------------------------------------------------------------------ */
 /* updateInPersonPayment                                               */
 /* ------------------------------------------------------------------ */
 

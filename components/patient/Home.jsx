@@ -70,7 +70,8 @@ import { usePageMeta } from "../../src/seo.js";
  * - No other dependencies required. Icons are hand-drawn inline SVG.
  */
 
-// MOCK DATA — replace with the hospital's actual sub-services before launch.
+// The two ways to be seen. The hospital's services are listed separately
+// (admin-managed, "Our services" below).
 const consultTypes = [
   {
     type: "OPD",
@@ -78,28 +79,13 @@ const consultTypes = [
     detail:
       "Everyday health concerns, check-ups, and follow-up visits with our outpatient doctors.",
     mode: "By video call or at the hospital",
-    subServices: [
-      "General consultation",
-      "Antenatal care",
-      "Child welfare & immunization",
-      "Diabetes & hypertension clinic",
-      "Family planning",
-      "Wound care & dressing",
-    ],
   },
   {
     type: "SURGICAL",
     title: "Surgical consultation",
     detail:
-      "Pre-surgery assessments and post-surgery follow-ups with our surgical team.",
+      "Before or after an operation, with our surgical team.",
     mode: "By video call or at the hospital",
-    subServices: [
-      "Pre-surgical assessment",
-      "Post-surgical follow-up",
-      "General surgery",
-      "Orthopedic consultation",
-      "Gynecological surgery",
-    ],
   },
 ];
 
@@ -1208,6 +1194,40 @@ function HeroSection({ heroImage }) {
 
 // The page itself. Only mounted once auth has resolved (see Home below), so
 // useStampOnce's ref is attached to a real DOM node on its first effect run.
+/** The hospital's services; the list is edited in the admin Control panel. */
+function ServicesSection({ services }) {
+  if (!services?.length) return null;
+  return (
+    <section id="services" className="pb-16 sm:pb-24">
+      <div className="mx-auto max-w-5xl px-5 sm:px-8">
+        <h2 className="font-display text-[26px] sm:text-[30px] font-medium text-[var(--ink2)]">
+          Our services
+        </h2>
+        <p className="mt-3 max-w-lg text-[16px] text-[#142138cc]">
+          Book a consultation and tell us what you need. The hospital will
+          match you with the right doctor.
+        </p>
+        <ul className="mt-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {services.map((name) => (
+            <li
+              key={name}
+              className="flex items-center gap-3 rounded-2xl border border-[var(--forest)]/15 bg-[var(--forest)]/[0.04] px-4 py-3.5 text-[16px] font-medium text-[var(--ink2)]"
+            >
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white text-[var(--forest-2)] shadow-sm">
+                <CheckGlyph />
+              </span>
+              {name}
+            </li>
+          ))}
+        </ul>
+        <div className="mt-8">
+          <BookingCta />
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function HomeContent({ isLoggedIn }) {
   const { ref: privacyRef, ready: stampReady } = useStampOnce();
   const { settings } = useSiteSettings();
@@ -1306,7 +1326,7 @@ function HomeContent({ isLoggedIn }) {
         </section>
 
         {/* ---------- Consultation types ---------- */}
-        <section id="services" className="py-16 sm:py-24">
+        <section id="care" className="py-16 sm:py-24">
           <div className="mx-auto max-w-5xl px-5 sm:px-8">
             <h2 className="font-display text-[26px] sm:text-[30px] font-medium max-w-lg text-[var(--ink2)]">
               Which care do you need?
@@ -1355,21 +1375,6 @@ function HomeContent({ isLoggedIn }) {
                       </svg>
                     </span>
                   </Link>
-
-                  {/* Sub-services: kept outside the Link above so this stays
-                      a plain list, not a nested interactive element. Mock
-                      data, see consultTypes at the top of this file. */}
-                  <ul className="mt-5 flex flex-wrap justify-center sm:justify-start gap-2 max-w-sm mx-auto sm:mx-0">
-                    {service.subServices.map((item) => (
-                      <li
-                        key={item}
-                        className="inline-flex items-center gap-1.5 rounded-full border border-[var(--forest)]/15 bg-[var(--forest)]/[0.04] px-3 py-1.5 text-[15px] text-[var(--forest-2)]"
-                      >
-                        <CheckGlyph />
-                        {item}
-                      </li>
-                    ))}
-                  </ul>
                 </div>
               ))}
             </div>
@@ -1389,6 +1394,9 @@ function HomeContent({ isLoggedIn }) {
             </div>
           </div>
         </section>
+
+        {/* ---------- Our services (admin-managed) ---------- */}
+        <ServicesSection services={settings.services} />
 
         {/* ---------- Our doctors ---------- */}
         <section id="doctors" className="pb-16 sm:pb-24">

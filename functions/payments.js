@@ -427,11 +427,10 @@ async function markBookingPaid(bookingRef, paystackData, via) {
  * What we ask for depends on the mode (medical director):
  *   video call       date of birth, sex and location (the doctor needs them
  *                    before the call; the age check uses the date of birth).
- *                    The phone (the mobile money number) comes with
- *                    initializePayment, on the payment page.
  *   at the hospital  nothing clinical: the hospital takes details at the
- *                    visit. Only a phone number, sent here if the visit is
- *                    free to book, otherwise with initializePayment.
+ *                    visit.
+ * Every booking carries a phone number, used only to contact the patient
+ * (Paystack's own window asks for the mobile money number).
  * When the admin has switched in-person payment off
  * (siteSettings/public.inPersonPaymentRequired === false), a hospital visit
  * is booked straight away (status "paid", payAtHospital: true, amount due
@@ -458,7 +457,7 @@ exports.createBookingDraft = onCall({ secrets: [PAYSTACK_SECRET_KEY] }, async (r
   const sex = online ? oneOf(d.sex, SEXES, "sex") : null;
   const town = online ? str(d.town, { field: "Town", max: 80 }) : null;
   const area = online ? str(d.area, { field: "Area", max: 120 }) : null;
-  const phone = d.phone ? phoneE164(d.phone) : null;
+  const phone = phoneE164(d.phone);
   let doctorUid = d.doctorUid ? docId(d.doctorUid, "Doctor") : null;
 
   if (d.consentVersion !== CURRENT_BOOKING_CONSENT) {
@@ -531,9 +530,6 @@ exports.createBookingDraft = onCall({ secrets: [PAYSTACK_SECRET_KEY] }, async (r
   }
 
   const payAtHospital = mode === "in_person" && !(await inPersonPaymentRequired());
-  if (payAtHospital && !phone) {
-    throw new HttpsError("invalid-argument", "Enter a phone number we can call you on.");
-  }
 
   // The fee depends on the mode (video call or hospital visit), not the type.
   const prices = await loadPrices();
@@ -731,9 +727,7 @@ exports.createBookingDraft = onCall({ secrets: [PAYSTACK_SECRET_KEY] }, async (r
 /* ------------------------------------------------------------------ */
 
 /**
- * data: { bookingId, phone? } — phone: the mobile money number the patient
- * will pay with (asked for on the payment page; kept on the booking as the
- * contact number too).
+ * data: { bookingId }
  * A fresh reference for every attempt, so a failed attempt's reference
  * can never be reused to claim a later success.
  */
@@ -752,10 +746,6 @@ exports.initializePayment = onCall({ secrets: [PAYSTACK_SECRET_KEY] }, async (re
   const booking = snap.data();
   if (booking.status !== "awaiting_payment") {
     throw new HttpsError("failed-precondition", "This booking has already been paid for.");
-  }
-  const phone = request.data?.phone ? phoneE164(request.data.phone) : booking.phone;
-  if (!phone) {
-    throw new HttpsError("invalid-argument", "Enter the mobile money number you will pay with.");
   }
   // Don't open a second charge while the previous one may still complete.
   const last = await checkAttempts(ref, booking);
@@ -785,7 +775,6 @@ exports.initializePayment = onCall({ secrets: [PAYSTACK_SECRET_KEY] }, async (re
     txRefs: FieldValue.arrayUnion(reference),
     lastTxRef: reference,
     lastAttemptAt: serverTime(),
-    phone,
   });
   // Reverse lookup for the webhook. Deleted with the booking.
   batch.set(db.collection("paymentRefs").doc(reference), {
@@ -802,7 +791,7 @@ exports.initializePayment = onCall({ secrets: [PAYSTACK_SECRET_KEY] }, async (re
     customer: {
       name: booking.patientName || "",
       email: booking.email || "",
-      phone,
+      phone: booking.phone,
     },
   };
 });

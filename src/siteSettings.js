@@ -55,6 +55,21 @@ export const DEFAULT_IMAGES = {
 // the same).
 export const DEFAULT_PRICES = { online: 150, in_person: 150 };
 
+// The hospital's services ("Our services" on the home page). Admins edit
+// the list in the Control panel; this is shown until Firestore answers.
+export const DEFAULT_SERVICES = [
+  "General Surgery",
+  "Obstetrics & Gynaecology",
+  "Child Health",
+  "Dental & Maxillofacial Surgery",
+  "Ear, Nose & Throat (ENT)",
+  "Internal Medicine",
+  "Cardiology",
+  "Plastic Surgery",
+  "Orthopaedic Surgery",
+  "Family Medicine",
+];
+
 /**
  * No-show policy, until an admin sets it (Control panel). Keep in step with
  * DEFAULT_NO_SHOW in functions/siteSettings.js; the server enforces it.
@@ -93,6 +108,9 @@ export function normaliseSettings(data) {
     // Admin switch; missing = pay online. Off: hospital visits are free to
     // book and paid at the hospital. The server enforces it too.
     inPersonPaymentRequired: d.inPersonPaymentRequired !== false,
+    services: Array.isArray(d.services)
+      ? d.services.filter((s) => typeof s === "string" && s.trim()).slice(0, 40)
+      : DEFAULT_SERVICES,
     noShow: {
       waitMinutes: inRange(d.noShow?.waitMinutes, 1, 30) ? d.noShow.waitMinutes : DEFAULT_NO_SHOW.waitMinutes,
       forfeitPercent: inRange(d.noShow?.forfeitPercent, 0, 100) ? d.noShow.forfeitPercent : DEFAULT_NO_SHOW.forfeitPercent,
@@ -122,6 +140,7 @@ function writeCache(data) {
         sliderImages: (data?.sliderImages || []).map((i) => ({ url: i.url })),
         doctorSelectionEnabled: data?.doctorSelectionEnabled !== false,
         inPersonPaymentRequired: data?.inPersonPaymentRequired !== false,
+        services: Array.isArray(data?.services) ? data.services : null,
         noShow: data?.noShow ?? null,
       }),
     );

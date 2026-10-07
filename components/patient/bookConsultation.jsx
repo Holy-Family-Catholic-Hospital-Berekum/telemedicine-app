@@ -178,8 +178,8 @@ async function createBookingDraft(payload) {
 // returns what the popup needs. A new reference per attempt is what
 // makes retries after a failed payment safe.
 // Resolves: { reference, amount, currency, customer }
-async function initializePayment({ bookingId, phone }) {
-  const { data } = await callInitializePayment({ bookingId, phone });
+async function initializePayment({ bookingId }) {
+  const { data } = await callInitializePayment({ bookingId });
   return data;
 }
 
@@ -508,11 +508,11 @@ export default function BookConsultation() {
 
   // What we ask for depends on how they'll see the doctor (medical
   // director): a video call needs date of birth, sex and location; a
-  // hospital visit needs none of that. When the admin has switched
-  // in-person payment off, a hospital visit is booked without paying (the
-  // patient pays at the hospital), so we ask for a phone number here.
-  // Otherwise the phone is the mobile money number, asked on the payment
-  // page. The server applies the same rules.
+  // hospital visit needs none of that. Every booking asks for a phone
+  // number, used only to contact the patient (Paystack's own window asks
+  // for the mobile money number). When the admin has switched in-person
+  // payment off, a hospital visit is booked without paying. The server
+  // applies the same rules.
   const online = mode === "online";
   const payAtHospital = mode === "in_person" && !settings.inPersonPaymentRequired;
   const stepLabels = payAtHospital
@@ -581,7 +581,7 @@ export default function BookConsultation() {
       showError("Enter your area, or a place near you, to continue.");
       return;
     }
-    if (payAtHospital && !phone.trim()) {
+    if (phone.replace(/\D/g, "").length < 9) {
       showError("Enter a phone number we can call you on.");
       return;
     }
@@ -606,7 +606,7 @@ export default function BookConsultation() {
         ...(online
           ? { dateOfBirth, sex, town: town.trim(), area: area.trim() }
           : {}),
-        ...(payAtHospital ? { phone: phone.trim() } : {}),
+        phone: phone.trim(),
         doctorUid: selectedDoctor?.id || null,
         slotId: slotId || null,
         consentVersion: CURRENT_BOOKING_CONSENT,
@@ -643,16 +643,9 @@ export default function BookConsultation() {
    */
   async function handlePay() {
     clearError();
-    if (phone.replace(/\D/g, "").length < 9) {
-      showError("Enter the mobile money number you will pay with.");
-      return;
-    }
     setPaymentState("starting");
     try {
-      const session = await initializePayment({
-        bookingId: booking.bookingId,
-        phone: phone.trim(),
-      });
+      const session = await initializePayment({ bookingId: booking.bookingId });
       // An earlier attempt on this booking turned out to have succeeded.
       if (session.status === "confirmed") {
         setPaymentState("confirmed");
@@ -1133,7 +1126,6 @@ export default function BookConsultation() {
                     )}
                   </fieldset>
 
-                  {(online || forChild || payAtHospital) && (
                   <fieldset className="mt-8">
                     <legend className="text-[16px] font-medium mb-3">
                       {forChild ? "Your child's details" : "Your details"}
@@ -1247,10 +1239,9 @@ export default function BookConsultation() {
                     </div>
                     )}
 
-                    {/* Free hospital visit: no payment page, so the
-                        contact number is asked for here. */}
-                    {payAtHospital && (
-                      <div className="mt-4 sm:max-w-sm">
+                    {/* Contact number only (Paystack asks for the mobile
+                        money number in its own window). */}
+                      <div className={`${online || forChild ? "mt-4 " : ""}sm:max-w-sm`}>
                         <label
                           htmlFor="phone"
                           className="block text-[16px] font-medium mb-1.5"
@@ -1271,12 +1262,10 @@ export default function BookConsultation() {
                         />
                         <p className="mt-1.5 text-[15px] text-black/75">
                           We'll call this number if we need to reach you about
-                          your visit.
+                          your appointment.
                         </p>
                       </div>
-                    )}
                   </fieldset>
-                  )}
 
                   {payAtHospital && (
                     <div className="mt-8 rounded-2xl border border-[#0095D9]/30 bg-[#0095D9]/5 p-5">
@@ -1445,29 +1434,6 @@ export default function BookConsultation() {
                         {booking.currency} {booking.amount}
                       </span>
                     </div>
-                  </div>
-
-                  <div className="mt-7 sm:max-w-sm">
-                    <label htmlFor="momo-phone" className="block text-[16px] font-medium mb-1.5">
-                      Mobile money number you will pay with
-                    </label>
-                    <input
-                      id="momo-phone"
-                      type="tel"
-                      inputMode="tel"
-                      autoComplete="tel"
-                      required
-                      value={phone}
-                      disabled={paying}
-                      onChange={(e) => setPhone(e.target.value)}
-                      placeholder="e.g. 024 000 0000"
-                      className="w-full rounded-xl border border-black/20 px-4 py-3 text-[16px]
-                                     focus:outline-none focus:border-[#F88535] focus:ring-1 focus:ring-[#F88535]"
-                    />
-                    <p className="mt-1.5 text-[15px] text-black/75">
-                      Type the same number again in the payment window. We'll
-                      also call this number if we need to reach you.
-                    </p>
                   </div>
 
                   <p className="mt-5 text-[16px] bg-[#0095D9] px-4 py-2.5 rounded text-white leading-relaxed">

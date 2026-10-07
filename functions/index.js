@@ -95,6 +95,7 @@ exports.updateConsultationPrices = siteSettings.updateConsultationPrices;
 exports.updateNoShowPolicy = siteSettings.updateNoShowPolicy;
 exports.updateSiteImages = siteSettings.updateSiteImages;
 exports.updateInPersonPayment = siteSettings.updateInPersonPayment;
+exports.updateHospitalServices = siteSettings.updateHospitalServices;
 exports.updateDoctorSelection = siteSettings.updateDoctorSelection;
 exports.updateLegalDocument = legalDocs.updateLegalDocument;
 

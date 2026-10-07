@@ -33,6 +33,7 @@ import {
   settingsRef,
   DEFAULT_IMAGES,
   DEFAULT_PRICES,
+  DEFAULT_SERVICES,
 } from "../../src/siteSettings";
 import ConfirmDialog from "./confirmDialog.jsx";
 import "./controlPanel.css";
@@ -42,6 +43,7 @@ import RoomDevicesCard from "./roomDevicesCard.jsx";
 import NoShowPolicyCard from "./noShowPolicyCard.jsx";
 import DoctorSelectionCard from "./doctorSelectionCard.jsx";
 import InPersonPaymentCard from "./inPersonPaymentCard.jsx";
+import ServicesCard from "./servicesCard.jsx";
 
 const callUpdatePrices = httpsCallable(functions, "updateConsultationPrices");
 const callUpdateImages = httpsCallable(functions, "updateSiteImages");
@@ -928,6 +930,7 @@ export default function ControlPanel({ onAudit }) {
 
       <DoctorSelectionCard enabled={raw?.doctorSelectionEnabled !== false} />
       <InPersonPaymentCard required={raw?.inPersonPaymentRequired !== false} />
+      <ServicesCard current={Array.isArray(raw?.services) ? raw.services : DEFAULT_SERVICES} />
 
       <SingleImageCard
         slot="hero"
