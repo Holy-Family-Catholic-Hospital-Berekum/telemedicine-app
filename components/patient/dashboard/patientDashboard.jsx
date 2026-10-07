@@ -5,7 +5,6 @@ import {
   ArrowLeft,
   CalendarCheck,
   Hourglass,
-  CreditCard,
   CalendarDays,
   Settings as SettingsIcon,
   CalendarPlus,
@@ -28,6 +27,7 @@ import {
 } from "./patientFirestoreService";
 
 import { getCallWindow } from "./patientUtils";
+import CheckPaymentPanel from "./checkPaymentPanel";
 import BookingCard from "./patientBookingCard";
 import AvailableSlots from "./patientAvailableSlots";
 import ConsultationHistory from "./consultationHistory";
@@ -201,14 +201,15 @@ export default function Dashboard() {
       icon: Hourglass,
       items: safeBookings.filter((b) => b.state === "pending_assignment"),
     },
-    {
-      key: "unconfirmed",
-      title: "Payment not confirmed",
-      help: "We haven't received confirmation of these payments yet. Open one to check it. Unpaid bookings are removed after 24 hours.",
-      icon: CreditCard,
-      items: safeBookings.filter((b) => b.state === "awaiting_payment"),
-    },
   ].filter((g) => g.items.length > 0);
+
+  // No confirmed payment, no booking: an unpaid attempt is never shown as a
+  // booking. While a payment is being checked (the patient tapped Pay and a
+  // prompt may still go through), a notice explains why they can't book
+  // again yet and lets them check it.
+  const paymentsInProgress = safeBookings.filter(
+    (b) => b.state === "awaiting_payment" && (b.txRefs?.length ?? 0) > 0,
+  );
 
   const activeCallBooking = safeBookings.find(
     (booking) => booking.bookingId === activeCall?.bookingId,
@@ -364,7 +365,23 @@ export default function Dashboard() {
                 </section>
               )}
 
-              {groups.length === 0 ? (
+              {paymentsInProgress.length > 0 && (
+                <section
+                  aria-labelledby="payments-in-progress"
+                  className="rounded-xl border border-[#0095D9]/30 bg-[#0095D9]/5 px-4 py-4"
+                >
+                  <h2 id="payments-in-progress" className="text-lg font-semibold text-[#12242C]">
+                    We're checking a payment
+                  </h2>
+                  {paymentsInProgress.map((b) => (
+                    <div key={b.bookingId} className="mt-2">
+                      <CheckPaymentPanel booking={b} onConfirmed={reloadBookings} onFailed={reloadBookings} />
+                    </div>
+                  ))}
+                </section>
+              )}
+
+                            {groups.length === 0 ? (
                 <section className="rounded-xl border border-dashed border-black/20 px-5 py-10 text-center">
                   <p className="text-lg font-medium">You don't have any appointments yet.</p>
                   <p className="mt-1 text-base text-black/70">
@@ -419,7 +436,6 @@ export default function Dashboard() {
                             }}
                             onJoined={handleJoined}
                             onRejoinCall={handleRejoinCall}
-                            onPaymentConfirmed={reloadBookings}
                             onNoShowRescheduled={reloadBookings}
                           />
                         ))}

@@ -11,8 +11,8 @@
 
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const logger = require("firebase-functions/logger");
-const { db, Timestamp, FieldValue, serverTime, audit, deleteTree } = require("./lib/core");
-const { checkAttempts, PAYSTACK_SECRET_KEY } = require("./payments");
+const { db, Timestamp, FieldValue, serverTime, deleteTree } = require("./lib/core");
+const { checkAttempts, discardDraft, PAYSTACK_SECRET_KEY } = require("./payments");
 
 const BATCH = 200;
 
@@ -38,33 +38,7 @@ exports.cleanupExpiredBookings = onSchedule(
         continue;
       }
 
-      const batch = db.batch();
-      batch.delete(doc.ref);
-      for (const ref of booking.txRefs || []) {
-        batch.delete(db.collection("paymentRefs").doc(ref));
-      }
-      if (booking.slotId) {
-        const slotRef = db.collection("availableSlots").doc(booking.slotId);
-        const slot = await slotRef.get();
-        if (slot.exists && slot.data().bookingId === doc.id && slot.data().status === "held") {
-          batch.update(slotRef, {
-            status: "open",
-            heldByUid: FieldValue.delete(),
-            heldUntil: FieldValue.delete(),
-            bookingId: FieldValue.delete(),
-            updatedAt: serverTime(),
-          });
-        }
-      }
-      audit(batch, {
-        action: "Deleted an unpaid booking after its payment window",
-        code: "booking.expired",
-        category: "booking",
-        targetType: "booking",
-        targetId: doc.id,
-        patientUid: booking.patientUid,
-      });
-      await batch.commit();
+      await discardDraft(doc.ref, booking, "expired");
       deleted++;
     }
     if (deleted) logger.info("Expired bookings deleted", { deleted });

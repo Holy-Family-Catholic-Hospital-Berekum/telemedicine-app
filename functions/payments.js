@@ -293,6 +293,48 @@ async function checkAttempts(bookingRef, booking, { strict = false } = {}) {
 }
 
 /**
+ * Deletes an unpaid booking draft: its personal details, its payment
+ * reference lookups, and its hold on a time slot. Only for drafts whose
+ * attempts have clearly failed or never started (checkAttempts "failed" /
+ * "none"): a payment that still lands later finds no booking and is
+ * refunded automatically (recordPaymentIssue).
+ * reason: "expired" (hourly cleanup) | "replaced" (the patient started a
+ * new booking).
+ */
+async function discardDraft(ref, booking, reason) {
+  const batch = db.batch();
+  batch.delete(ref);
+  for (const txRef of booking.txRefs || []) {
+    batch.delete(db.collection("paymentRefs").doc(txRef));
+  }
+  if (booking.slotId) {
+    const slotRef = db.collection("availableSlots").doc(booking.slotId);
+    // deepcode ignore Sqli: Firestore document ID, not SQL; slot id read from the server-written booking.
+    const slot = await slotRef.get();
+    if (slot.exists && slot.data().bookingId === ref.id && slot.data().status === "held") {
+      batch.update(slotRef, {
+        status: "open",
+        heldByUid: FieldValue.delete(),
+        heldUntil: FieldValue.delete(),
+        bookingId: FieldValue.delete(),
+        updatedAt: serverTime(),
+      });
+    }
+  }
+  audit(batch, {
+    action: reason === "replaced"
+      ? "Deleted an unpaid booking attempt (the patient started a new booking)"
+      : "Deleted an unpaid booking after its payment window",
+    code: reason === "replaced" ? "booking.discarded" : "booking.expired",
+    category: "booking",
+    targetType: "booking",
+    targetId: ref.id,
+    patientUid: booking.patientUid,
+  });
+  await batch.commit();
+}
+
+/**
  * The gate. Paystack must report success, in our currency, for at least
  * the amount we expected, on a reference we minted for this booking.
  */
@@ -494,29 +536,38 @@ exports.createBookingDraft = onCall({ secrets: [PAYSTACK_SECRET_KEY] }, async (r
 
   await rateLimit(uid, "createBookingDraft", { max: 10, windowSeconds: 86400 });
 
+  // Earlier unpaid attempts. A draft is created only when the patient taps
+  // Pay, and becomes the booking itself once Paystack confirms the money.
   // Never let a patient pay for a second booking while an earlier payment
-  // might still go through: that's how double payments happen.
+  // might still go through (that's how double payments happen); attempts
+  // that clearly failed or never started are deleted now.
   const drafts = await db
     .collection("bookings")
     .where("patientUid", "==", uid)
     .where("status", "==", "awaiting_payment")
     .get();
+  let kept = 0;
   for (const draft of drafts.docs) {
     const state = await checkAttempts(draft.ref, draft.data(), { strict: true });
     if (state === "paid") {
       throw new HttpsError(
         "failed-precondition",
-        "A payment you made earlier has just been confirmed. Check your dashboard before booking again.",
+        "A payment you made earlier has just gone through, so that booking is confirmed. Check My appointments before booking again.",
       );
     }
     if (state === "in_flight" || state === "unknown") {
       throw new HttpsError(
         "failed-precondition",
-        "You have a payment that hasn't been confirmed yet. You can't start another booking until it is confirmed or has clearly failed. Approve or decline the prompt on your phone, then use \"Check payment\" on your dashboard.",
+        "We're still waiting for an earlier payment to go through. So you don't pay twice, please approve or decline the prompt on your phone and wait for it to finish, then try again. You can check it in My appointments.",
       );
     }
+    if (state === "failed" || state === "none") {
+      await discardDraft(draft.ref, draft.data(), "replaced");
+    } else {
+      kept += 1; // "rejected": flagged for the hospital to sort out
+    }
   }
-  if (drafts.size >= MAX_OPEN_DRAFTS) {
+  if (kept >= MAX_OPEN_DRAFTS) {
     throw new HttpsError(
       "resource-exhausted",
       "You already have unpaid bookings. Finish or wait for those to expire first.",
@@ -933,9 +984,15 @@ exports.getBookingStatus = onCall(
       };
     }
     if (state === "failed") {
+      // No confirmed payment, no booking: delete the attempt now, unless
+      // the stricter check sees a prompt that might still be answered.
+      const strict = await checkAttempts(ref, snap.data(), { strict: true });
+      if (strict === "failed" || strict === "none") {
+        await discardDraft(ref, snap.data(), "replaced");
+      }
       return {
         status: "failed",
-        message: "That payment didn't complete, so no booking was made.",
+        message: "That payment didn't go through, so no booking was made. You can try again.",
       };
     }
     // none / in_flight / unknown: keep waiting.
@@ -1010,6 +1067,7 @@ exports.recordPaymentIssue = recordPaymentIssue;
 exports.startIssueRefund = startIssueRefund;
 exports.isOurReference = isOurReference;
 exports.checkAttempts = checkAttempts;
+exports.discardDraft = discardDraft;
 exports.secretKey = secretKey;
 exports.verifyPaystackTransaction = verifyPaystackTransaction;
 exports.PAYSTACK_SECRET_KEY = PAYSTACK_SECRET_KEY;

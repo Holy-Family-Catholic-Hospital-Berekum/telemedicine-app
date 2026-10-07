@@ -539,6 +539,28 @@ export default function BookConsultation() {
     setStep(n);
   }
 
+  // What createBookingDraft receives (the server re-checks all of it).
+  function buildPayload() {
+    return {
+      type,
+      mode,
+      ...(online
+        ? { dateOfBirth, sex, town: town.trim(), area: area.trim() }
+        : {}),
+      phone: phone.trim(),
+      doctorUid: selectedDoctor?.id || null,
+      slotId: slotId || null,
+      consentVersion: CURRENT_BOOKING_CONSENT,
+      ...(forChild
+        ? {
+            forChild: true,
+            childName: childName.trim(),
+            guardianConsentVersion: CURRENT_GUARDIAN_CONSENT,
+          }
+        : {}),
+    };
+  }
+
   async function handleContinueFromDetails() {
     if (!type || !mode) {
       showError("Choose a consultation type and a mode to continue.");
@@ -598,26 +620,18 @@ export default function BookConsultation() {
       return;
     }
     clearError();
+    // Paid bookings: nothing is saved yet. The booking is created on the
+    // server only when the patient taps Pay (handlePay), and it becomes a
+    // confirmed booking only when Paystack confirms the money.
+    if (!payAtHospital) {
+      setBooking(null);
+      setPaymentState("idle");
+      setStep(1);
+      return;
+    }
     setLoading(true);
     try {
-      const payload = {
-        type,
-        mode,
-        ...(online
-          ? { dateOfBirth, sex, town: town.trim(), area: area.trim() }
-          : {}),
-        phone: phone.trim(),
-        doctorUid: selectedDoctor?.id || null,
-        slotId: slotId || null,
-        consentVersion: CURRENT_BOOKING_CONSENT,
-        ...(forChild
-          ? {
-              forChild: true,
-              childName: childName.trim(),
-              guardianConsentVersion: CURRENT_GUARDIAN_CONSENT,
-            }
-          : {}),
-      };
+      const payload = buildPayload();
       const result = await createBookingDraft(payload);
       setBooking(result);
       setPaymentState("idle");
@@ -644,8 +658,15 @@ export default function BookConsultation() {
   async function handlePay() {
     clearError();
     setPaymentState("starting");
+    let current = booking;
     try {
-      const session = await initializePayment({ bookingId: booking.bookingId });
+      // First tap on Pay: create the booking on the server (it waits for
+      // the payment; if the payment never goes through, it is deleted).
+      if (!current) {
+        current = await createBookingDraft(buildPayload());
+        setBooking(current);
+      }
+      const session = await initializePayment({ bookingId: current.bookingId });
       // An earlier attempt on this booking turned out to have succeeded.
       if (session.status === "confirmed") {
         setPaymentState("confirmed");
@@ -666,7 +687,7 @@ export default function BookConsultation() {
         // still be sitting on their handset, so check once before
         // declaring nothing happened.
         setPaymentState("verifying");
-        const check = await fetchBookingStatus(booking.bookingId);
+        const check = await fetchBookingStatus(current.bookingId);
         if (check.status === "confirmed") {
           setPaymentState("confirmed");
           setStep(2);
@@ -680,7 +701,7 @@ export default function BookConsultation() {
       }
 
       setPaymentState("verifying");
-      const verdict = await waitForConfirmation(booking.bookingId);
+      const verdict = await waitForConfirmation(current.bookingId);
 
       if (verdict.status === "confirmed") {
         setPaymentState("confirmed");
@@ -693,6 +714,7 @@ export default function BookConsultation() {
       }
 
       setPaymentState("idle");
+      setBooking(null); // the server deleted the failed attempt
       showError(
         verdict.message ||
           "Your payment didn't go through, so no booking was made. Try again below.",
@@ -731,6 +753,7 @@ export default function BookConsultation() {
         return;
       }
       setPaymentState("idle");
+      setBooking(null); // the server deleted the failed attempt
       showError(
         verdict.message ||
           "That payment didn't complete, so no booking was made. You can start it again below.",
@@ -1383,10 +1406,17 @@ export default function BookConsultation() {
               )}
 
               {/* ---------- Step 1: pay online via Paystack ---------- */}
-              {step === 1 && booking && (
+              {step === 1 && (
                 <section>
                   {!paying && paymentState !== "pending" && (
-                    <BackButton onClick={() => goToStep(0)}>
+                    <BackButton
+                      onClick={() => {
+                        // Details may change: the next Pay starts afresh.
+                        setBooking(null);
+                        setPaymentState("idle");
+                        goToStep(0);
+                      }}
+                    >
                       Back to consultation details
                     </BackButton>
                   )}
@@ -1431,7 +1461,7 @@ export default function BookConsultation() {
                         Amount due
                       </span>
                       <span className="font-display text-[20px] font-medium">
-                        {booking.currency} {booking.amount}
+                        {booking?.currency ?? CURRENCY} {fee}
                       </span>
                     </div>
                   </div>

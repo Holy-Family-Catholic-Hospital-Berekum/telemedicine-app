@@ -6,7 +6,6 @@ import { TYPE_LABELS, MODE_LABELS, formatDateTime } from "../../../src/constants
 import RescheduleForm from "./rescheduleForm";
 import RevealId from "./revealId";
 import JoinCallPanel from "./joinCallPanel";
-import CheckPaymentPanel from "./checkPaymentPanel";
 import RefundRequest from "./refundRequest";
 import NoShowPanel from "./noShowPanel";
 
@@ -49,7 +48,6 @@ export default function BookingCard({
   onRescheduled,
   onJoined,
   onRejoinCall,
-  onPaymentConfirmed,
   refund,
   defaultPhone,
   onRefundRequested,
@@ -153,9 +151,6 @@ export default function BookingCard({
 
       {expanded && (
         <div className="border-t border-[#DCE6EC] px-4 py-4">
-          {booking.state === "awaiting_payment" && (
-            <CheckPaymentPanel booking={booking} onConfirmed={onPaymentConfirmed} />
-          )}
 
           {booking.state === "no_show" && (
             <NoShowPanel

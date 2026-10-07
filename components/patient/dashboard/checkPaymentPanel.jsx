@@ -3,11 +3,12 @@ import { Loader2, RefreshCw } from "lucide-react";
 import { checkPaymentStatus } from "./patientFirestoreService";
 import { callableMessage } from "../../../src/constants";
 
-// Shown on a booking whose payment hasn't been confirmed. Asking the server
-// re-checks every payment attempt with Paystack, so a payment that went
-// through late is picked up here instead of the patient booking (and
-// paying) a second time.
-export default function CheckPaymentPanel({ booking, onConfirmed }) {
+// A payment the patient started that hasn't been confirmed yet (it isn't a
+// booking until it is). Asking the server re-checks it with Paystack, so a
+// payment that went through late becomes the booking here, instead of the
+// patient booking (and paying) a second time. A payment that clearly
+// failed is deleted by the server and disappears.
+export default function CheckPaymentPanel({ booking, onConfirmed, onFailed }) {
   const [checking, setChecking] = useState(false);
   const [message, setMessage] = useState(null);
 
@@ -20,10 +21,13 @@ export default function CheckPaymentPanel({ booking, onConfirmed }) {
         onConfirmed?.();
         return;
       }
+      if (result.status === "failed") {
+        setMessage(result.message || "That payment didn't go through. You can book again.");
+        setTimeout(() => onFailed?.(), 2500);
+        return;
+      }
       setMessage(
-        result.status === "failed"
-          ? result.message || "That payment didn't complete."
-          : "Your payment hasn't been confirmed yet. If you approved it on your phone, wait a minute and check again.",
+        "Not confirmed yet. If you approved it on your phone, wait a minute and check again.",
       );
     } catch (err) {
       setMessage(callableMessage(err, "We couldn't check your payment. Try again."));
@@ -35,9 +39,11 @@ export default function CheckPaymentPanel({ booking, onConfirmed }) {
   return (
     <div className="space-y-2.5">
       <p className="text-sm text-[#3E4E56]">
-        We haven't confirmed a payment for this booking yet. If you paid,
-        check it here — please don't book and pay again. Unpaid bookings and
-        their details are deleted after 24 hours.
+        You started a payment of {booking.currency || "GHS"} {booking.amount} for a{" "}
+        {booking.mode === "online" ? "video call" : "hospital visit"}. If it goes through,
+        your booking will appear here and we'll email you. Please don't pay
+        again while we check. If it doesn't go through, there is no booking
+        and no charge.
       </p>
       <button
         type="button"
