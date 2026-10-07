@@ -62,7 +62,7 @@ export default function JoinCallPanel({ booking, onJoined }) {
         setAskConsent(true);
       } else {
         setAskConsent(false);
-        setError(callableMessage(err, "We couldn't open the video room."));
+        setError(callableMessage(err, "We couldn't start the video call. Try again."));
       }
     } finally {
       setJoining(false);
@@ -81,7 +81,7 @@ export default function JoinCallPanel({ booking, onJoined }) {
       <div className="mt-4 flex items-start gap-2 rounded-sm border border-[#DCE6EC] px-3.5 py-2.5 text-sm text-[#3E4E56]">
         <Lock size={14} strokeWidth={1.75} className="mt-1 shrink-0" />
         <span>
-          The video room opens {CALL_UNLOCK_MINUTES} minutes before your
+          You can join the call from {CALL_UNLOCK_MINUTES} minutes before your
           appointment (in {formatWait(minutesUntilUnlock)}). {rule}
         </span>
       </div>
@@ -96,7 +96,7 @@ export default function JoinCallPanel({ booking, onJoined }) {
       >
         <span className="flex items-center gap-2">
           <PhoneCall size={15} strokeWidth={2} />
-          Your consultation has started. Use "Rejoin call" to go back in.
+          Your call has started. Tap "Rejoin call" to go back in.
         </span>
       </div>
     );
@@ -108,7 +108,7 @@ export default function JoinCallPanel({ booking, onJoined }) {
         {doctorWaiting && (
           <p className="mb-2 flex items-center gap-1.5 text-sm font-medium text-[#1E8E5A]">
             <PhoneCall size={14} strokeWidth={2} />
-            Your doctor is in the video room. Join now.
+            Your doctor is waiting for you. Tap Join call now.
           </p>
         )}
         {left !== null && (
@@ -123,7 +123,7 @@ export default function JoinCallPanel({ booking, onJoined }) {
           </p>
         )}
         <p className="text-sm text-[#12242C]">
-          The video room is open. Join from a quiet, private place.
+          You can join the call now. Find a quiet, private place.
         </p>
         <button
           type="submit"

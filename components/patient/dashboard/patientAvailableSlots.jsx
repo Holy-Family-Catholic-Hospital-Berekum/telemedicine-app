@@ -31,7 +31,7 @@ export default function AvailableSlots({ slots }) {
   return (
     <div>
       <h3 className="text-sm font-medium text-[#12242C]">
-        Open slots you can book directly
+        Free appointment times you can book
       </h3>
       <div className="mt-2 space-y-2">
         {pager.pageItems.map((slot) => {

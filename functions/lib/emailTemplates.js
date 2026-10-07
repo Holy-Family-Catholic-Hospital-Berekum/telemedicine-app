@@ -69,19 +69,19 @@ function patientContent(kind, data, when) {
     ["When", formatWhen(when)],
     ["Doctor", data.doctorName || "To be confirmed"],
     ["Consultation", `${typeLabel}, ${online ? "online (video)" : "in person"}`],
-    ["Consultation ID", data.consultationId],
+    ["Booking reference", data.consultationId],
   ];
   const howTo = online
     ? [
       "This is a video consultation.",
-      "Sign in to your dashboard, open this booking and press Join call. The video room opens 30 minutes before your appointment.",
+      "Sign in to the hospital website, go to My appointments and tap Join call. You can join from 30 minutes before your appointment.",
       "Please join from a quiet, private place with a good internet connection.",
     ]
     : [
       `This is an in-person consultation at ${HOSPITAL_NAME}, ${HOSPITAL_TOWN}.`,
-      "Please arrive 15 minutes early and bring this consultation ID.",
+      "Please arrive 15 minutes early and bring this booking reference.",
     ];
-  const change = `If you can't make it, use "Reschedule" on your dashboard or call us on ${HOSPITAL_PHONE}.`;
+  const change = `If you can't make it, tap "Change appointment time" on the website or call us on ${HOSPITAL_PHONE}.`;
 
   // The no-show rule, stated plainly wherever a patient is told about an
   // appointment (data.noShow: { waitMinutes, rescheduleFee, forfeitPercent }).
@@ -120,12 +120,12 @@ function patientContent(kind, data, when) {
       return {
         subject: `Your consultation started at ${clock(when)}`,
         intro: data.otherJoined
-          ? "Your doctor is waiting for you in the video room."
+          ? "Your doctor is waiting for you on the video call."
           : "Your video consultation is due now and you haven't joined yet.",
         rows,
         paragraphs: withRule([
           "Sign in to your dashboard, open this booking and press Join call.",
-          `If you can't join now, use "Reschedule" on your dashboard to choose another time, or call us on ${HOSPITAL_PHONE}.`,
+          `If you can't join now, tap "Change appointment time" on the website to choose another time, or call us on ${HOSPITAL_PHONE}.`,
         ]),
       };
     case "patient_doctor_waiting": {
@@ -133,8 +133,8 @@ function patientContent(kind, data, when) {
       return {
         subject: "Your doctor is waiting for you now",
         intro: by
-          ? `Your doctor has joined the video room. Please join before ${by} (Ghana time).`
-          : "Your doctor has joined the video room. Please join now.",
+          ? `Your doctor is waiting for you on the video call. Please join before ${by} (Ghana time).`
+          : "Your doctor is waiting for you on the video call. Please join now.",
         rows,
         paragraphs: withRule([
           "Sign in to your dashboard, open this booking and press Join call.",

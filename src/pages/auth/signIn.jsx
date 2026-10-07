@@ -18,9 +18,9 @@ import logo from "../../assets/logo.png";
 import { usePageMeta } from "../../seo.js";
 
 const PATIENT_ASIDE_POINTS = [
-  "Secured role-based access",
-  "Every payment confirmation and schedule change is logged",
-  "Encrypted video consultations",
+    "See and join your appointments",
+  "Change your appointment time",
+  "Your information is kept private",
 ];
 
 const STAFF_ASIDE_POINTS = [
@@ -159,7 +159,7 @@ export default function SignIn({ audience = "patient" }) {
             <div>
               <strong>Holy Family Catholic Hospital</strong>
               <small>
-                {isStaff ? "Staff portal" : "Telemedicine Platform"}
+                {isStaff ? "Staff portal" : "Berekum, Ghana"}
               </small>
             </div>
           </div>
@@ -169,7 +169,7 @@ export default function SignIn({ audience = "patient" }) {
             <p>
               {isStaff
                 ? "Authorized hospital staff only."
-                : "Sign in to continue."}
+                                  : "Sign in with the email and password you signed up with."}
             </p>
           </div>
 
@@ -297,7 +297,7 @@ export default function SignIn({ audience = "patient" }) {
           </form>
           {!isStaff && (
             <p className="auth-switch">
-              New patient? <Link to="/signup">Create an account</Link>
+              No account yet? <Link to="/signup">Create one here</Link>
             </p>
           )}
           </>

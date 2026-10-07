@@ -45,9 +45,9 @@ import logo from "../../assets/logo.png";
 import { usePageMeta } from "../../seo.js";
 
 const ASIDE_POINTS = [
-  "Book General OPD or Surgical consultations, online or in-person",
-  "Pay by mobile money",
-  "Booking details are deleted once your consultation closes",
+  "Book General OPD or Surgical, by video call or at the hospital",
+  "Pay with mobile money (MoMo)",
+  "Your booking details are deleted after your visit",
 ];
 
 export default function SignUp() {
@@ -150,7 +150,7 @@ export default function SignUp() {
             </div>
             <div>
               <strong>Holy Family Catholic Hospital</strong>
-              <small>Telemedicine Platform</small>
+              <small>Berekum, Ghana</small>
             </div>
           </div>
 
@@ -223,8 +223,8 @@ export default function SignUp() {
                 <div className="auth-field-error">{fieldErrors.email}</div>
               )}
               <div className="auth-field-hint">
-                We'll send a verification link here, you'll need to confirm it
-                before booking.
+                We'll send you an email. Open it and tap the link to confirm
+                it's you before you book.
               </div>
             </div>
 

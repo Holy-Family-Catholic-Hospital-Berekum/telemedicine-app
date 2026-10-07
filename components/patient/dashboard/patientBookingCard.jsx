@@ -27,7 +27,7 @@ const STATE_META = {
     bg: "#1E8E5A1A",
   },
   in_progress: {
-    label: "In progress",
+        label: "Call started",
     color: "#F88535",
     bg: "#F885351A",
   },
@@ -168,9 +168,8 @@ export default function BookingCard({
           {booking.state === "pending_assignment" && (
             <p className="flex items-center gap-2 text-sm text-[#3E4E56]">
               <ShieldCheck size={15} strokeWidth={1.75} />
-              Paid {formatCurrency(booking.amountPaid ?? booking.amount)} · we're assigning your
-              doctor and appointment time. We'll email you the time and your
-              consultation ID shortly.
+              Paid {formatCurrency(booking.amountPaid ?? booking.amount)}. The hospital is
+              choosing your doctor and time. We'll email you soon.
             </p>
           )}
 
@@ -191,7 +190,7 @@ export default function BookingCard({
                 <RefundRequest existing={refund} />
               ) : rescheduleRequested ? (
                 <p className="text-sm text-[#3E4E56]">
-                  Reschedule requested — we'll email you the new time.
+                  You asked for a new time. We'll email it to you.
                 </p>
               ) : didNotHappen ? (
                 <div className="rounded-md border border-[#F88535]/40 bg-[#F88535]/5 p-4">

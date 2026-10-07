@@ -10,7 +10,7 @@ import HealthcarePreloader from "../../src/components/common/healthcarePreloader
 // Live public doctor directory (doctorProfiles), shared with the booking
 // page's doctor picker.
 import { useListedDoctors } from "../../src/doctorDirectory";
-import { DoctorCardSummary, DoctorProfileDialog } from "./doctorProfileDetails";
+import { DoctorCardSummary } from "./doctorProfileDetails";
 import heroDefault from "../../src/assets/hero-consult.jpg";
 import { useSiteSettings } from "../../src/siteSettings";
 import { fetchAvailableSlots } from "./dashboard/patientFirestoreService";
@@ -30,7 +30,7 @@ import { usePageMeta } from "../../src/seo.js";
  * is shown "closed" in the privacy section to represent the booking
  * details being erased after a visit.
  *
- * DOCTOR SELECTION: each doctor card in "Meet your doctors" carries a
+ * DOCTOR SELECTION: each doctor card in "Our doctors" carries a
  * "Select this doctor" link to `/book?doctor=<id>`. bookConsultation.jsx
  * reads that query param on arrival and pre-selects the doctor there (its
  * own doctor picker stays closed in that case, since there's nothing left
@@ -76,7 +76,7 @@ const consultTypes = [
     title: "General OPD",
     detail:
       "Everyday health concerns, check-ups, and follow-up visits with our outpatient doctors.",
-    mode: "Online or in person",
+    mode: "By video call or at the hospital",
     subServices: [
       "General consultation",
       "Antenatal care",
@@ -91,7 +91,7 @@ const consultTypes = [
     title: "Surgical consultation",
     detail:
       "Pre-surgery assessments and post-surgery follow-ups with our surgical team.",
-    mode: "Online or in person",
+    mode: "By video call or at the hospital",
     subServices: [
       "Pre-surgical assessment",
       "Post-surgical follow-up",
@@ -106,28 +106,28 @@ const steps = [
   {
     title: "Create your account",
     detail:
-      "Sign up with your name, phone number and email, then verify your email before booking.",
+      "Sign up with your name, phone number and email. We send you an email: open it and tap the link to confirm it's you.",
   },
   {
-    title: "Book a Consultation",
+        title: "Book a consultation",
     detail:
-      "Choose General OPD or Surgical, online or in person, and pay securely by mobile money. You may select a doctor of your choice.",
+      "Choose the care you need, choose a video call or a visit to the hospital, then pay with mobile money (MoMo).",
   },
   {
-    title: "We schedule you",
+        title: "We give you a time",
     detail:
-      "Our team receives your booking, then assigns you a doctor and a time.",
+      "The hospital chooses a doctor and a time for you, and sends them to your email.",
   },
   {
-    title: "Join your consultation",
+        title: "See your doctor",
     detail:
-      "We email you your appointment time and consultation ID. Join by video, or visit us in person.",
+      "For a video call, open your dashboard at your time and tap Join call. For a hospital visit, come to the hospital at your time.",
   },
 ];
 
 const quickActions = [
   {
-    label: "Book OPD visit",
+    label: "Book General OPD",
     href: "/book?type=OPD",
     icon: (
       <path
@@ -140,7 +140,7 @@ const quickActions = [
     ),
   },
   {
-    label: "Book surgical consult",
+    label: "Book Surgical",
     href: "/book?type=SURGICAL",
     icon: (
       <path
@@ -241,7 +241,7 @@ function CheckGlyph({ className = "" }) {
  */
 function BookingCta({
   to = "/book",
-  children = "Get Care Now",
+  children = "Book Consultation",
   size = "md",
   variant = "gold",
   className = "",
@@ -591,7 +591,6 @@ function OpenSlots() {
 function DoctorsSlider() {
   const { doctors, loading } = useListedDoctors();
   const { doctorSelectionEnabled } = useSiteSettings().settings;
-  const [profileDoctor, setProfileDoctor] = useState(null);
   const [perView, setPerView] = useState(1);
   const [index, setIndex] = useState(0);
   const [paused, setPaused] = useState(false);
@@ -702,17 +701,7 @@ function DoctorsSlider() {
                     <h3 className="font-display text-[17px] font-medium leading-tight text-[var(--ink2)]">
                       {doctor.name}
                     </h3>
-                    <p className="mt-1 text-[15px] font-medium text-[var(--forest-2)]">
-                      {doctor.role}
-                    </p>
                     <DoctorCardSummary doctor={doctor} />
-                    <button
-                      type="button"
-                      onClick={() => setProfileDoctor(doctor)}
-                      className="mt-3 block text-[15px] font-medium text-[#0095D9] underline-offset-2 hover:underline"
-                    >
-                      View full profile
-                    </button>
                     {/* Sends the patient straight into the booking flow with
                         this doctor pre-selected. Hidden when the admin has
                         switched doctor choice off. */}
@@ -734,16 +723,6 @@ function DoctorsSlider() {
           })}
         </div>
       </div>
-
-      {profileDoctor && (
-        <DoctorProfileDialog
-          doctor={profileDoctor}
-          canBook={doctorSelectionEnabled}
-          onClose={() => setProfileDoctor(null)}
-          Portrait={DoctorPortrait}
-          BookingGlyph={BookingGlyph}
-        />
-      )}
 
       <div className="mt-7 flex items-center justify-center gap-5">
         <button
@@ -814,73 +793,6 @@ function DoctorsSlider() {
         </button>
       </div>
     </div>
-  );
-}
-
-/**
- * A soft warm glow that trails the pointer, sitting behind everything the
- * visitor can click. Mouse-only: skipped entirely on touch screens and for
- * reduced-motion visitors, who still get the custom cursor art itself.
- */
-function CursorGlow() {
-  const ref = useRef(null);
-
-  useEffect(() => {
-    if (!window.matchMedia("(pointer: fine)").matches) return;
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-
-    const el = ref.current;
-    if (!el) return;
-
-    let targetX = 0;
-    let targetY = 0;
-    let x = 0;
-    let y = 0;
-    let frame;
-    let seen = false;
-
-    const onMove = (e) => {
-      targetX = e.clientX;
-      targetY = e.clientY;
-      if (!seen) {
-        seen = true;
-        x = targetX;
-        y = targetY;
-        el.style.opacity = "1";
-      }
-    };
-    const onLeave = () => {
-      el.style.opacity = "0";
-    };
-
-    const loop = () => {
-      x += (targetX - x) * 0.18;
-      y += (targetY - y) * 0.18;
-      el.style.transform = `translate3d(${x - 28}px, ${y - 28}px, 0)`;
-      frame = requestAnimationFrame(loop);
-    };
-
-    window.addEventListener("mousemove", onMove);
-    document.addEventListener("mouseleave", onLeave);
-    frame = requestAnimationFrame(loop);
-
-    return () => {
-      window.removeEventListener("mousemove", onMove);
-      document.removeEventListener("mouseleave", onLeave);
-      cancelAnimationFrame(frame);
-    };
-  }, []);
-
-  return (
-    <div
-      ref={ref}
-      aria-hidden="true"
-      className="pointer-events-none fixed left-0 top-0 z-[60] h-14 w-14 rounded-full opacity-0 blur-[10px] transition-opacity duration-300"
-      style={{
-        background:
-          "radial-gradient(circle, rgba(255,209,102,0.55) 0%, rgba(248,133,53,0.32) 45%, rgba(248,133,53,0) 72%)",
-      }}
-    />
   );
 }
 
@@ -1212,8 +1124,8 @@ function HeroSection({ heroImage }) {
             className="hero-rise mx-auto mt-6 max-w-md text-[clamp(15px,2vw,18px)] leading-[1.7] text-[#142138C7] lg:mx-0 lg:max-w-lg"
             style={{ animationDelay: "0.25s" }}
           >
-            General OPD and surgical consultations, online or in person. No
-            card, no waiting room, just your phone or laptop.
+            See a hospital doctor by video call on your phone, or book a
+                visit at the hospital. Pay with mobile money.
           </p>
 
           <div
@@ -1300,7 +1212,6 @@ function HomeContent({ isLoggedIn }) {
 
   return (
     <div className="font-body text-[#142138] bg-white overflow-x-hidden">
-      <CursorGlow />
       <Header variant="full" isLoggedIn={isLoggedIn} />
 
       <main
@@ -1343,27 +1254,6 @@ function HomeContent({ isLoggedIn }) {
             to { opacity: 1; transform: rotate(-8deg) scale(1); }
           }
 
-          /* ---- Custom pointer ----
-             A bright orange dot inside a gold ring everywhere, switching to
-             a filled heart over anything clickable, so the cursor carries the
-             same "care" idea that runs through the page. Hotspots are centred
-             on the dot / on the heart's top notch. Touch devices ignore all
-             of this. */
-          html, body {
-            cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 28 28"><circle cx="14" cy="14" r="10" fill="none" stroke="%23FFD166" stroke-width="1.5" opacity="0.9"/><circle cx="14" cy="14" r="5.5" fill="%23F88535" stroke="%23FFFFFF" stroke-width="1.5"/></svg>') 14 14, auto;
-          }
-          a, button, [role="button"], summary, label, select,
-          input[type="submit"], input[type="button"], input[type="checkbox"], input[type="radio"] {
-            cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="30" height="30" viewBox="0 0 30 30"><path d="M15 26.5S3.5 18.6 3.5 11.6A6.1 6.1 0 0 1 15 8.4 6.1 6.1 0 0 1 26.5 11.6C26.5 18.6 15 26.5 15 26.5Z" fill="%232F8BFF" stroke="%23FFFFFF" stroke-width="2" stroke-linejoin="round"/></svg>') 15 8, pointer;
-          }
-          input[type="text"], input[type="email"], input[type="tel"],
-          input[type="password"], input[type="number"], input[type="search"], textarea {
-            cursor: text;
-          }
-          @media (hover: none), (pointer: coarse) {
-            html, body, a, button, [role="button"], summary, label, select,
-            input[type="submit"], input[type="button"] { cursor: auto; }
-          }
           @keyframes auroraSpin {
             to { transform: translate(-50%, -50%) rotate(360deg); }
           }
@@ -1418,8 +1308,8 @@ function HomeContent({ isLoggedIn }) {
               Which care do you need?
             </h2>
             <p className="mt-3 text-[16px] sm:text-[16px] text-[#142138cc] max-w-lg">
-              Both consultation types are available online or in person,
-              whichever works better for you.
+              You can see the doctor by video call on your phone, or come
+                to the hospital. Choose what works for you.
             </p>
 
             <div className="mt-10 sm:mt-14 grid sm:grid-cols-2 gap-8 sm:gap-10">
@@ -1496,16 +1386,16 @@ function HomeContent({ isLoggedIn }) {
           </div>
         </section>
 
-        {/* ---------- Meet your doctors ---------- */}
+        {/* ---------- Our doctors ---------- */}
         <section id="doctors" className="pb-16 sm:pb-24">
           <div className="mx-auto max-w-6xl px-3 sm:px-5">
             <div className="px-2 sm:px-3">
               <h2 className="font-display text-[26px] sm:text-[30px] font-medium text-[var(--ink2)]">
-                Meet your doctors
+                Our doctors
               </h2>
               <p className="mt-3 max-w-lg text-[16px] sm:text-[16px] text-[#142138cc]">
-                You'll be assigned to one of them when your booking is
-                confirmed, based on what you're being seen for.
+                After you book, the hospital chooses one of these doctors for
+                you, based on what you need.
               </p>
             </div>
 
@@ -1567,16 +1457,15 @@ function HomeContent({ isLoggedIn }) {
           <div className="relative mx-auto max-w-6xl px-5 sm:px-8 grid md:grid-cols-[1.1fr_0.9fr] gap-10 items-center">
             <div className="max-w-xl text-center md:text-left">
               <h2 className="font-display text-[24px] sm:text-[28px] font-medium text-[var(--parchment)]">
-                How We Handle Your data
+                How we look after your information
               </h2>
               <p className="mt-4 text-[16px] sm:text-[16px] leading-relaxed text-[var(--parchment)]/75">
-                When your consultation closes, the details you gave when booking
-                (date of birth, sex, location and phone) are permanently
-                deleted. We keep a short record of each visit (doctor, date,
-                times and amount paid). Online consultations may be recorded
-                (video with sound, or sound only) when the hospital has recording switched on;
-                you'll see a REC sign whenever a call is recorded, and only
-                authorised administrators can open recordings.
+                After your consultation, we delete the details you gave when
+                booking (date of birth, sex, where you live and phone). We
+                only keep a short note of the visit: the doctor, the date and
+                what you paid. Video calls may be recorded by the hospital.
+                You will see a red REC sign when this happens, and only a few
+                hospital managers can watch recordings.
               </p>{" "}
               Read our{" "}
               <Link

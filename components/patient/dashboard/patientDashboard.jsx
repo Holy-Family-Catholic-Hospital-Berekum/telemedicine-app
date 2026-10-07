@@ -190,7 +190,7 @@ export default function Dashboard() {
     {
       key: "missed",
       title: "Missed appointments",
-      help: "You didn't join in time. Book a new time (for the no-show fee) or ask for a refund before the date shown.",
+      help: "You didn't join in time. You can pay a fee to book a new time, or ask for some of your money back, before the date shown.",
       icon: CalendarX2,
       items: safeBookings.filter((b) => b.state === "no_show"),
     },

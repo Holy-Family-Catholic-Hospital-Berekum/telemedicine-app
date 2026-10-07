@@ -517,7 +517,7 @@ export default function Header({
                                 : "bg-[var(--brand-orange)] text-white shadow-[0_8px_20px_-6px_rgba(248,133,53,0.55)] hover:brightness-95 active:brightness-90"
                             }`}
               >
-                Get Care Now
+                Book Consultation
               </Link>
             </nav>
 
@@ -576,7 +576,7 @@ export default function Header({
                   className="rounded-xl bg-[var(--brand-orange)] px-4 py-3 text-[16px]
                              font-semibold text-white"
                 >
-                  Get Care Now
+                  Book Consultation
                 </Link>
 
                 <a

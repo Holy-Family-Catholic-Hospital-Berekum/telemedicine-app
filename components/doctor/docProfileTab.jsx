@@ -19,8 +19,6 @@ import {
   MAX_PROFILE_PHOTO_MB,
 } from "./docUtils";
 
-const BIO_MAX_LENGTH = 400;
-
 // Only show photos served from our Firebase Storage bucket over https
 // (firestore.rules enforce the same on write).
 const STORAGE_URL_PREFIX = "https://firebasestorage.googleapis.com/";
@@ -374,49 +372,12 @@ export default function ProfileTab({ doctor, onToast }) {
             Public profile
           </h2>
           <p className="mt-1 text-xs text-[#5C6B72]">
-            You control this content — it's what patients see before they book
-            with you.
+            Patients see your photo, name, specialty, the languages you speak
+            and what you see patients for. Ghana's rules on advertising doctors
+            don't allow more (no biography, qualifications or experience).
           </p>
 
           <div className="mt-4 space-y-5">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <label
-                  className="text-sm font-medium text-[#12242C]"
-                  htmlFor="profile-title"
-                >
-                  Title / qualifications
-                </label>
-                <input
-                  id="profile-title"
-                  type="text"
-                  value={form.title}
-                  onChange={(e) => updateField("title", e.target.value)}
-                  placeholder="e.g. MBChB, FWACS"
-                  className="mt-1.5 w-full rounded-sm border border-[#DCE6EC] px-3 py-2 text-sm text-[#12242C] outline-none focus:border-[#0095D9]"
-                />
-              </div>
-              <div>
-                <label
-                  className="text-sm font-medium text-[#12242C]"
-                  htmlFor="profile-years"
-                >
-                  Years of experience
-                </label>
-                <input
-                  id="profile-years"
-                  type="number"
-                  min="0"
-                  max="70"
-                  value={form.yearsExperience}
-                  onChange={(e) =>
-                    updateField("yearsExperience", Number(e.target.value))
-                  }
-                  className="mt-1.5 w-full rounded-sm border border-[#DCE6EC] px-3 py-2 text-sm text-[#12242C] outline-none focus:border-[#0095D9]"
-                />
-              </div>
-            </div>
-
             <TagEditor
               label="Specialties"
               placeholder="Add a specialty and press Enter"
@@ -431,28 +392,6 @@ export default function ProfileTab({ doctor, onToast }) {
               onChange={(v) => updateField("languages", v)}
             />
 
-            <div>
-              <div className="flex items-center justify-between">
-                <label
-                  className="text-sm font-medium text-[#12242C]"
-                  htmlFor="profile-bio"
-                >
-                  Short bio
-                </label>
-                <span className="text-xs text-[#5C6B72]">
-                  {form.bio.length}/{BIO_MAX_LENGTH}
-                </span>
-              </div>
-              <textarea
-                id="profile-bio"
-                rows={4}
-                value={form.bio}
-                maxLength={BIO_MAX_LENGTH}
-                onChange={(e) => updateField("bio", e.target.value)}
-                placeholder="A couple of sentences about your practice and approach to care."
-                className="mt-1.5 w-full resize-none rounded-sm border border-[#DCE6EC] px-3 py-2 text-sm text-[#12242C] outline-none focus:border-[#0095D9]"
-              />
-            </div>
           </div>
 
           {isDirty && (

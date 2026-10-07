@@ -148,7 +148,7 @@ If you are not happy with how we handle your information, you can complain to Gh
         id: "account",
         title: "Your account",
         body: `- Provide accurate details when you sign up and when you book, and keep them up to date.
-- Verify your email address before booking.
+- Confirm your email address (tap the link in the email we send you) before booking.
 - You can change your name and email address in Settings on your dashboard. A new email address takes effect once you confirm it from the link we send to it.
 - Keep your password private. You are responsible for activity on your account, so tell us straight away if you think someone else has used it.
 - We may sign you out automatically after a period of inactivity to protect your information.`,
@@ -158,7 +158,7 @@ If you are not happy with how we handle your information, you can complain to Gh
         title: "Booking and scheduling",
         body: `- After you pay, our team assigns you a doctor and a time and tells you by email, and may also contact you by phone or WhatsApp.
 - We send email reminders about a day and about an hour before your appointment. For an online consultation, we also email you if the start time has passed and you have not joined the call yet.
-- Keep your phone reachable and join or arrive on time. The video room opens 30 minutes before your appointment and stays open for 4 hours after the start time.
+- Keep your phone reachable and join or arrive on time. You can join the video call from 30 minutes before your appointment until 4 hours after the start time.
 - You can ask to reschedule from your dashboard or by calling the hospital before your appointment. Rescheduling depends on availability.
 - Missed appointments (no-shows): you have a short waiting time to join after the start time, or after your doctor joins the video call if that is later. The waiting time is shown on your dashboard and in your appointment emails. If you have not joined (or, for an in-person visit, arrived) by then, the consultation is marked as missed. For online consultations this happens automatically. See "Cancellations and refunds" for what you can do next.
 - For online consultations, you are responsible for a working internet connection, a device with a camera and microphone, and a private place to talk.`,

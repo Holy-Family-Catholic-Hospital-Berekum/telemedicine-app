@@ -71,7 +71,7 @@ export default function RescheduleForm({ booking, onRequested }) {
   if (done) {
     return (
       <p className="text-xs text-[#3E4E56]">
-        Reschedule request sent — we'll email you the new time.
+        Request sent. We'll email you your new time.
       </p>
     );
   }
@@ -87,7 +87,7 @@ export default function RescheduleForm({ booking, onRequested }) {
         style={{ backgroundColor: "#0095D9" }}
       >
         <RefreshCw size={16} strokeWidth={2} />
-        {late && fee > 0 ? `Reschedule (GHS ${fee} fee)` : "Reschedule appointment"}
+        {late && fee > 0 ? `Change appointment time (GHS ${fee} fee)` : "Change appointment time"}
       </button>
     );
   }

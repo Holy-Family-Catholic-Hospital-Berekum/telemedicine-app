@@ -72,7 +72,7 @@ function ageFrom(dob) {
  * Paystack's verify endpoint (and/or trusts the webhook) and returns the
  * verdict, and only a "confirmed" verdict advances the patient to the
  * success step. A "pending" verdict parks them on a waiting state with a
- * "Check payment status" retry; a "failed" verdict keeps them on the
+ * "Check my payment" retry; a "failed" verdict keeps them on the
  * payment step so they can try again. In no branch does the patient get
  * a booking without a server-confirmed payment.
  *
@@ -151,7 +151,7 @@ function ageFrom(dob) {
 
 const CURRENCY = "GHS";
 
-const STEP_LABELS = ["Consultation", "Payment", "Confirmation"];
+const STEP_LABELS = ["Your details", "Pay", "Done"];
 
 /* ===================================================================
    BACKEND CALLS
@@ -198,7 +198,7 @@ async function fetchBookingStatus(bookingId) {
  * approved on the patient's handset seconds before Paystack finishes
  * settling it and calls our webhook. Rather than making the patient press
  * a button into an empty result, we check every few seconds for about a
- * minute, then hand over to the manual "Check payment status" state.
+ * minute, then hand over to the manual "Check my payment" state.
  */
 async function waitForConfirmation(
   bookingId,
@@ -754,11 +754,11 @@ export default function BookConsultation() {
             ? "You're all set."
             : "Quality Healthcare at Your Door Step."
         }
-        body="Pick a consultation type, pay securely by mobile money, and our team shares your appointment directly with you."
+        body="Choose the care you need, pay with mobile money, and we send you your appointment time by email."
         points={[
-          "General OPD or surgical consultation",
-          "Pay by MoMo in a few taps, confirmed instantly",
-          "Appointment details sent to your email",
+          "General OPD or Surgical",
+          "Pay with mobile money (MoMo)",
+          "Your appointment time comes by email",
         ]}
       />
 
@@ -863,9 +863,9 @@ export default function BookConsultation() {
                       role="status"
                       className="mb-6 rounded-2xl border border-[#F88535]/50 bg-[#F88535]/10 px-5 py-4 text-[16px] text-black/80"
                     >
-                      You have a payment that hasn't been confirmed yet. To
-                      avoid paying twice, you can't start another booking
-                      until it is confirmed or has clearly failed.{" "}
+                      We are still waiting for an earlier payment to go through.
+                        So you don't pay twice, please wait for it before you
+                        book again.{" "}
                       <Link to="/dashboard" className="font-medium text-[#0095D9] underline">
                         Check it on your dashboard
                       </Link>
@@ -876,8 +876,8 @@ export default function BookConsultation() {
                     What kind of consultation do you need?
                   </h2>
                   <p className="mt-2 text-[16px] text-black/80">
-                    Choose a doctor now if you'd like, or we'll assign one once
-                    your booking is confirmed.
+                    You can choose a doctor, or let the hospital choose one for
+                    you.
                   </p>
 
                   <fieldset className="mt-8">
@@ -894,7 +894,7 @@ export default function BookConsultation() {
                         {
                           key: "SURGICAL",
                           title: "Surgical",
-                          desc: "Pre- or post-surgery consultations.",
+                          desc: "Before or after an operation."
                         },
                       ].map((opt) => (
                         <button
@@ -922,19 +922,19 @@ export default function BookConsultation() {
 
                   <fieldset className="mt-8">
                     <legend className="text-[16px] font-medium mb-3">
-                      Mode
+                      How do you want to see the doctor?
                     </legend>
                     <div className="grid sm:grid-cols-2 gap-3">
                       {[
                         {
                           key: "online",
-                          title: "Online",
-                          desc: "Video consultation from your phone or computer.",
+                                                    title: "Video call",
+                          desc: "Talk to the doctor on your phone or computer.",
                         },
                         {
                           key: "in_person",
-                          title: "In person",
-                          desc: "Visit the hospital for your appointment.",
+                                                    title: "At the hospital",
+                          desc: "Come to the hospital to see the doctor.",
                         },
                       ].map((opt) => (
                         <button
@@ -983,8 +983,8 @@ export default function BookConsultation() {
                           </div>
                         ) : (
                           <p className="text-[16px] text-black/70 max-w-sm">
-                            We'll assign you the best available doctor for this
-                            consultation. Want to choose your own?
+                            The hospital will choose a doctor for you. Or you can
+                            choose one yourself.
                           </p>
                         )}
                         <div className="flex items-center gap-4">
@@ -1004,7 +1004,7 @@ export default function BookConsultation() {
                           >
                             {selectedDoctor
                               ? "Change doctor"
-                              : "Choose your own doctor"}
+                                                            : "Choose a doctor"}
                           </button>
                         </div>
                       </div>
@@ -1333,7 +1333,7 @@ export default function BookConsultation() {
                     >
                       {loading
                         ? "Setting up your booking…"
-                        : "Continue to payment"}
+                        : "Next: pay"}
                     </button>
                   </div>
                 </section>
@@ -1352,9 +1352,8 @@ export default function BookConsultation() {
                     Pay for your consultation
                   </h2>
                   <p className="mt-2 text-[16px] text-black/80">
-                    Payment is by mobile money. You'll get a prompt on your
-                    phone to approve it, and your booking is created the moment
-                    the payment clears.
+                    You pay with mobile money. A message will pop up on your
+                    phone: enter your MoMo PIN there to approve the payment.
                   </p>
 
                   <div className="mt-7 rounded-2xl border border-black/10 p-6 sm:p-7 space-y-5">
@@ -1395,8 +1394,7 @@ export default function BookConsultation() {
                   </div>
 
                   <p className="mt-5 text-[16px] bg-[#0095D9] px-4 py-2.5 rounded text-white leading-relaxed">
-                    Your booking is only created once we've confirmed the
-                    payment, so please don't close this page until it's done.
+                    Please keep this page open until the payment is done.
                   </p>
 
                   {/* Awaiting-network state: payment left the phone but the
@@ -1407,10 +1405,9 @@ export default function BookConsultation() {
                       className="mt-6 rounded-2xl border border-[#0095D9]/40 bg-[#0095D9]/5 px-5 py-4 text-[16px] text-black/80"
                     >
                       <span className="font-medium text-black">
-                        Waiting for the network to confirm your payment.
+                        We are waiting for your payment to go through.
                       </span>{" "}
-                      This can take up to a few minutes. Keep this page open,
-                      we'll finish your booking as soon as it clears.
+                      This can take a few minutes. Please keep this page open.
                     </div>
                   )}
 
@@ -1429,7 +1426,7 @@ export default function BookConsultation() {
                           {paying && <Spinner />}
                           {paying
                             ? "Checking payment…"
-                            : "Check payment status"}
+                            : "Check my payment"}
                         </button>
                       ) : (
                         <button
@@ -1446,7 +1443,7 @@ export default function BookConsultation() {
 
                       {paymentState === "checkout" && (
                         <span className="text-[16px] text-black/75">
-                          Approve the prompt on your phone to continue.
+                          Check your phone and enter your MoMo PIN to approve.
                         </span>
                       )}
                     </div>
@@ -1474,7 +1471,7 @@ export default function BookConsultation() {
                     </svg>
                   </div>
                   <h2 className="mt-5 font-display text-[22px] sm:text-[24px] font-medium">
-                    Payment confirmed, your booking is in
+                    Payment received. Your booking is done
                   </h2>
                   <p className="mt-2 text-[16px] text-black/80 max-w-md mx-auto sm:mx-0">
                     We've received {booking.currency} {booking.amount}. You will
@@ -1508,7 +1505,7 @@ export default function BookConsultation() {
                   </div>
 
                   <p className="mt-6 text-[16px] text-black/75 max-w-md mx-auto sm:mx-0">
-                    We'll email you your appointment time and consultation ID
+                    We'll email you your appointment time
                     once{" "}
                     {selectedDoctor ? "a time is" : "a doctor and time are"}{" "}
                     assigned. You can see this booking any time from your
@@ -1528,7 +1525,7 @@ export default function BookConsultation() {
                       className="rounded-full bg-[#F88535] text-white text-[16px] font-medium px-6 py-3
                                  hover:brightness-95 active:brightness-90 transition"
                     >
-                      Visit my Dashboard
+                      Go to my appointments
                     </Link>
                   </div>
                 </section>

@@ -5,7 +5,7 @@ import { Eye, EyeOff, Copy, Check } from 'lucide-react';
 // phone, at the front desk for in-person visits). Joining and rescheduling
 // don't need it. Reveal-on-tap keeps it out of view on a shared or
 // screen-recorded device; the copy button appears once it's visible.
-export default function RevealId({ id, label = 'Consultation ID' }) {
+export default function RevealId({ id, label = 'Booking reference' }) {
   const [visible, setVisible] = useState(false);
   const [copied, setCopied] = useState(false);
 

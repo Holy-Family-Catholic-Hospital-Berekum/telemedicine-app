@@ -57,6 +57,16 @@
   grid-template-columns: 260px 1fr;
 }
 
+/* Default pointers: the browser's arrow, and the usual hand over buttons
+   and links (Tailwind v4 leaves buttons with the arrow). */
+button:not(:disabled),
+[role="button"],
+summary,
+label[for],
+select {
+  cursor: pointer;
+}
+
 .admin-root * {
   box-sizing: border-box;
 }

@@ -18,7 +18,7 @@ import { usePageMeta } from "../../seo.js";
 const POLL_INTERVAL_MS = 4000;
 
 export default function VerifyEmailNotice() {
-  usePageMeta({ title: "Verify your email", noindex: true });
+  usePageMeta({ title: "Check your email", noindex: true });
   const {
     user,
     emailVerified,
@@ -89,10 +89,10 @@ export default function VerifyEmailNotice() {
             </div>
           </div>
           <div className="auth-card-head">
-            <h2>Verify your email</h2>
+            <h2>Check your email</h2>
             <p>
-              We sent a verification link to <strong>{user?.email}</strong>.
-              Open it, then come back here — this page checks automatically and
+              We sent an email to <strong>{user?.email}</strong>. Open it and
+          tap the link inside, then come back here — this page checks automatically and
               will continue on its own.
             </p>
           </div>
@@ -100,7 +100,7 @@ export default function VerifyEmailNotice() {
           {sent && (
             <div className="auth-alert success">
               <IconCheckCircle size={15} />
-              <span>Verification email sent.</span>
+              <span>Email sent again.</span>
             </div>
           )}
 
@@ -109,7 +109,7 @@ export default function VerifyEmailNotice() {
             onClick={handleManualCheck}
             disabled={checking}
           >
-            {checking ? "Checking…" : "I've verified, check now"}
+            {checking ? "Checking…" : "I've tapped the link"}
           </button>
 
           <p className="auth-switch">
