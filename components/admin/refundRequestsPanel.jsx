@@ -22,6 +22,7 @@ const OUTCOME_TEXT = {
   ...OUTCOME_LABELS,
   no_show: "Missed (no-show)",
   not_closed: "Not attended, not closed by the doctor",
+  doctor_unavailable: "Doctor couldn't make it (full refund)",
 };
 const STATUS = {
   requested: { label: "Waiting for a decision", tone: "" },

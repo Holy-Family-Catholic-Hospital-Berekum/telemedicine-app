@@ -37,6 +37,12 @@ const STATE_META = {
   },
 };
 
+const DOCTOR_UNAVAILABLE_META = {
+  label: "Doctor can't make it",
+  color: "#A85420",
+  bg: "#F885351A",
+};
+
 const MISSED_META = {
   label: "Didn't take place",
   color: "#A85420",
@@ -67,16 +73,21 @@ export default function BookingCard({
   const didNotHappen =
     isScheduled && closed && (booking.mode === "online" ? !bothJoined : true);
   const rescheduleRequested = booking.rescheduleRequest?.status === "requested";
+  // The doctor can't make it: the hospital gives a new time, or the
+  // patient asks for a full refund (functions/lib/consultationLifecycle.js).
+  const doctorUnavailable = isScheduled && Boolean(booking.doctorUnavailable);
 
   const callInProgress =
-    booking.mode === "online" && booking.state === "in_progress" && !closed;
+    booking.mode === "online" && booking.state === "in_progress" && !closed && !doctorUnavailable;
 
   // Open by default so the main action (join, reschedule, check payment)
   // is on screen without hunting for it.
   const [expanded, setExpanded] = useState(true);
 
   const meta =
-    didNotHappen && !refund && !rescheduleRequested
+    doctorUnavailable && !refund
+      ? DOCTOR_UNAVAILABLE_META
+      : didNotHappen && !refund && !rescheduleRequested
       ? MISSED_META
       : booking.payAtHospital && booking.state === "pending_assignment"
         ? { ...STATE_META.pending_assignment, label: "Booked · pay at the hospital" }
@@ -187,6 +198,34 @@ export default function BookingCard({
               {refund ? (
                 // A refund request ends the booking's options.
                 <RefundRequest existing={refund} />
+              ) : doctorUnavailable ? (
+                <div className="rounded-md border border-[#F88535]/40 bg-[#F88535]/5 p-4">
+                  <p className="flex items-center gap-2 text-sm font-semibold text-[#12242C]">
+                    <CalendarX2 size={16} strokeWidth={1.75} className="text-[#A85420]" />
+                    Your doctor can&apos;t make this appointment
+                  </p>
+                  <p className="mt-1 text-sm text-[#3E4E56]">
+                    We&apos;re sorry. We&apos;ll email you a new time soon, at no extra cost.
+                    {booking.rescheduleRequest?.preferredTime
+                      ? ` You asked for: ${booking.rescheduleRequest.preferredTime}.`
+                      : " You can tell us a time that suits you."}
+                  </p>
+                  <div className="mt-3">
+                    <RescheduleForm booking={booking} onRequested={onRescheduled} />
+                  </div>
+                  <div className="mt-3">
+                    <RefundRequest
+                      source="booking"
+                      id={booking.bookingId}
+                      scheduledTime={booking.scheduledTime}
+                      amountPaid={booking.amountPaid}
+                      suggestedAmount={booking.amountPaid}
+                      anyTime
+                      defaultPhone={defaultPhone}
+                      onRequested={onRefundRequested}
+                    />
+                  </div>
+                </div>
               ) : rescheduleRequested ? (
                 <p className="text-sm text-[#3E4E56]">
                   You asked for a new time. We'll email it to you.

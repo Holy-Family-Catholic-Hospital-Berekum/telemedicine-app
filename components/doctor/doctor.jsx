@@ -12,10 +12,12 @@ import {
   MonitorCheck,
   MonitorX,
   Settings,
+  AlarmClock,
 } from "lucide-react";
 import StatTile from "./ui/statTile";
 import ConsultationCard from "./ui/consultationCard";
 import MarkDoneModal from "./ui/markDoneModal";
+import CantMakeItModal from "./ui/cantMakeItModal";
 import ProfileTab from "./docProfileTab";
 import LogoutButton from "./logoutButton";
 import StaffAccountSettings from "../shared/staffAccountSettings.jsx";
@@ -32,7 +34,9 @@ import {
   fetchAssignedConsultations,
   startVideoCall,
   markConsultationDone,
+  reportDoctorUnavailable,
 } from "./docFirestoreService";
+import { useSiteSettings } from "../../src/siteSettings";
 import VideoCallModal from "../video/videoCallModal";
 import hospitalLogo from "../../src/assets/logo.png";
 import { callableMessage, HOSPITAL_TIME_ZONE } from "../../src/constants";
@@ -61,12 +65,16 @@ export default function DoctorDashboard() {
   // every render. ----
   const { user, profile, initializing, signOutUser } = useAuth();
   const navigate = useNavigate();
+  // The same waiting time applies to the doctor of a video call
+  // (functions/noShow.js markMissedByDoctor).
+  const { waitMinutes } = useSiteSettings().settings.noShow;
 
   const [activeTab, setActiveTab] = useState("schedule");
   const [consultations, setConsultations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [startingCallId, setStartingCallId] = useState(null);
   const [markDoneTarget, setMarkDoneTarget] = useState(null);
+  const [cantMakeItTarget, setCantMakeItTarget] = useState(null);
   const [toast, setToast] = useState(null);
   const [activeCallConsultationId, setActiveCallConsultationId] =
     useState(null);
@@ -190,6 +198,23 @@ export default function DoctorDashboard() {
         : "Closed as completed — booking details deleted",
       4000,
     );
+  }
+
+  async function handleCantMakeItSubmit({ consultation, reason }) {
+    try {
+      await reportDoctorUnavailable({
+        consultationId: consultation.consultationId,
+        reason,
+      });
+    } catch (err) {
+      showToast(callableMessage(err, "Couldn't send that. Please try again."), 4000);
+      return;
+    }
+    setConsultations((prev) =>
+      prev.filter((c) => c.consultationId !== consultation.consultationId),
+    );
+    setCantMakeItTarget(null);
+    showToast("The patient has been told. The hospital will give them a new time.", 4000);
   }
 
   // CHANGED — was a fake 400ms stub. Now calls real Firebase sign-out via
@@ -352,6 +377,16 @@ export default function DoctorDashboard() {
                 started from the telemedicine room computer.
               </p>
             )}
+            <div className="mb-5 flex gap-3 rounded-md border border-[#F88535]/40 bg-[#F88535]/5 px-4 py-3 text-sm text-[#12242C]">
+              <AlarmClock size={18} strokeWidth={1.75} className="mt-0.5 shrink-0 text-[#A85420]" />
+              <p>
+                <span className="font-semibold">Please be on time.</span> If you haven&apos;t joined a video
+                call within {waitMinutes} minutes of its start time, it counts as an appointment you
+                couldn&apos;t make: the patient is told and the hospital gives them a new time or a refund.
+                If you can&apos;t make an appointment, tap{" "}
+                <span className="font-medium">I can&apos;t make it</span> on it as early as you can.
+              </p>
+            </div>
             <section>
               <h2 className="mb-3 text-sm font-medium text-[#5C6B72]">Today</h2>
               {loading ? (
@@ -373,6 +408,7 @@ export default function DoctorDashboard() {
                       onStartCall={handleStartCall}
                       inRoom={Boolean(roomDevice)}
                       onMarkDone={setMarkDoneTarget}
+                      onCantMakeIt={setCantMakeItTarget}
                     />
                   ))}
                   <Pagination {...todayPager} noun="consultations" />
@@ -395,6 +431,7 @@ export default function DoctorDashboard() {
                       onStartCall={handleStartCall}
                       inRoom={Boolean(roomDevice)}
                       onMarkDone={setMarkDoneTarget}
+                      onCantMakeIt={setCantMakeItTarget}
                     />
                   ))}
                   <Pagination {...upcomingPager} noun="consultations" />
@@ -416,6 +453,14 @@ export default function DoctorDashboard() {
           consultation={markDoneTarget}
           onClose={() => setMarkDoneTarget(null)}
           onSubmit={handleMarkDoneSubmit}
+        />
+      )}
+
+      {cantMakeItTarget && (
+        <CantMakeItModal
+          consultation={cantMakeItTarget}
+          onClose={() => setCantMakeItTarget(null)}
+          onSubmit={handleCantMakeItSubmit}
         />
       )}
 

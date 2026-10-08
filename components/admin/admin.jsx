@@ -248,6 +248,11 @@ export default function Admin() {
       }),
     );
 
+  // The doctor can't make it: the patient is emailed and the booking moves
+  // to Reschedule requests (the live bookings list shows it).
+  const handleDoctorUnavailable = (booking) =>
+    quietly(callAdmin("reportDoctorUnavailable", { consultationId: booking.consultationId }));
+
   const handleCreateSlot = (form) => quietly(callAdmin("createAvailableSlot", form));
   const handleCancelSlot = (slot) =>
     quietly(callAdmin("cancelAvailableSlot", { slotId: slot.id }));
@@ -382,6 +387,7 @@ export default function Admin() {
               onSchedule={handleSchedule}
               onReschedule={handleReschedule}
               onMarkDone={handleMarkDone}
+              onDoctorUnavailable={handleDoctorUnavailable}
               onCreateSlot={handleCreateSlot}
               onCancelSlot={handleCancelSlot}
             />

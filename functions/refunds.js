@@ -12,6 +12,8 @@
 //     (booking.noShowTerms.forfeitPercent, the no-show policy at the time).
 //   - A scheduled consultation nobody closed: once its day has passed;
 //     suggested in full.
+//   - One the doctor couldn't make (booking.doctorUnavailable): straight
+//     away, in full, even if the patient joined and waited.
 //   - A no-show closed straight away (history), e.g. before no-shows were
 //     held: its recorded refundOwed. Not one whose 14-day hold ran out or
 //     that an admin closed (refundClosed).
@@ -90,6 +92,11 @@ exports.requestRefund = onCall(async (request) => {
       const percent = Number(rec.noShowTerms?.forfeitPercent ?? 0);
       outcome = "no_show";
       suggestedRefund = round2(amountPaid * (1 - percent / 100));
+    } else if (rec.doctorUnavailable) {
+      // The doctor couldn't make it: in full, straight away, even if the
+      // patient had joined the call and waited.
+      outcome = "doctor_unavailable";
+      suggestedRefund = amountPaid;
     } else {
       if (rec.rescheduleRequest?.status === "requested") {
         throw new HttpsError(
@@ -133,6 +140,13 @@ exports.requestRefund = onCall(async (request) => {
     const existing = await tx.get(requestRef);
     if (existing.exists) {
       throw new HttpsError("already-exists", "You've already requested a refund for this consultation.");
+    }
+    if (outcome === "doctor_unavailable") {
+      // An admin may have given it a new time since it was read.
+      const fresh = await tx.get(sourceRef);
+      if (!fresh.exists || !fresh.data().doctorUnavailable) {
+        throw new HttpsError("failed-precondition", "Your appointment has a new time now. Please check your dashboard.");
+      }
     }
     tx.set(requestRef, {
       consultationId,
@@ -312,7 +326,8 @@ exports.resolveRefundRequest = onCall({ secrets: [PAYSTACK_SECRET_KEY] }, async 
   if (r.bookingId) {
     await closeConsultation({
       consultationId,
-      outcome: "no_show",
+      // The doctor couldn't make it: cancelled by the hospital, not missed.
+      outcome: r.outcome === "doctor_unavailable" ? "cancelled" : "no_show",
       actor: { uid: caller.uid, role: "admin" },
       meta,
     }).catch((err) => {

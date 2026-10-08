@@ -204,7 +204,7 @@ exports.scheduleConsultation = onCall(async (request) => {
     queueEmail(tx, {
       to: doctor.email,
       kind: "doctor_assigned",
-      data: { doctorName: doctor.name, type: booking.type, mode: booking.mode, scheduledAt: when.getTime() },
+      data: { doctorName: doctor.name, type: booking.type, mode: booking.mode, scheduledAt: when.getTime(), noShow },
     });
     audit(tx, {
       actorId: caller.uid,
@@ -392,6 +392,9 @@ exports.requestReschedule = onCall({ secrets: [PAYSTACK_SECRET_KEY] }, async (re
         preferredTime,
         reason,
         requestedAt: Timestamp.now(),
+        // The doctor couldn't make it: the patient is only adding a time
+        // that suits them to the hospital's own request.
+        ...(booking.doctorUnavailable ? { byHospital: true } : {}),
       },
       updatedAt: serverTime(),
     });
@@ -447,6 +450,12 @@ exports.rescheduleConsultation = onCall(async (request) => {
     }
 
     if (decline) {
+      if (booking.doctorUnavailable) {
+        throw new HttpsError(
+          "failed-precondition",
+          "The doctor couldn't make this appointment, so it needs a new time (or the patient can ask for a refund).",
+        );
+      }
       tx.update(bookingRef, {
         "rescheduleRequest.status": "declined",
         updatedAt: serverTime(),
@@ -470,9 +479,20 @@ exports.rescheduleConsultation = onCall(async (request) => {
     const doctorUid = d.doctorUid ? docId(d.doctorUid, "Doctor") : booking.doctorUid;
 
     const consultationRef = db.collection("consultations").doc(booking.consultationId);
-    // deepcode ignore Sqli: Firestore document ID, not SQL; consultationId read from the server-written booking.
-    const consultationSnap = await tx.get(consultationRef);
+    const [consultationSnap, refundSnap] = await Promise.all([
+      // deepcode ignore Sqli: Firestore document ID, not SQL; consultationId read from the server-written booking.
+      tx.get(consultationRef),
+      // deepcode ignore Sqli: Firestore document ID, not SQL; consultationId read from the server-written booking.
+      tx.get(db.collection("refundRequests").doc(booking.consultationId)),
+    ]);
     if (!consultationSnap.exists) throw new HttpsError("not-found", "Consultation not found.");
+    // A refund and a reschedule exclude each other (a declined one doesn't count).
+    if (refundSnap.exists && refundSnap.data().status !== "declined") {
+      throw new HttpsError(
+        "failed-precondition",
+        "The patient has asked for a refund for this consultation. Resolve it in Refunds first.",
+      );
+    }
     const consultation = consultationSnap.data();
     // A call one side never joined was missed, and can be moved.
     if (bothJoined(consultation)) {
@@ -509,6 +529,7 @@ exports.rescheduleConsultation = onCall(async (request) => {
       callStartedAt: null,
       patientFirstJoinedAt: FieldValue.delete(),
       doctorFirstJoinedAt: FieldValue.delete(),
+      doctorUnavailable: FieldValue.delete(),
       reminders: FieldValue.delete(),
       scheduleSetAt: Timestamp.now(),
       rescheduleHistory: [...(consultation.rescheduleHistory || []), entry],
@@ -522,6 +543,7 @@ exports.rescheduleConsultation = onCall(async (request) => {
       callStartedAt: null,
       patientJoinedAt: FieldValue.delete(),
       doctorJoinedAt: FieldValue.delete(),
+      doctorUnavailable: FieldValue.delete(),
       ...(booking.rescheduleRequest ? { "rescheduleRequest.status": "applied" } : {}),
       updatedAt: serverTime(),
     });
@@ -539,12 +561,14 @@ exports.rescheduleConsultation = onCall(async (request) => {
         noShow,
         payAtHospital: booking.payAtHospital === true,
         amountDue: booking.payAtHospital ? booking.amount : null,
+        // The new time after the doctor couldn't make it: says sorry.
+        afterDoctorUnavailable: Boolean(booking.doctorUnavailable),
       },
     });
     queueEmail(tx, {
       to: doctor.email,
       kind: previousDoctorSnap ? "doctor_assigned" : "doctor_rescheduled",
-      data: { doctorName: doctor.name, type: booking.type, mode: booking.mode, scheduledAt: when.getTime() },
+      data: { doctorName: doctor.name, type: booking.type, mode: booking.mode, scheduledAt: when.getTime(), noShow },
     });
     if (previousDoctorSnap?.exists) {
       const was = toDate(consultation.scheduledTime);

@@ -6,6 +6,8 @@
 //                        booking data, or marks a no-show (booking kept for
 //                        a paid reschedule or a refund; see
 //                        lib/consultationLifecycle.js)
+//   reportDoctorUnavailable the doctor can't make it: patient emailed, sent
+//                        to the admin to reschedule (or refund in full)
 //
 // Video is peer-to-peer WebRTC. Signalling goes through calls/{consultationId},
 // which only startVideoCall can create and which Security Rules open to the
@@ -30,6 +32,7 @@ const {
   requireRole,
   requireVerifiedEmail,
   requestMeta,
+  str,
   oneOf,
   docId,
   toDate,
@@ -39,7 +42,12 @@ const {
 } = require("./lib/core");
 const { CALL_CONSENT_TEXT, CURRENT_CALL_CONSENT } = require("./lib/consentText");
 const { verifyRoomDevice } = require("./roomDevices");
-const { markNoShow, closeConsultation, noShowDeadline } = require("./lib/consultationLifecycle");
+const {
+  markNoShow,
+  markDoctorUnavailable,
+  closeConsultation,
+  noShowDeadline,
+} = require("./lib/consultationLifecycle");
 const { loadNoShowPolicy } = require("./siteSettings");
 const { queueEmail } = require("./lib/mailQueue");
 
@@ -69,6 +77,16 @@ async function loadForParticipant(caller, consultationId) {
     throw new HttpsError("not-found", "Consultation not found.");
   }
   return { ref, consultation: c };
+}
+
+/** The call can't open: the doctor couldn't make it (or joined too late). */
+function doctorUnavailableError(role) {
+  return new HttpsError(
+    "failed-precondition",
+    role === "doctor"
+      ? "This appointment has been passed to the hospital to reschedule, because you couldn't make it or didn't join in time. The patient has been told."
+      : "Your doctor can't make this appointment. The hospital will email you a new time.",
+  );
 }
 
 /* ------------------------------------------------------------------ */
@@ -106,6 +124,7 @@ exports.startVideoCall = onCall(async (request) => {
   if (!["scheduled", "in_progress"].includes(consultation.status)) {
     throw new HttpsError("failed-precondition", "This consultation is closed.");
   }
+  if (consultation.doctorUnavailable) throw doctorUnavailableError(caller.role);
   const scheduled = toDate(consultation.scheduledTime);
   const now = Date.now();
   if (now < scheduled.getTime() - JOIN_OPENS_MINUTES_BEFORE * 60 * 1000) {
@@ -137,6 +156,7 @@ exports.startVideoCall = onCall(async (request) => {
   await db.runTransaction(async (tx) => {
     const [callSnap, consultationSnap] = await Promise.all([tx.get(callRef), tx.get(ref)]);
     const current = consultationSnap.data();
+    if (current.doctorUnavailable) throw doctorUnavailableError(caller.role);
 
     // Video-consultation consent: once per consultation, before the
     // patient's first join.
@@ -292,6 +312,7 @@ exports.getTurnCredentials = onCall(
     if (!["scheduled", "in_progress"].includes(consultation.status)) {
       throw new HttpsError("failed-precondition", "This consultation is closed.");
     }
+    if (consultation.doctorUnavailable) throw doctorUnavailableError(caller.role);
 
     const response = await fetch(
       `https://rtc.live.cloudflare.com/v1/turn/keys/${CLOUDFLARE_TURN_KEY_ID.value()}/credentials/generate-ice-servers`,
@@ -372,13 +393,26 @@ exports.reportCaptureAttempt = onCall(async (request) => {
 /**
  * data: { consultationId, outcome: "completed" | "no_show" }
  * The assigned doctor or an admin. The client never sends an amount:
- * the amount paid is read from the booking here.
+ * the amount paid is read from the booking here. A doctor may mark a
+ * no-show only for a hospital visit: video calls are marked by
+ * autoMarkNoShows (from the call's own join records), so a doctor can't
+ * mark one by mistake for a patient who joined.
  */
 exports.markConsultationDone = onCall(async (request) => {
   const caller = await requireRole(request, ["doctor", "admin"]);
   const d = request.data || {};
   const consultationId = docId(d.consultationId, "Consultation");
   const outcome = oneOf(d.outcome, OUTCOMES, "outcome");
+  if (caller.role === "doctor" && outcome === "no_show") {
+    // deepcode ignore Sqli: Firestore document ID, not SQL; consultationId passed docId() (/^[A-Za-z0-9_-]+$/).
+    const snap = await db.collection("consultations").doc(consultationId).get();
+    if (snap.exists && snap.data().doctorUid === caller.uid && snap.data().mode !== "in_person") {
+      throw new HttpsError(
+        "permission-denied",
+        "Video calls are marked as a no-show automatically when the patient doesn't join in time.",
+      );
+    }
+  }
   const actor = { uid: caller.uid, role: caller.role };
   const expectDoctorUid = caller.role === "doctor" ? caller.uid : null;
   const meta = requestMeta(request);
@@ -398,4 +432,34 @@ exports.markConsultationDone = onCall(async (request) => {
   return caller.role === "admin" && closed
     ? { consultationId, outcome, forfeitAmount: closed.forfeitAmount, refundOwed: closed.refundOwed }
     : { consultationId, outcome };
+});
+
+/* ------------------------------------------------------------------ */
+/* reportDoctorUnavailable                                             */
+/* ------------------------------------------------------------------ */
+
+/**
+ * data: { consultationId, reason? }
+ * The assigned doctor, or an admin, says the doctor can't make this
+ * appointment. The patient is emailed; the booking goes to the admin's
+ * reschedule requests, and the patient may ask for a full refund instead
+ * (lib/consultationLifecycle.js markDoctorUnavailable). `reason` is for the
+ * admin team only.
+ */
+exports.reportDoctorUnavailable = onCall(async (request) => {
+  const caller = await requireRole(request, ["doctor", "admin"]);
+  const d = request.data || {};
+  const consultationId = docId(d.consultationId, "Consultation");
+  const reason = str(d.reason, { field: "Reason", max: 300, optional: true });
+  await rateLimit(caller.uid, "reportDoctorUnavailable", { max: 30, windowSeconds: 3600 });
+
+  // deepcode ignore Sqli: Firestore document ID, not SQL; consultationId passed docId() (/^[A-Za-z0-9_-]+$/).
+  const marked = await markDoctorUnavailable({
+    consultationId,
+    actor: { uid: caller.uid, role: caller.role },
+    reason,
+    meta: requestMeta(request),
+    expectDoctorUid: caller.role === "doctor" ? caller.uid : null,
+  });
+  return { consultationId, marked: Boolean(marked) };
 });

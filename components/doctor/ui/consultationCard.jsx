@@ -7,6 +7,7 @@ import {
   CheckSquare,
   History,
   Loader2,
+  CalendarX2,
 } from "lucide-react";
 import SensitiveDetails from "../sensitiveDetails";
 import { getCallWindow } from "../docUtils";
@@ -21,6 +22,7 @@ export default function ConsultationCard({
   consultation,
   onStartCall,
   onMarkDone,
+  onCantMakeIt,
   inRoom,
   // Upcoming (not today): show the date with the time.
   showDate = false,
@@ -167,6 +169,18 @@ export default function ConsultationCard({
             <CheckSquare size={15} strokeWidth={1.75} />
             Mark done
           </button>
+
+          {/* Until the consultation has taken place (both in the call). */}
+          {!(consultation.patientJoined && consultation.doctorJoined) && (
+            <button
+              type="button"
+              onClick={() => onCantMakeIt(consultation)}
+              className="flex items-center gap-2 rounded-sm border border-[#DCE6EC] px-3.5 py-2 text-sm font-medium text-[#B23A3A] transition hover:border-[#B23A3A]"
+            >
+              <CalendarX2 size={15} strokeWidth={1.75} />
+              I can&apos;t make it
+            </button>
+          )}
 
           {callError && (
             <span className="text-xs" style={{ color: "#D64545" }}>

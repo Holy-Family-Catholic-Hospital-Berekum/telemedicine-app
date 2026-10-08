@@ -9,8 +9,9 @@ const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // Mirrors rescheduleCountsAsNoShow (functions/lib/consultationLifecycle.js):
 // from the start time on, a patient who hasn't joined pays the no-show fee
-// to move the consultation, unless the doctor is the late one. Only for
-// the wording; the server decides.
+// to move the consultation, unless the doctor is the late one (online: not
+// joined yet, or joined after the waiting time). Only for the wording; the
+// server decides.
 function isLate(booking, waitMinutes, now = Date.now()) {
   const start = booking.scheduledTime?.getTime?.();
   if (!start || now < start || booking.patientJoinedAt) return false;
@@ -18,7 +19,7 @@ function isLate(booking, waitMinutes, now = Date.now()) {
   if (booking.mode === "online") {
     const graceEnd = start + waitMinutes * 60000;
     const doctorIn = booking.doctorJoinedAt?.getTime?.();
-    if (doctorIn ? doctorIn > graceEnd : now >= graceEnd) return false;
+    if (!doctorIn || doctorIn > graceEnd) return false;
   }
   return true;
 }

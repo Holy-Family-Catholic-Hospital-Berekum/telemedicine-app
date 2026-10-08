@@ -2,7 +2,12 @@
 //
 //   autoMarkNoShows       every minute: an online call the doctor joined but
 //                         the patient didn't, once the waiting time is over,
-//                         is marked a no-show (lib/consultationLifecycle.js)
+//                         is marked a no-show (lib/consultationLifecycle.js).
+//                         The other way round, an online call whose doctor
+//                         hasn't joined within the same waiting time counts
+//                         as the doctor not making it (markDoctorUnavailable):
+//                         the patient is told, the booking goes to the admin
+//                         to reschedule, and the doctor is emailed.
 //   closeExpiredNoShows   hourly: no-shows the patient left alone for
 //                         NO_SHOW_HOLD_DAYS are closed (history kept, booking
 //                         details deleted)
@@ -38,11 +43,18 @@ const {
   str,
   docId,
   randomCode,
+  toDate,
   audit,
   rateLimit,
 } = require("./lib/core");
 const { PAYSTACK_SECRET_KEY, secretKey } = require("./lib/paystack");
-const { markNoShow, closeConsultation, noShowDeadline } = require("./lib/consultationLifecycle");
+const { queueEmail } = require("./lib/mailQueue");
+const {
+  markNoShow,
+  markDoctorUnavailable,
+  closeConsultation,
+  noShowDeadline,
+} = require("./lib/consultationLifecycle");
 const { loadNoShowPolicy } = require("./siteSettings");
 
 const CURRENCY = "GHS";
@@ -66,7 +78,70 @@ exports.autoMarkNoShows = onSchedule({ schedule: "every 1 minutes", timeoutSecon
       logger.warn("Automatic no-show skipped", { consultationId: doc.id, err: err.message });
     }
   }
+  await markMissedByDoctor(policy.waitMinutes, now);
 });
+
+// How far back the doctor check looks: a call left alone longer than this
+// was already handled by an earlier run (or by hand).
+const DOCTOR_CHECK_LOOKBACK_MS = 6 * 3600 * 1000;
+
+/**
+ * Online calls whose doctor hasn't joined within `waitMinutes` of the
+ * start: the doctor didn't make it. Single-field range on scheduledTime,
+ * so no composite index is needed.
+ */
+async function markMissedByDoctor(waitMinutes, now) {
+  const cutoff = now - waitMinutes * 60 * 1000;
+  const snap = await db
+    .collection("consultations")
+    .where("scheduledTime", ">=", Timestamp.fromMillis(now - DOCTOR_CHECK_LOOKBACK_MS))
+    .where("scheduledTime", "<=", Timestamp.fromMillis(cutoff))
+    .limit(300)
+    .get();
+  for (const doc of snap.docs) {
+    const c = doc.data();
+    if (
+      c.mode !== "online" ||
+      !["scheduled", "in_progress"].includes(c.status) ||
+      c.doctorFirstJoinedAt ||
+      c.doctorUnavailable
+    ) {
+      continue;
+    }
+    try {
+      const marked = await markDoctorUnavailable({
+        consultationId: doc.id,
+        actor: { uid: "system", role: "system" },
+      });
+      if (marked) await emailDoctorMissed(marked, waitMinutes);
+    } catch (err) {
+      logger.warn("Doctor-missed check skipped", { consultationId: doc.id, err: err.message });
+    }
+  }
+}
+
+/** Tells the doctor their call was passed to the hospital to reschedule. */
+async function emailDoctorMissed(c, waitMinutes) {
+  // deepcode ignore Sqli: Firestore document ID, not SQL; doctorUid read from a server-written consultation.
+  const doctorSnap = await db.collection("adminUsers").doc(c.doctorUid).get();
+  const doctor = doctorSnap.exists ? doctorSnap.data() : null;
+  if (!doctor?.email || doctor.status !== "active") return;
+  const batch = db.batch();
+  queueEmail(batch, {
+    to: doctor.email,
+    kind: "doctor_missed",
+    data: {
+      doctorName: doctor.name || "",
+      type: c.type,
+      mode: c.mode,
+      scheduledAt: toDate(c.scheduledTime).getTime(),
+      waitMinutes,
+    },
+    // Sent after the start time, so not the default send-by.
+    sendBefore: Date.now() + 24 * 3600 * 1000,
+  });
+  await batch.commit().catch((err) => logger.warn("doctor-missed email not queued", err));
+}
 
 exports.closeExpiredNoShows = onSchedule({ schedule: "every 60 minutes", timeoutSeconds: 300 }, async () => {
   const snap = await db

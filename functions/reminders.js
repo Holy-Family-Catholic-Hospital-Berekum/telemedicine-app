@@ -38,7 +38,9 @@ const LATE_TO = 60 * MIN;
 /** Reminder keys due for consultation `c` at `now` that haven't gone out. */
 function dueReminders(c, now) {
   const start = toDate(c.scheduledTime)?.getTime();
-  if (!start) return [];
+  // The doctor can't make it: the patient was told; a new time brings new
+  // reminders.
+  if (!start || c.doctorUnavailable) return [];
   const sent = c.reminders || {};
   const setAt = toDate(c.scheduleSetAt || c.createdAt)?.getTime() ?? 0;
   const due = [];
@@ -129,7 +131,8 @@ exports.sendAppointmentReminders = onSchedule(
               queueEmail(tx, {
                 to: doctor.email,
                 kind: r.kind,
-                data: { ...base, ...extra, doctorName: doctor.name || base.doctorName },
+                // noShow: the doctor's emails state the same waiting time.
+                data: { ...base, ...extra, doctorName: doctor.name || base.doctorName, noShow },
                 sendBefore: late ? start + LATE_TO : start,
               });
             }

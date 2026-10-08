@@ -161,6 +161,13 @@ const EMAIL_STATUS = {
   not_configured: "Email not set up — phone the patient",
 };
 
+// Who said the doctor can't make it (bookings.doctorUnavailable.by).
+const DOCTOR_OUT_BY = {
+  doctor: "reported by the doctor",
+  admin: "reported by an admin",
+  system: "doctor didn't join in time",
+};
+
 export default function BookingsPanel({
   bookings,
   doctors,
@@ -169,6 +176,7 @@ export default function BookingsPanel({
   onSchedule,
   onReschedule,
   onMarkDone,
+  onDoctorUnavailable,
   onCreateSlot,
   onCancelSlot,
 }) {
@@ -193,6 +201,7 @@ export default function BookingsPanel({
   };
   const [rescheduling, setRescheduling] = useState(null);
   const [closing, setClosing] = useState(null); // { booking, outcome, close? }
+  const [doctorOut, setDoctorOut] = useState(null); // booking whose doctor can't make it
   const [creatingSlot, setCreatingSlot] = useState(false);
   const [cancellingSlot, setCancellingSlot] = useState(null);
 
@@ -471,6 +480,14 @@ export default function BookingsPanel({
                           {b.rescheduleRequest?.reason ? ` · ${b.rescheduleRequest.reason}` : ""}
                         </div>
                       )}
+                      {b.doctorUnavailable && (subtab === "reschedules" || subtab === "scheduled") && (
+                        <div className="admin-cell-sub" style={{ color: "var(--color-danger)", fontWeight: 600 }}>
+                          Doctor can't make it
+                          {DOCTOR_OUT_BY[b.doctorUnavailable.by] ? ` · ${DOCTOR_OUT_BY[b.doctorUnavailable.by]}` : ""}
+                          {" · needs a new time (no fee) or a full refund"}
+                          {b.doctorUnavailable.reason ? ` · Note: ${b.doctorUnavailable.reason}` : ""}
+                        </div>
+                      )}
                       {subtab === "reschedules" && b.rescheduleRequest?.afterNoShow && (
                         <div className="admin-cell-sub">
                           After a no-show
@@ -588,7 +605,7 @@ export default function BookingsPanel({
                             Close now
                           </button>
                         )}
-                        {subtab === "scheduled" && (
+                        {subtab === "scheduled" && !b.doctorUnavailable && (
                           <>
                             <button
                               className="btn btn-primary"
@@ -602,6 +619,14 @@ export default function BookingsPanel({
                             >
                               No-show
                             </button>
+                            {!(b.patientJoinedAt && b.doctorJoinedAt) && (
+                              <button
+                                className="btn btn-outline danger"
+                                onClick={() => setDoctorOut(b)}
+                              >
+                                Doctor can't make it
+                              </button>
+                            )}
                           </>
                         )}
                       </div>
@@ -645,7 +670,8 @@ export default function BookingsPanel({
             setRescheduling(null);
           }}
           onDecline={
-            rescheduling.rescheduleRequest?.status === "requested"
+            // A doctor who couldn't make it: the patient is owed a new time.
+            rescheduling.rescheduleRequest?.status === "requested" && !rescheduling.doctorUnavailable
               ? () => {
                   track(
                     rescheduling.bookingId,
@@ -689,6 +715,28 @@ export default function BookingsPanel({
             setCancellingSlot(null);
           }}
           onClose={() => setCancellingSlot(null)}
+        />
+      )}
+
+      {doctorOut && (
+        <ConfirmDialog
+          title="The doctor can't make it?"
+          body={
+            <>
+              {doctorOut.patientName} is emailed now that{" "}
+              {doctorOut.doctorName || "the doctor"} can't make the appointment on{" "}
+              {formatDateTime(doctorOut.scheduledTime)}. The booking moves to Reschedule
+              requests for you to give it a new time (with any doctor, no fee). The patient can
+              also ask for a full refund from their dashboard.
+            </>
+          }
+          confirmLabel="Tell the patient"
+          tone="danger"
+          onConfirm={() => {
+            onDoctorUnavailable(doctorOut);
+            setDoctorOut(null);
+          }}
+          onClose={() => setDoctorOut(null)}
         />
       )}
 

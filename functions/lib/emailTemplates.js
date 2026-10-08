@@ -108,10 +108,27 @@ function patientContent(kind, data, when) {
     case "appointment_rescheduled":
       return {
         subject: `Your consultation has moved to ${shortWhen(when)}`,
-        intro: "Your consultation has been moved to a new time.",
+        intro: data.afterDoctorUnavailable
+          ? "Here is the new time for your consultation. We're sorry your doctor couldn't make the earlier one."
+          : "Your consultation has been moved to a new time.",
         rows,
         paragraphs: withRule([...howTo, change]),
       };
+    case "patient_doctor_unavailable": {
+      const paid = Number(data.amountPaid || 0);
+      return {
+        subject: `Your doctor can't make your consultation on ${shortWhen(when)}`,
+        intro: "We're sorry: your doctor can't make this appointment, so it won't go ahead at this time.",
+        rows,
+        paragraphs: [
+          "We will email you a new appointment time soon, at no extra cost. If you'd like to tell us a time that suits you, open your dashboard and tap \"Change appointment time\".",
+          paid > 0
+            ? `If you'd rather not wait, you can ask for a full refund (GHS ${paid}) from your dashboard instead.`
+            : null,
+          `Questions? Call us on ${HOSPITAL_PHONE}.`,
+        ].filter(Boolean),
+      };
+    }
     case "patient_reminder":
       return data.lead === "24h"
         ? {
@@ -197,6 +214,15 @@ function doctorContent(kind, data, when) {
     ? "Start the call from the telemedicine room computer: sign in to the doctor portal there and choose Start video call. The video room opens 30 minutes before the appointment."
     : "The patient will come to the hospital for this consultation.";
   const portal = "Patient details are in the doctor portal.";
+  // Being on time (data.noShow: the no-show policy; the same waiting time
+  // applies to the doctor of an online call, noShow.js markMissedByDoctor).
+  const wait = Number(data.noShow?.waitMinutes ?? data.waitMinutes) || null;
+  const cantMakeIt =
+    "If you can't make it, tap \"I can't make it\" on this consultation in the doctor portal as early as you can, so the patient is told and given a new time.";
+  const onTime = online && wait
+    ? `Please be on time. If you haven't joined the video call within ${wait} minutes of the start time, the appointment counts as one you couldn't make: the patient is told and the hospital gives them a new time or a refund.`
+    : null;
+  const doctorRules = [onTime, cantMakeIt].filter(Boolean);
 
   switch (kind) {
     case "doctor_rescheduled":
@@ -204,7 +230,19 @@ function doctorContent(kind, data, when) {
         subject: `Consultation moved to ${shortWhen(when)}`,
         intro: "One of your consultations has been moved to a new time.",
         rows,
-        paragraphs: [howTo, portal],
+        paragraphs: [howTo, portal, ...doctorRules],
+      };
+    case "doctor_missed":
+      return {
+        subject: `You didn't join your ${clock(when)} consultation`,
+        intro: wait
+          ? `You hadn't joined this video consultation within ${wait} minutes of the start time, so it counts as one you couldn't make.`
+          : "You didn't join this video consultation in time, so it counts as one you couldn't make.",
+        rows,
+        paragraphs: [
+          "The patient has been told, and the hospital will give them a new time or a refund. You don't need to do anything now.",
+          "Please be on time for your video consultations, and if you can't make one, tap \"I can't make it\" in the doctor portal beforehand.",
+        ],
       };
     case "doctor_unassigned":
       return {
@@ -219,15 +257,16 @@ function doctorContent(kind, data, when) {
           subject: `Reminder: consultation tomorrow at ${clock(when)}`,
           intro: "You have a consultation in about 24 hours.",
           rows,
-          paragraphs: [howTo, portal],
+          paragraphs: [howTo, portal, ...doctorRules],
         }
         : {
           subject: `Reminder: consultation at ${clock(when)}`,
           intro: "You have a consultation in about an hour.",
           rows,
-          paragraphs: [howTo, portal],
+          paragraphs: [howTo, portal, ...doctorRules],
         };
-    case "doctor_not_joined":
+    case "doctor_not_joined": {
+      const by = wait ? clock(new Date(when.getTime() + wait * 60 * 1000)) : null;
       return {
         subject: data.otherJoined
           ? `Your patient is waiting (${clock(when)} consultation)`
@@ -237,18 +276,49 @@ function doctorContent(kind, data, when) {
           : "Your online consultation is due now and you haven't joined the call yet.",
         rows,
         paragraphs: [
-          "Please go to the telemedicine room and start the call from the doctor portal.",
-          "If you can't take this consultation, tell the admin team so the patient can be rescheduled.",
+          by
+            ? `Please go to the telemedicine room and start the call from the doctor portal before ${by} (Ghana time). After that, the appointment counts as one you couldn't make, and the patient is told.`
+            : "Please go to the telemedicine room and start the call from the doctor portal.",
+          "If you can't take this consultation, tap \"I can't make it\" on it in the doctor portal.",
         ],
       };
+    }
     default: // doctor_assigned
       return {
         subject: `New consultation on ${shortWhen(when)}`,
         intro: "A consultation has been assigned to you.",
         rows,
-        paragraphs: [howTo, portal],
+        paragraphs: [howTo, portal, ...doctorRules],
       };
   }
+}
+
+const REPORTED_BY = {
+  doctor: "The doctor reported that they can't make it.",
+  admin: "An admin reported that the doctor can't make it.",
+  system: "The doctor hadn't joined the video call within the waiting time.",
+};
+
+/** Admin emails. No patient name: admins look the booking up by reference. */
+function adminContent(kind, data, when) {
+  const online = data.mode === "online";
+  const typeLabel = TYPE_LABELS[data.type] || "Consultation";
+  return {
+    subject: `Doctor can't make a consultation on ${shortWhen(when)}: needs a new time`,
+    intro: REPORTED_BY[data.by] || "The doctor can't make this consultation.",
+    rows: [
+      ["When", formatWhen(when)],
+      ["Doctor", data.doctorName || "Not recorded"],
+      ["Consultation", `${typeLabel}, ${online ? "online (video)" : "in person"}`],
+      ["Booking reference", data.consultationId],
+    ],
+    paragraphs: [
+      data.patientJoined
+        ? "The patient had joined the video call and was waiting."
+        : null,
+      "The patient has been emailed. Please give them a new time (with this or another doctor, no fee): Bookings, then Reschedule requests. They may ask for a full refund instead.",
+    ].filter(Boolean),
+  };
 }
 
 /* ------------------------------------------------------------------ */
@@ -257,29 +327,42 @@ function doctorContent(kind, data, when) {
 
 /**
  * kind: "appointment_scheduled" | "appointment_rescheduled" |
- *       "patient_reminder" | "patient_not_joined" | "doctor_assigned" |
- *       "doctor_rescheduled" | "doctor_unassigned" | "doctor_reminder" |
- *       "doctor_not_joined"
+ *       "patient_reminder" | "patient_not_joined" | "patient_doctor_waiting" |
+ *       "patient_no_show" | "patient_doctor_unavailable" |
+ *       "doctor_assigned" | "doctor_rescheduled" | "doctor_unassigned" |
+ *       "doctor_reminder" | "doctor_not_joined" | "doctor_missed" |
+ *       "admin_doctor_unavailable"
  * data: { scheduledAt (ms), type, mode, doctorName, patientName?,
  *         consultationId? (patients only), lead? ("24h" | "1h"),
- *         otherJoined? }
+ *         otherJoined?, noShow? (policy), afterDoctorUnavailable?,
+ *         amountPaid?, waitMinutes? (doctor_missed) }
  * Returns { subject, text, html }.
  */
 function renderEmail(kind, data) {
   const when = new Date(data.scheduledAt);
   const forDoctor = kind.startsWith("doctor_");
-  const { subject, intro, rows, paragraphs } = forDoctor
-    ? doctorContent(kind, data, when)
-    : patientContent(kind, data, when);
-  const hello = forDoctor
-    ? `Hello ${data.doctorName ? String(data.doctorName).trim() : "Doctor"},`
-    : `Hello ${firstName(data.patientName, "there")},`;
-  const link = forDoctor
-    ? { href: `${SITE_URL}/doctor`, label: "Open the doctor portal" }
-    : { href: `${SITE_URL}/dashboard`, label: "Open your dashboard" };
-  const footer = forDoctor
-    ? "You are receiving this email because you are a doctor on the hospital's telemedicine service."
-    : "You are receiving this email because you booked a consultation with us.";
+  const forAdmin = kind.startsWith("admin_");
+  const { subject, intro, rows, paragraphs } = forAdmin
+    ? adminContent(kind, data, when)
+    : forDoctor
+      ? doctorContent(kind, data, when)
+      : patientContent(kind, data, when);
+  const hello = forAdmin
+    ? "Hello,"
+    : forDoctor
+      ? `Hello ${data.doctorName ? String(data.doctorName).trim() : "Doctor"},`
+      : `Hello ${firstName(data.patientName, "there")},`;
+  // Admins: no link (the staff sign-in address is never put in emails).
+  const link = forAdmin
+    ? null
+    : forDoctor
+      ? { href: `${SITE_URL}/doctor`, label: "Open the doctor portal" }
+      : { href: `${SITE_URL}/dashboard`, label: "Open your dashboard" };
+  const footer = forAdmin
+    ? "You are receiving this email because you are an administrator of the hospital's telemedicine service."
+    : forDoctor
+      ? "You are receiving this email because you are a doctor on the hospital's telemedicine service."
+      : "You are receiving this email because you booked a consultation with us.";
 
   const text = [
     hello,
@@ -289,8 +372,7 @@ function renderEmail(kind, data) {
     ...rows.map(([k, v]) => `${k}: ${v}`),
     "",
     ...paragraphs.flatMap((p) => [p, ""]),
-    `${link.label}: ${link.href}`,
-    "",
+    ...(link ? [`${link.label}: ${link.href}`, ""] : []),
     HOSPITAL_NAME,
     HOSPITAL_TOWN,
     "",
@@ -311,7 +393,7 @@ function renderEmail(kind, data) {
 ${rows.map(([k, v]) => `<tr><td style="padding:6px 12px 6px 0;color:#5c6b72;font-size:14px;white-space:nowrap;vertical-align:top;">${escapeHtml(k)}</td><td style="padding:6px 0;font-size:15px;font-weight:bold;">${escapeHtml(v)}</td></tr>`).join("\n")}
 </table>
 ${paragraphs.map((p) => `<p style="margin:0 0 10px;">${escapeHtml(p)}</p>`).join("\n")}
-<p style="margin:16px 0;"><a href="${escapeHtml(link.href)}" style="color:#0095d9;">${escapeHtml(link.label)}</a></p>
+${link ? `<p style="margin:16px 0;"><a href="${escapeHtml(link.href)}" style="color:#0095d9;">${escapeHtml(link.label)}</a></p>` : ""}
 </td></tr>
 <tr><td style="padding:16px 28px 24px;font-size:12px;color:#5c6b72;border-top:1px solid #e4eaee;">
 ${escapeHtml(HOSPITAL_NAME)}, ${escapeHtml(HOSPITAL_TOWN)}<br>

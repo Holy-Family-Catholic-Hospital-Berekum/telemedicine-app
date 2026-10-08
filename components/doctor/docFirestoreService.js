@@ -29,6 +29,7 @@ import { getRoomDevice } from "../../src/roomDevice";
 
 const callStartVideoCall = httpsCallable(functions, "startVideoCall");
 const callMarkDone = httpsCallable(functions, "markConsultationDone");
+const callReportUnavailable = httpsCallable(functions, "reportDoctorUnavailable");
 
 export async function fetchAssignedConsultations(doctorUid) {
   const snap = await getDocs(
@@ -39,7 +40,9 @@ export async function fetchAssignedConsultations(doctorUid) {
       orderBy("scheduledTime", "asc"),
     ),
   );
-  return snap.docs.map((d) => {
+  // One the doctor couldn't make waits for the hospital to give it a new
+  // time; it's off the doctor's list until then.
+  return snap.docs.filter((d) => !d.data().doctorUnavailable).map((d) => {
     const c = d.data();
     return {
       consultationId: d.id,
@@ -49,6 +52,7 @@ export async function fetchAssignedConsultations(doctorUid) {
       scheduledTime: toDate(c.scheduledTime),
       callStartedAt: toDate(c.callStartedAt),
       patientJoined: Boolean(c.patientFirstJoinedAt),
+      doctorJoined: Boolean(c.doctorFirstJoinedAt),
       patient: {
         name: c.patientName || "Patient",
         // Set when the patient is a child booked by a parent or guardian.
@@ -84,12 +88,22 @@ export async function startVideoCall(consultationId) {
 }
 
 /**
- * outcome: "completed" | "no_show". Closes the consultation and deletes
- * the booking details; the amount and any refund are worked out on the
- * server.
+ * outcome: "completed", or "no_show" for a hospital visit (video calls are
+ * marked automatically). Closes the consultation and deletes the booking
+ * details; the amount and any refund are worked out on the server.
  */
 export async function markConsultationDone({ consultationId, outcome }) {
   const { data } = await callMarkDone({ consultationId, outcome });
+  return data;
+}
+
+/**
+ * The doctor can't make this appointment. The patient is emailed and the
+ * hospital gives it a new time (or refunds it). `reason` is for the admin
+ * team only.
+ */
+export async function reportDoctorUnavailable({ consultationId, reason }) {
+  const { data } = await callReportUnavailable({ consultationId, ...(reason ? { reason } : {}) });
   return data;
 }
 

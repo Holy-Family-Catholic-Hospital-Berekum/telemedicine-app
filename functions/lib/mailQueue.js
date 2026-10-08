@@ -17,7 +17,7 @@ const MAIL_RETENTION_DAYS = 30;
 
 /**
  * kind: see lib/emailTemplates.js (patient kinds start "appointment_" or
- *       "patient_", doctor kinds "doctor_").
+ *       "patient_", doctor kinds "doctor_", admin kinds "admin_").
  * data: { scheduledAt (ms), type, mode, doctorName, ... } per template.
  * bookingId: patient emails only. The booking's lastEmail shows admins
  *       whether the patient was told.
