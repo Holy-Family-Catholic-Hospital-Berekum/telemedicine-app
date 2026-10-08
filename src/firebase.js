@@ -10,7 +10,12 @@
 
 import { initializeApp } from "firebase/app";
 import { initializeAppCheck, ReCaptchaEnterpriseProvider } from "firebase/app-check";
-import { getAuth, browserSessionPersistence, initializeRecaptchaConfig } from "firebase/auth";
+import {
+  initializeAuth,
+  browserSessionPersistence,
+  browserLocalPersistence,
+  initializeRecaptchaConfig,
+} from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 import { getFunctions } from "firebase/functions";
 
@@ -51,13 +56,16 @@ export const appCheck = appCheckSiteKey
 export const db = getFirestore(app);
 export const functions = getFunctions(app, FUNCTIONS_REGION);
 // Storage lives in ./firebaseStorage.js (loaded only by pages that upload).
-export const auth = getAuth(app);
-
+// initializeAuth rather than getAuth: no popupRedirectResolver, because the
+// app never signs in with a popup or redirect. getAuth's resolver loads
+// apis.google.com/js/api.js on every page, which the CSP blocks.
+//
 // Session-only persistence by default, so a session doesn't outlive the
-// browser on a shared hospital machine. signIn() opts into local
-// persistence only for a patient who ticks "remember me".
-auth.setPersistence(browserSessionPersistence).catch(() => {
-  // Non-fatal — falls back to Firebase's default persistence.
+// browser on a shared hospital machine. signIn() switches to local
+// persistence only for a patient who ticks "remember me"; listing local
+// second lets a remembered sign-in be picked up again on the next visit.
+export const auth = initializeAuth(app, {
+  persistence: [browserSessionPersistence, browserLocalPersistence],
 });
 
 // reCAPTCHA protection for email/password sign-in and sign-up, when it's
