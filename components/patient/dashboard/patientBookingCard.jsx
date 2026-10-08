@@ -68,7 +68,8 @@ export default function BookingCard({
   // the visit once it happens, so one still open hours after its time
   // counts as missed.
   const patientJoined = Boolean(booking.patientJoinedAt);
-  const bothJoined = patientJoined && Boolean(booking.doctorJoinedAt);
+  // Connected with the doctor in the call: the consultation took place.
+  const bothJoined = Boolean(booking.metAt);
   const { closed } = getCallWindow(booking.scheduledTime);
   const didNotHappen =
     isScheduled && closed && (booking.mode === "online" ? !bothJoined : true);

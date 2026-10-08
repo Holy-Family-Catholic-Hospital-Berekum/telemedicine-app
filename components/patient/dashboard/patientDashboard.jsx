@@ -14,7 +14,7 @@ import {
 import { useAuth } from "../../../src/context/authContext.jsx";
 import HealthcarePreloader from "../../../src/components/common/healthcarePreloader.jsx";
 
-import { callableMessage } from "../../../src/constants";
+import { callableMessage, CALL_UNLOCK_MINUTES, CALL_CLOSES_HOURS } from "../../../src/constants";
 import { CURRENT_CALL_CONSENT } from "../../../src/consentText";
 import CallConsentDialog from "./callConsentDialog";
 import {
@@ -90,6 +90,27 @@ export default function Dashboard() {
   }, [user]);
 
 
+  // While a video appointment's room is open (and the patient isn't in the
+  // call), refresh every 20 s: "Your doctor is in the call, join before…"
+  // shows up without a reload.
+  useEffect(() => {
+    if (!user || activeCall) return undefined;
+    const roomOpen = () =>
+      (bookings ?? []).some((b) => {
+        const start = b.scheduledTime?.getTime?.();
+        if (b.mode !== "online" || b.status !== "scheduled" || !start || b.metAt) return false;
+        const now = Date.now();
+        return now > start - CALL_UNLOCK_MINUTES * 60000 && now < start + CALL_CLOSES_HOURS * 3600000;
+      });
+    const id = setInterval(() => {
+      if (!roomOpen()) return;
+      fetchMyBookings(user.uid)
+        .then((data) => setBookings(data ?? []))
+        .catch(() => {});
+    }, 20000);
+    return () => clearInterval(id);
+  }, [user, bookings, activeCall]);
+
   // Rejoin goes through startVideoCall again: the server re-checks access
   // and gives this attempt a new patientSeq so the doctor re-offers.
   async function handleRejoinCall(booking, callConsentVersion) {
@@ -154,7 +175,11 @@ export default function Dashboard() {
       state: "in_progress",
       callConsentId: "recorded",
     });
-    setActiveCall({ bookingId, patientSeq: result.patientSeq ?? 0 });
+    setActiveCall({
+      bookingId,
+      patientSeq: result.patientSeq ?? 0,
+      waitDeadline: result.waitDeadline ?? null,
+    });
   }
 
   async function handleSignOut() {
@@ -469,8 +494,12 @@ export default function Dashboard() {
             consultationId={activeCallBooking.consultationId}
             role="patient"
             patientSeq={activeCall.patientSeq}
+            waitDeadline={activeCall.waitDeadline}
             viewerName={profile?.name}
-            onClose={() => setActiveCall(null)}
+            onClose={() => {
+              setActiveCall(null);
+              reloadBookings(); // e.g. the doctor couldn't make it
+            }}
           />
         )}
 

@@ -78,9 +78,9 @@ export default function DoctorDashboard() {
   const [toast, setToast] = useState(null);
   const [activeCallConsultationId, setActiveCallConsultationId] =
     useState(null);
-  // When the patient counts as a no-show (ms, from startVideoCall); the
-  // call screen counts down to it while the patient hasn't joined.
-  const [callNoShowAt, setCallNoShowAt] = useState(null);
+  // The shared countdown from startVideoCall ({ for, at }); the call screen
+  // keeps it up to date.
+  const [callWaitDeadline, setCallWaitDeadline] = useState(null);
 
   const [today] = useState(() => new Date());
   // Calls start only from the registered telemedicine room computer.
@@ -127,6 +127,14 @@ export default function DoctorDashboard() {
     };
   }, [doctor?.uid, reloadKey]);
 
+  // Refresh every 30 s outside a call: "The patient is waiting in the
+  // call" and outcomes decided by the server show up on their own.
+  useEffect(() => {
+    if (!doctor?.uid || activeCallConsultationId) return undefined;
+    const id = setInterval(() => setReloadKey((k) => k + 1), 30000);
+    return () => clearInterval(id);
+  }, [doctor?.uid, activeCallConsultationId]);
+
   const { todayList, upcomingList } = useMemo(() => {
     const sorted = [...consultations].sort(
       (a, b) => new Date(a.scheduledTime) - new Date(b.scheduledTime),
@@ -168,7 +176,7 @@ export default function DoctorDashboard() {
             : c,
         ),
       );
-      setCallNoShowAt(result.noShowAt ?? null);
+      setCallWaitDeadline(result.waitDeadline ?? null);
       setActiveCallConsultationId(consultationId);
       return { ok: true };
     } catch (err) {
@@ -200,11 +208,12 @@ export default function DoctorDashboard() {
     );
   }
 
-  async function handleCantMakeItSubmit({ consultation, reason }) {
+  async function handleCantMakeItSubmit({ consultation, reason, kind }) {
     try {
       await reportDoctorUnavailable({
         consultationId: consultation.consultationId,
         reason,
+        kind,
       });
     } catch (err) {
       showToast(callableMessage(err, "Couldn't send that. Please try again."), 4000);
@@ -214,7 +223,7 @@ export default function DoctorDashboard() {
       prev.filter((c) => c.consultationId !== consultation.consultationId),
     );
     setCantMakeItTarget(null);
-    showToast("The patient has been told. The hospital will give them a new time.", 4000);
+    showToast("The patient has been told. The hospital will give them a new time or a refund.", 4000);
   }
 
   // CHANGED — was a fake 400ms stub. Now calls real Firebase sign-out via
@@ -408,7 +417,7 @@ export default function DoctorDashboard() {
                       onStartCall={handleStartCall}
                       inRoom={Boolean(roomDevice)}
                       onMarkDone={setMarkDoneTarget}
-                      onCantMakeIt={setCantMakeItTarget}
+                      onCantMakeIt={(consultation, kind) => setCantMakeItTarget({ consultation, kind })}
                     />
                   ))}
                   <Pagination {...todayPager} noun="consultations" />
@@ -431,7 +440,7 @@ export default function DoctorDashboard() {
                       onStartCall={handleStartCall}
                       inRoom={Boolean(roomDevice)}
                       onMarkDone={setMarkDoneTarget}
-                      onCantMakeIt={setCantMakeItTarget}
+                      onCantMakeIt={(consultation, kind) => setCantMakeItTarget({ consultation, kind })}
                     />
                   ))}
                   <Pagination {...upcomingPager} noun="consultations" />
@@ -458,7 +467,8 @@ export default function DoctorDashboard() {
 
       {cantMakeItTarget && (
         <CantMakeItModal
-          consultation={cantMakeItTarget}
+          consultation={cantMakeItTarget.consultation}
+          kind={cantMakeItTarget.kind}
           onClose={() => setCantMakeItTarget(null)}
           onSubmit={handleCantMakeItSubmit}
         />
@@ -469,10 +479,10 @@ export default function DoctorDashboard() {
           consultationId={activeCallConsultationId}
           role="doctor"
           viewerName={doctor?.name}
-          noShowAt={callNoShowAt}
+          waitDeadline={callWaitDeadline}
           onClose={() => {
             setActiveCallConsultationId(null);
-            setCallNoShowAt(null);
+            setCallWaitDeadline(null);
             setReloadKey((k) => k + 1);
           }}
         />

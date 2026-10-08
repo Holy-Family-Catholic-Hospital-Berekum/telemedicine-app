@@ -66,6 +66,7 @@ exports.startVideoCall = consultations.startVideoCall;
 exports.getTurnCredentials = consultations.getTurnCredentials;
 exports.markConsultationDone = consultations.markConsultationDone;
 exports.reportDoctorUnavailable = consultations.reportDoctorUnavailable;
+exports.callHeartbeat = consultations.callHeartbeat;
 
 // No-shows: automatic marking after the waiting time, paid reschedule,
 // closing the ones left alone (noShow.js)

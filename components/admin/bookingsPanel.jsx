@@ -3,7 +3,7 @@ import { Loader2 } from "lucide-react";
 import SchedulingModal from "./schedulingModal.jsx";
 import CreateScheduleModal from "./createScheduleModal.jsx";
 import ConfirmDialog from "./confirmDialog.jsx";
-import { TYPE_LABELS, MODE_LABELS, OUTCOME_LABELS, formatDateTime } from "../../src/constants";
+import { TYPE_LABELS, MODE_LABELS, OUTCOME_LABELS, formatDateTime, formatTime } from "../../src/constants";
 import {
   IconPhone,
   IconCalendar,
@@ -527,12 +527,10 @@ export default function BookingsPanel({
                             >
                               {b.doctorName || "—"} ·{" "}
                               {formatDateTime(b.scheduledTime)}
-                              {b.patientJoinedAt && b.doctorJoinedAt
-                                ? " · call started"
-                                : b.callStartedAt
-                                  ? b.patientJoinedAt
-                                    ? " · doctor hasn't joined"
-                                    : " · patient hasn't joined"
+                              {b.metAt
+                                ? " · consultation started"
+                                : b.waitDeadline?.for
+                                  ? ` · ${b.waitDeadline.for === "doctor" ? "patient waiting; doctor" : "doctor waiting; patient"} must join by ${formatTime(b.waitDeadline.at)}`
                                   : ""}
                             </div>
                             {b.lastEmail && (
@@ -577,9 +575,9 @@ export default function BookingsPanel({
                             )}
                           </button>
                         )}
-                        {/* A call one side never joined was missed and can be moved. */}
+                        {/* A call the two were never connected in was missed and can be moved. */}
                         {(subtab === "reschedules" ||
-                          (subtab === "scheduled" && !(b.patientJoinedAt && b.doctorJoinedAt))) && (
+                          (subtab === "scheduled" && !b.metAt)) && (
                           <button
                             className="btn btn-outline"
                             onClick={() => setRescheduling(b)}
@@ -619,7 +617,7 @@ export default function BookingsPanel({
                             >
                               No-show
                             </button>
-                            {!(b.patientJoinedAt && b.doctorJoinedAt) && (
+                            {!b.metAt && (
                               <button
                                 className="btn btn-outline danger"
                                 onClick={() => setDoctorOut(b)}

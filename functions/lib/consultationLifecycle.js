@@ -12,27 +12,41 @@
 //                     deletes the booking, the consultation and the patient
 //                     details they held (hospital retention decision).
 //
-// No-show timing (noShowDeadline): the patient has the policy's
-// waitMinutes to join, counted from the start time or, for an online call,
-// from when the doctor joined if that was later. Online, it only applies
-// once the doctor has joined (if the doctor never came, it isn't the
-// patient's no-show). Nobody can mark a no-show before the deadline.
+// Waiting rule for a video call (hospital decision), with W = the
+// no-show policy's waitMinutes:
+//   - Nobody in the room by start + W: the doctor's no-show.
+//   - When one side arrives in an empty room, the other side has until
+//     max(start, arrival) + W to be in the room (consultations.waitDeadline
+//     { for, at }); arriving early counts as arriving at the start.
+//   - Leaving early protects nobody: if the waiting side leaves and the
+//     other arrives later, the countdown starts again for the one who left.
+//   - The deadline passing with that side not in the room: the patient's
+//     no-show (markNoShow) or the doctor's (markDoctorUnavailable). noShow.js
+//     enforces it every minute and startVideoCall refuses a late arrival.
+//   - Once both are actually connected (metAt) the consultation has taken
+//     place and no deadlines apply. If it can't be finished, the doctor
+//     reports "call couldn't be completed" (markDoctorUnavailable kind
+//     "call_incomplete"): free new time or full refund.
+// Who's in the room comes from consultations.presence.{doctor,patient}:
+// the time of each side's last check-in (startVideoCall, callHeartbeat
+// every ~15 s), counted as present for PRESENCE_TTL_MS.
+// In person: the patient has W from the start time; the doctor (or an
+// admin) marks the no-show.
 //
 // The doctor can't make it (markDoctorUnavailable): reported by the doctor
-// or an admin, or found by the automatic job (noShow.js) when the doctor of
-// an online call hasn't joined within the same waiting time. The booking is
-// KEPT as a reschedule request (rescheduleRequest.byHospital) for an admin
-// to give it a new time; the patient is emailed and may ask for a full
-// refund instead. Meanwhile it can't be joined, marked a no-show or closed
-// as completed. A refund closes it as "cancelled".
+// or an admin, or by the automatic job when the doctor's deadline passes.
+// The booking is KEPT as a reschedule request (rescheduleRequest.byHospital)
+// for an admin to give it a new time; the patient and admins are emailed
+// and the patient may ask for a full refund instead. Meanwhile it can't be
+// joined, marked a no-show or closed as completed. A refund closes it as
+// "cancelled".
 //
-// Late reschedules (rescheduleCountsAsNoShow): from the start time on, a
-// patient who hasn't joined and asks for a new time is treated as a no-show
-// straight away (markNoShow byPatient), so the no-show fee applies. Not if
-// the doctor is to blame: an online call whose doctor hasn't joined (yet),
-// or joined only after the waiting time. If neither side turns up, it's
-// the doctor's no-show (markDoctorUnavailable), never the patient's. A reschedule asked for BEFORE the
-// start protects the consultation from being marked a no-show.
+// Late reschedules (rescheduleCountsAsNoShow): a patient asking for a new
+// time while the doctor is waiting for them (the deadline is the
+// patient's), or after the start of a hospital visit, is treated as a
+// no-show straight away (markNoShow byPatient), so the no-show fee
+// applies. A reschedule asked for before the start protects the
+// consultation from being marked a no-show.
 
 const logger = require("firebase-functions/logger");
 const {
@@ -49,31 +63,49 @@ const { queueEmail } = require("./mailQueue");
 const { loadNoShowPolicy } = require("../siteSettings");
 
 const NO_SHOW_HOLD_DAYS = 14;
+// A side counts as in the room for this long after its last check-in
+// (the call screen checks in every ~15 s).
+const PRESENCE_TTL_MS = 45 * 1000;
 
-/** When the patient counts as a no-show (ms), or null if it can't apply yet. */
-function noShowDeadline(c, waitMinutes) {
+/** Is `role` ("doctor" | "patient") in the video room now? */
+function isPresent(c, role, now = Date.now()) {
+  const seen = toDate(role === "doctor" ? c.presence?.doctor : c.presence?.patient)?.getTime();
+  return Boolean(seen) && now - seen < PRESENCE_TTL_MS;
+}
+
+/**
+ * Who must be in the room by when: { for: "doctor" | "patient", at (ms) },
+ * or null (no deadline running: the consultation took place, or one side
+ * is waiting for a countdown that hasn't been set yet).
+ * In person: the patient, start + W.
+ */
+function waitDeadline(c, waitMinutes) {
   const start = toDate(c.scheduledTime)?.getTime();
-  if (!start) return null;
-  let base = start;
-  if (c.mode === "online") {
-    const doctorIn = toDate(c.doctorFirstJoinedAt)?.getTime();
-    if (!doctorIn) return null;
-    base = Math.max(start, doctorIn);
+  if (!start || c.metAt) return null;
+  const wait = waitMinutes * 60 * 1000;
+  if (c.mode !== "online") return { for: "patient", at: start + wait };
+  if (c.waitDeadline?.for) {
+    return { for: c.waitDeadline.for, at: toDate(c.waitDeadline.at).getTime() };
   }
-  return base + waitMinutes * 60 * 1000;
+  // Nobody has been in the room: the doctor has until start + W.
+  if (!c.patientFirstJoinedAt && !c.doctorFirstJoinedAt) return { for: "doctor", at: start + wait };
+  return null;
+}
+
+/** The deadline set when one side is in the room and the other isn't. */
+function deadlineFrom(c, waitMinutes, now = Date.now()) {
+  const start = toDate(c.scheduledTime).getTime();
+  return Math.max(start, now) + waitMinutes * 60 * 1000;
 }
 
 /** True if a reschedule asked for now counts as a no-show (fee applies). */
 function rescheduleCountsAsNoShow(c, waitMinutes, now = Date.now()) {
   const start = toDate(c.scheduledTime)?.getTime();
-  if (!start || now < start || c.patientFirstJoinedAt) return false;
-  if (c.mode === "online") {
-    // Only once the doctor has joined, in time: if neither side is there,
-    // it's the doctor's no-show, and the patient's request stays free.
-    const graceEnd = start + waitMinutes * 60 * 1000;
-    const doctorIn = toDate(c.doctorFirstJoinedAt)?.getTime();
-    if (!doctorIn || doctorIn > graceEnd) return false;
-  }
+  if (!start || now < start || c.metAt) return false;
+  // Online: only while the doctor is the one waiting (the deadline is the
+  // patient's). If neither side is there, it's the doctor's no-show and
+  // the patient's request stays free.
+  if (c.mode === "online") return c.waitDeadline?.for === "patient";
   return true;
 }
 
@@ -104,8 +136,8 @@ async function markNoShow({ consultationId, actor, meta = null, expectDoctorUid 
       if (actor.role === "system") return null;
       throw new HttpsError("failed-precondition", "The doctor couldn't make this appointment, so it isn't a no-show.");
     }
-    if (c.patientFirstJoinedAt) {
-      throw new HttpsError("failed-precondition", "The patient joined this consultation, so it isn't a no-show.");
+    if (c.metAt) {
+      throw new HttpsError("failed-precondition", "The patient and doctor were in the call together, so it isn't a no-show.");
     }
     const bookingRef = db.collection("bookings").doc(c.bookingId);
     const bookingSnap = await tx.get(bookingRef);
@@ -124,13 +156,14 @@ async function markNoShow({ consultationId, actor, meta = null, expectDoctorUid 
           "The patient asked to reschedule this consultation before it started, so it isn't a no-show.",
         );
       }
-      const deadline = noShowDeadline(c, policy.waitMinutes);
-      if (deadline === null) {
+      const d = waitDeadline(c, policy.waitMinutes);
+      if (!d || d.for !== "patient" || isPresent(c, "patient")) {
         throw new HttpsError(
           "failed-precondition",
-          "A no-show can only be marked after the doctor has joined the call and waited for the patient.",
+          "A no-show can only be marked once the doctor has waited in the call for the patient.",
         );
       }
+      const deadline = d.at;
       if (Date.now() < deadline) {
         const mins = Math.ceil((deadline - Date.now()) / 60000);
         throw new HttpsError(
@@ -256,6 +289,14 @@ async function closeConsultation({ consultationId, outcome, actor, meta = null, 
     if (c.status === "no_show" && (outcome !== "no_show" || expectDoctorUid)) {
       throw new HttpsError("failed-precondition", "This consultation was marked as a no-show.");
     }
+    // A video call the two never actually had: the doctor can't close it as
+    // completed (an admin still can, e.g. after a call by phone).
+    if (outcome === "completed" && expectDoctorUid && c.mode === "online" && !c.metAt) {
+      throw new HttpsError(
+        "failed-precondition",
+        "You and the patient were never connected in this call, so it can't be closed as completed.",
+      );
+    }
     // The doctor couldn't make it: it gets a new time, or a refund closes it.
     if (c.doctorUnavailable && outcome !== "cancelled") {
       throw new HttpsError(
@@ -289,11 +330,14 @@ async function closeConsultation({ consultationId, outcome, actor, meta = null, 
       scheduledTime: c.scheduledTime,
       // Online: when the call actually began. In person: the booked time.
       startedAt: c.callStartedAt || c.scheduledTime,
-      // Whether each side joined the video call (online only). A patient
-      // who joined can't ask for a refund (refunds.js).
+      // Whether each side joined the video call (online only), and whether
+      // they were ever connected together (met): a patient who met the
+      // doctor can't ask for a refund (refunds.js).
       patientJoined: Boolean(c.patientFirstJoinedAt),
       doctorJoined: Boolean(c.doctorFirstJoinedAt),
+      met: Boolean(c.metAt),
       doctorUnavailable: Boolean(c.doctorUnavailable),
+      doctorUnavailableKind: c.doctorUnavailable?.kind || null,
       endedAt: serverTime(),
       amountPaid,
       noShowFeePaid: Number(booking.noShowFee?.amount || 0),
@@ -377,15 +421,28 @@ async function closeConsultation({ consultationId, outcome, actor, meta = null, 
 }
 
 /**
- * The doctor can't make this appointment.
+ * The consultation needs a new time because of the hospital's side:
+ *   kind "doctor_absent"   the doctor can't make it / didn't come in time
+ *                          (before the two were connected)
+ *   kind "call_incomplete" they were connected but the call couldn't be
+ *                          finished (reported by the doctor or an admin)
+ * Either way the patient gets a free new time or a full refund.
  * actor: { uid, role } (doctor, admin, or "system" for the automatic job)
  * reason: optional note for the admin team; never shown to the patient and
  * kept out of the audit log (it may be personal).
  * expectDoctorUid: when a doctor acts, the consultation must be theirs.
- * Resolves the consultation's { doctorUid, scheduledTime, type, mode } if
- * marked, or null if already marked (or, for the system, no longer due).
+ * Resolves { doctorUid, doctorName, scheduledTime, type, mode,
+ * patientJoined, kind } if marked, or null if already marked (or, for the
+ * system, no longer due).
  */
-async function markDoctorUnavailable({ consultationId, actor, reason = null, meta = null, expectDoctorUid = null }) {
+async function markDoctorUnavailable({
+  consultationId,
+  actor,
+  kind = "doctor_absent",
+  reason = null,
+  meta = null,
+  expectDoctorUid = null,
+}) {
   const consultationRef = db.collection("consultations").doc(consultationId);
   const system = actor.role === "system";
 
@@ -402,11 +459,23 @@ async function markDoctorUnavailable({ consultationId, actor, reason = null, met
       if (system) return null;
       throw new HttpsError("failed-precondition", "This consultation is closed or was marked as a no-show.");
     }
-    if (c.patientFirstJoinedAt && c.doctorFirstJoinedAt) {
-      if (system) return null;
-      throw new HttpsError("failed-precondition", "This consultation has already taken place.");
+    const incomplete = kind === "call_incomplete";
+    if (incomplete && system) return null;
+    if (incomplete && !c.metAt) {
+      throw new HttpsError(
+        "failed-precondition",
+        "You and the patient were never connected in this call. Use \"I can't make it\" instead, or wait: the patient is marked as a no-show automatically if they don't come.",
+      );
     }
-    if (system && c.doctorFirstJoinedAt) return null;
+    if (!incomplete && c.metAt) {
+      if (system) return null;
+      throw new HttpsError(
+        "failed-precondition",
+        "The call has already started. If it couldn't be finished, use \"Call couldn't be completed\".",
+      );
+    }
+    // The automatic check: only if the doctor still isn't in the room.
+    if (system && isPresent(c, "doctor")) return null;
 
     const bookingRef = db.collection("bookings").doc(c.bookingId);
     const [bookingSnap, refundSnap] = await Promise.all([
@@ -435,10 +504,11 @@ async function markDoctorUnavailable({ consultationId, actor, reason = null, met
       return null;
     }
 
-    const flag = { at: Timestamp.now(), by: actor.role, byUid: actor.uid, reason: reason || null };
+    const flag = { kind, at: Timestamp.now(), by: actor.role, byUid: actor.uid, reason: reason || null };
     tx.update(consultationRef, {
       status: "scheduled",
       doctorUnavailable: flag,
+      waitDeadline: FieldValue.delete(),
       updatedAt: serverTime(),
     });
     if (booking) {
@@ -449,9 +519,10 @@ async function markDoctorUnavailable({ consultationId, actor, reason = null, met
           status: "requested",
           byHospital: true,
           preferredTime: booking.rescheduleRequest?.preferredTime || null,
-          reason: "The doctor couldn't make it",
+          reason: incomplete ? "The call couldn't be completed" : "The doctor couldn't make it",
           requestedAt: Timestamp.now(),
         },
+        waitDeadline: FieldValue.delete(),
         updatedAt: serverTime(),
       });
       queueEmail(tx, {
@@ -466,6 +537,7 @@ async function markDoctorUnavailable({ consultationId, actor, reason = null, met
           scheduledAt: toDate(c.scheduledTime).getTime(),
           consultationId,
           amountPaid: Number(booking.amountPaid || 0),
+          incomplete,
         },
         // Often sent after the start time (the automatic check), so not
         // the default "drop after the appointment time".
@@ -475,12 +547,14 @@ async function markDoctorUnavailable({ consultationId, actor, reason = null, met
     audit(tx, {
       actorId: actor.uid,
       actorRole: actor.role,
-      action: system
-        ? "Doctor didn't join the video call in time (patient told, sent for rescheduling)"
-        : actor.role === "doctor"
-          ? "Doctor reported they can't make an appointment"
-          : "Reported that the doctor can't make an appointment",
-      code: "consultation.doctor_unavailable",
+      action: incomplete
+        ? "Reported that a video call couldn't be completed (patient told, sent for rescheduling)"
+        : system
+          ? "Doctor didn't join the video call in time (patient told, sent for rescheduling)"
+          : actor.role === "doctor"
+            ? "Doctor reported they can't make an appointment"
+            : "Reported that the doctor can't make an appointment",
+      code: incomplete ? "consultation.call_incomplete" : "consultation.doctor_unavailable",
       category: "consultation",
       targetType: "consultation",
       targetId: consultationId,
@@ -494,6 +568,7 @@ async function markDoctorUnavailable({ consultationId, actor, reason = null, met
       type: c.type,
       mode: c.mode,
       patientJoined: Boolean(c.patientFirstJoinedAt),
+      kind,
     };
   });
 
@@ -513,7 +588,16 @@ async function markDoctorUnavailable({ consultationId, actor, reason = null, met
  * new time is given quickly. No patient name in the email: admins open the
  * booking (by its reference) in Bookings -> Reschedule requests.
  */
-async function emailAdminsDoctorUnavailable({ consultationId, by, doctorName, scheduledTime, type, mode, patientJoined }) {
+async function emailAdminsDoctorUnavailable({
+  consultationId,
+  by,
+  kind,
+  doctorName,
+  scheduledTime,
+  type,
+  mode,
+  patientJoined,
+}) {
   const admins = await db
     .collection("adminUsers")
     .where("role", "==", "admin")
@@ -528,6 +612,7 @@ async function emailAdminsDoctorUnavailable({ consultationId, by, doctorName, sc
       data: {
         consultationId,
         by,
+        kind,
         doctorName,
         type,
         mode,
@@ -541,7 +626,10 @@ async function emailAdminsDoctorUnavailable({ consultationId, by, doctorName, sc
 }
 
 module.exports = {
-  noShowDeadline,
+  PRESENCE_TTL_MS,
+  isPresent,
+  waitDeadline,
+  deadlineFrom,
   rescheduleCountsAsNoShow,
   markNoShow,
   markDoctorUnavailable,

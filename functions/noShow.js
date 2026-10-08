@@ -1,13 +1,12 @@
 // functions/noShow.js
 //
-//   autoMarkNoShows       every minute: an online call the doctor joined but
-//                         the patient didn't, once the waiting time is over,
-//                         is marked a no-show (lib/consultationLifecycle.js).
-//                         The other way round, an online call whose doctor
-//                         hasn't joined within the same waiting time counts
-//                         as the doctor not making it (markDoctorUnavailable):
-//                         the patient is told, the booking goes to the admin
-//                         to reschedule, and the doctor is emailed.
+//   autoMarkNoShows       every minute: enforces the video-call waiting rule
+//                         (lib/consultationLifecycle.js waitDeadline). When
+//                         a side's countdown runs out and they aren't in the
+//                         room: the patient is marked a no-show, or the
+//                         doctor counts as not making it
+//                         (markDoctorUnavailable: patient and admins told,
+//                         free new time or full refund, doctor emailed).
 //   closeExpiredNoShows   hourly: no-shows the patient left alone for
 //                         NO_SHOW_HOLD_DAYS are closed (history kept, booking
 //                         details deleted)
@@ -53,7 +52,8 @@ const {
   markNoShow,
   markDoctorUnavailable,
   closeConsultation,
-  noShowDeadline,
+  waitDeadline,
+  isPresent,
 } = require("./lib/consultationLifecycle");
 const { loadNoShowPolicy } = require("./siteSettings");
 
@@ -65,60 +65,43 @@ const CURRENCY = "GHS";
 
 exports.autoMarkNoShows = onSchedule({ schedule: "every 1 minutes", timeoutSeconds: 120 }, async () => {
   const policy = await loadNoShowPolicy();
-  const snap = await db.collection("consultations").where("status", "==", "in_progress").limit(300).get();
   const now = Date.now();
-  for (const doc of snap.docs) {
-    const c = doc.data();
-    if (c.mode !== "online" || c.patientFirstJoinedAt || !c.doctorFirstJoinedAt) continue;
-    const deadline = noShowDeadline(c, policy.waitMinutes);
-    if (!deadline || now < deadline) continue;
-    try {
-      await markNoShow({ consultationId: doc.id, actor: { uid: "system", role: "system" } });
-    } catch (err) {
-      logger.warn("Automatic no-show skipped", { consultationId: doc.id, err: err.message });
-    }
-  }
-  await markMissedByDoctor(policy.waitMinutes, now);
-});
-
-// How far back the doctor check looks: a call left alone longer than this
-// was already handled by an earlier run (or by hand).
-const DOCTOR_CHECK_LOOKBACK_MS = 6 * 3600 * 1000;
-
-/**
- * Online calls whose doctor hasn't joined within `waitMinutes` of the
- * start: the doctor didn't make it. Single-field range on scheduledTime,
- * so no composite index is needed.
- */
-async function markMissedByDoctor(waitMinutes, now) {
-  const cutoff = now - waitMinutes * 60 * 1000;
+  // Single-field range on scheduledTime: no composite index needed. A
+  // deadline is never before the start, and the room closes 4 h after it.
   const snap = await db
     .collection("consultations")
-    .where("scheduledTime", ">=", Timestamp.fromMillis(now - DOCTOR_CHECK_LOOKBACK_MS))
-    .where("scheduledTime", "<=", Timestamp.fromMillis(cutoff))
-    .limit(300)
+    .where("scheduledTime", ">=", Timestamp.fromMillis(now - LOOKBACK_MS))
+    .where("scheduledTime", "<=", Timestamp.fromMillis(now))
+    .limit(500)
     .get();
+  const system = { uid: "system", role: "system" };
   for (const doc of snap.docs) {
     const c = doc.data();
     if (
       c.mode !== "online" ||
       !["scheduled", "in_progress"].includes(c.status) ||
-      c.doctorFirstJoinedAt ||
-      c.doctorUnavailable
+      c.doctorUnavailable ||
+      c.metAt
     ) {
       continue;
     }
+    const dl = waitDeadline(c, policy.waitMinutes);
+    if (!dl || now < dl.at || isPresent(c, dl.for, now)) continue;
     try {
-      const marked = await markDoctorUnavailable({
-        consultationId: doc.id,
-        actor: { uid: "system", role: "system" },
-      });
-      if (marked) await emailDoctorMissed(marked, waitMinutes);
+      if (dl.for === "doctor") {
+        const marked = await markDoctorUnavailable({ consultationId: doc.id, actor: system });
+        if (marked) await emailDoctorMissed(marked, policy.waitMinutes);
+      } else {
+        await markNoShow({ consultationId: doc.id, actor: system });
+      }
     } catch (err) {
-      logger.warn("Doctor-missed check skipped", { consultationId: doc.id, err: err.message });
+      logger.warn("Automatic no-show skipped", { consultationId: doc.id, for: dl.for, err: err.message });
     }
   }
-}
+});
+
+// How far back the job looks (the video room closes 4 h after the start).
+const LOOKBACK_MS = 6 * 3600 * 1000;
 
 /** Tells the doctor their call was passed to the hospital to reschedule. */
 async function emailDoctorMissed(c, waitMinutes) {
@@ -199,6 +182,8 @@ function reopenForReschedule(tx, { bookingRef, booking, consultationRef, fee }) 
     callStartedAt: null,
     patientJoinedAt: FieldValue.delete(),
     doctorJoinedAt: FieldValue.delete(),
+    waitDeadline: FieldValue.delete(),
+    metAt: FieldValue.delete(),
     updatedAt: serverTime(),
   });
   tx.update(consultationRef, {
@@ -209,6 +194,9 @@ function reopenForReschedule(tx, { bookingRef, booking, consultationRef, fee }) 
     callStartedAt: null,
     patientFirstJoinedAt: FieldValue.delete(),
     doctorFirstJoinedAt: FieldValue.delete(),
+    presence: FieldValue.delete(),
+    waitDeadline: FieldValue.delete(),
+    metAt: FieldValue.delete(),
     reminders: FieldValue.delete(),
     updatedAt: serverTime(),
   });
@@ -413,4 +401,5 @@ exports.getNoShowFeeStatus = onCall({ secrets: [PAYSTACK_SECRET_KEY] }, async (r
 });
 
 exports.markNoShowFeePaid = markNoShowFeePaid;
+exports.emailDoctorMissed = emailDoctorMissed;
 exports.beginNoShowReschedule = beginNoShowReschedule;

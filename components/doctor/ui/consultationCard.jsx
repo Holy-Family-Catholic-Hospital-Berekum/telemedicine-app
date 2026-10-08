@@ -161,20 +161,32 @@ export default function ConsultationCard({
             </span>
           )}
 
-          <button
-            type="button"
-            onClick={() => onMarkDone(consultation)}
-            className="flex items-center gap-2 rounded-sm border border-[#DCE6EC] px-3.5 py-2 text-sm font-medium text-[#12242C] transition hover:border-[#0095D9]"
-          >
-            <CheckSquare size={15} strokeWidth={1.75} />
-            Mark done
-          </button>
-
-          {/* Until the consultation has taken place (both in the call). */}
-          {!(consultation.patientJoined && consultation.doctorJoined) && (
+          {/* A video call can be closed as completed only once the two
+              were connected; a hospital visit any time. */}
+          {(!isOnline || consultation.met) && (
             <button
               type="button"
-              onClick={() => onCantMakeIt(consultation)}
+              onClick={() => onMarkDone(consultation)}
+              className="flex items-center gap-2 rounded-sm border border-[#DCE6EC] px-3.5 py-2 text-sm font-medium text-[#12242C] transition hover:border-[#0095D9]"
+            >
+              <CheckSquare size={15} strokeWidth={1.75} />
+              Mark done
+            </button>
+          )}
+
+          {consultation.met ? (
+            <button
+              type="button"
+              onClick={() => onCantMakeIt(consultation, "call_incomplete")}
+              className="flex items-center gap-2 rounded-sm border border-[#DCE6EC] px-3.5 py-2 text-sm font-medium text-[#B23A3A] transition hover:border-[#B23A3A]"
+            >
+              <CalendarX2 size={15} strokeWidth={1.75} />
+              Call couldn&apos;t be completed
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => onCantMakeIt(consultation, "doctor_absent")}
               className="flex items-center gap-2 rounded-sm border border-[#DCE6EC] px-3.5 py-2 text-sm font-medium text-[#B23A3A] transition hover:border-[#B23A3A]"
             >
               <CalendarX2 size={15} strokeWidth={1.75} />
@@ -194,9 +206,17 @@ export default function ConsultationCard({
             </span>
           )}
 
-          {callInProgress && !consultation.patientJoined && (
+          {isOnline && consultation.waitDeadline?.for === "doctor" && (
+            <span className="text-xs font-semibold text-[#B23A3A]">
+              The patient is waiting in the call. Join before{" "}
+              {formatTime(consultation.waitDeadline.at)}, or it counts as an appointment you
+              couldn&apos;t make.
+            </span>
+          )}
+
+          {isOnline && consultation.waitDeadline?.for === "patient" && (
             <span className="text-xs text-[#5C6B72]">
-              The patient hasn't joined yet.
+              Waiting for the patient until {formatTime(consultation.waitDeadline.at)}.
             </span>
           )}
 

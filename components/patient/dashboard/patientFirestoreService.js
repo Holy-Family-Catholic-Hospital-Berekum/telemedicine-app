@@ -84,6 +84,12 @@ export async function fetchMyBookings(patientUid) {
       patientJoinedAt: toDate(b.patientJoinedAt),
       doctorJoinedAt: toDate(b.doctorJoinedAt),
       noShowAt: toDate(b.noShowAt),
+      // The two were connected in the video call: it has taken place.
+      metAt: toDate(b.metAt),
+      // The shared countdown: whose turn it is to be in the room, by when.
+      waitDeadline: b.waitDeadline?.for
+        ? { for: b.waitDeadline.for, at: toDate(b.waitDeadline.at) }
+        : null,
       noShowExpiresAt: toDate(b.noShowExpiresAt),
       state: displayState(b),
     };

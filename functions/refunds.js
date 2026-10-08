@@ -17,8 +17,8 @@
 //   - A no-show closed straight away (history), e.g. before no-shows were
 //     held: its recorded refundOwed. Not one whose 14-day hold ran out or
 //     that an admin closed (refundClosed).
-// A patient who joined the video call, or whose in-person visit was closed
-// as completed, can't ask. A refund and a reschedule exclude each other.
+// A patient who was connected with the doctor in the video call, or whose
+// in-person visit was closed as completed, can't ask. A refund and a reschedule exclude each other.
 //
 // A Paystack refund goes back to the ORIGINAL payment (wallet or card);
 // refundSync.js follows it until Paystack reports it done or failed. When
@@ -49,8 +49,8 @@ const hospitalDay = (date) => date.toISOString().slice(0, 10);
 const round2 = (n) => Math.round(n * 100) / 100;
 
 const NOT_ELIGIBLE =
-  "You attended this consultation, so it can't be refunded. If something " +
-  "went wrong, please call the hospital.";
+  "You were in the call with your doctor, so this consultation can't be " +
+  "refunded. If something went wrong, please call the hospital.";
 
 /**
  * data: { source: "history" | "booking", id, reason, refundPhone? }
@@ -95,7 +95,7 @@ exports.requestRefund = onCall(async (request) => {
     } else if (rec.doctorUnavailable) {
       // The doctor couldn't make it: in full, straight away, even if the
       // patient had joined the call and waited.
-      outcome = "doctor_unavailable";
+      outcome = rec.doctorUnavailable.kind === "call_incomplete" ? "call_incomplete" : "doctor_unavailable";
       suggestedRefund = amountPaid;
     } else {
       if (rec.rescheduleRequest?.status === "requested") {
@@ -104,8 +104,10 @@ exports.requestRefund = onCall(async (request) => {
           "You've asked to reschedule this consultation. Wait for the new time, or call the hospital.",
         );
       }
+      // deepcode ignore Sqli: Firestore document ID, not SQL; consultationId read from the patient's server-written booking.
       const consultation = await db.collection("consultations").doc(rec.consultationId).get();
-      if (rec.patientJoinedAt || consultation.data()?.patientFirstJoinedAt) {
+      // Connected with the doctor: the consultation took place.
+      if (rec.metAt || consultation.data()?.metAt) {
         throw new HttpsError("failed-precondition", NOT_ELIGIBLE);
       }
       const scheduled = toDate(rec.scheduledTime);
@@ -119,7 +121,9 @@ exports.requestRefund = onCall(async (request) => {
       suggestedRefund = amountPaid;
     }
   } else {
-    if (rec.outcome !== "no_show" || rec.patientJoined === true) {
+    // History: "met" when recorded; older records only know who joined.
+    const met = rec.met ?? rec.patientJoined === true;
+    if (rec.outcome !== "no_show" || met) {
       throw new HttpsError("failed-precondition", NOT_ELIGIBLE);
     }
     if (rec.refundClosed === true) {
@@ -141,7 +145,7 @@ exports.requestRefund = onCall(async (request) => {
     if (existing.exists) {
       throw new HttpsError("already-exists", "You've already requested a refund for this consultation.");
     }
-    if (outcome === "doctor_unavailable") {
+    if (outcome === "doctor_unavailable" || outcome === "call_incomplete") {
       // An admin may have given it a new time since it was read.
       const fresh = await tx.get(sourceRef);
       if (!fresh.exists || !fresh.data().doctorUnavailable) {
@@ -327,7 +331,7 @@ exports.resolveRefundRequest = onCall({ secrets: [PAYSTACK_SECRET_KEY] }, async 
     await closeConsultation({
       consultationId,
       // The doctor couldn't make it: cancelled by the hospital, not missed.
-      outcome: r.outcome === "doctor_unavailable" ? "cancelled" : "no_show",
+      outcome: ["doctor_unavailable", "call_incomplete"].includes(r.outcome) ? "cancelled" : "no_show",
       actor: { uid: caller.uid, role: "admin" },
       meta,
     }).catch((err) => {

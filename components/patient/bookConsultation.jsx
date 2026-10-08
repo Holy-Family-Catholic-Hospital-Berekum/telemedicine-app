@@ -1313,7 +1313,7 @@ export default function BookConsultation() {
                     ) : (
                     <p className="mt-1.5 text-[16px] text-black/80">
                       {online
-                        ? `If you haven't joined within ${settings.noShow.waitMinutes} minutes of the start (or of your doctor joining the video call, if later), the consultation is marked as missed.`
+                        ? `Whoever is in the video room first waits up to ${settings.noShow.waitMinutes} minutes for the other (from the start time, or from when they joined if later). If your doctor is waiting and you don't join in that time, the consultation is marked as missed. If your doctor doesn't join in time, you get a new time at no cost or a full refund.`
                         : `If you don't arrive within ${settings.noShow.waitMinutes} minutes of the start, the visit may be marked as missed.`}
                       {settings.noShow.rescheduleFee > 0
                         ? ` To book a new time after that, you pay an extra GHS ${settings.noShow.rescheduleFee}`

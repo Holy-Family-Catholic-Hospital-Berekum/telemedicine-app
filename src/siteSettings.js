@@ -73,8 +73,9 @@ export const DEFAULT_SERVICES = [
 /**
  * No-show policy, until an admin sets it (Control panel). Keep in step with
  * DEFAULT_NO_SHOW in functions/siteSettings.js; the server enforces it.
- *   waitMinutes     time the patient has to join after the start (or after
- *                   the doctor joined, if later)
+ *   waitMinutes     how long whoever is in the video room first waits for
+ *                   the other (from the start, or from when they joined if
+ *                   later); functions/lib/consultationLifecycle.js
  *   forfeitPercent  share of the fee kept when a no-show asks for a refund
  *   rescheduleFee   GHS a no-show pays to book a new time
  */

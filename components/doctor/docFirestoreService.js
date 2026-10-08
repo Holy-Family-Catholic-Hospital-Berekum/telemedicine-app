@@ -53,6 +53,12 @@ export async function fetchAssignedConsultations(doctorUid) {
       callStartedAt: toDate(c.callStartedAt),
       patientJoined: Boolean(c.patientFirstJoinedAt),
       doctorJoined: Boolean(c.doctorFirstJoinedAt),
+      // Connected together in the call: the consultation has taken place.
+      met: Boolean(c.metAt),
+      // The shared countdown: whose turn it is to be in the room, by when.
+      waitDeadline: c.waitDeadline?.for
+        ? { for: c.waitDeadline.for, at: toDate(c.waitDeadline.at) }
+        : null,
       patient: {
         name: c.patientName || "Patient",
         // Set when the patient is a child booked by a parent or guardian.
@@ -98,12 +104,13 @@ export async function markConsultationDone({ consultationId, outcome }) {
 }
 
 /**
- * The doctor can't make this appointment. The patient is emailed and the
- * hospital gives it a new time (or refunds it). `reason` is for the admin
- * team only.
+ * The doctor can't make this appointment (kind "doctor_absent"), or the
+ * call, once connected, couldn't be completed (kind "call_incomplete").
+ * The patient and admins are emailed and the hospital gives it a new time
+ * (or refunds it). `reason` is for the admin team only.
  */
-export async function reportDoctorUnavailable({ consultationId, reason }) {
-  const { data } = await callReportUnavailable({ consultationId, ...(reason ? { reason } : {}) });
+export async function reportDoctorUnavailable({ consultationId, reason, kind = "doctor_absent" }) {
+  const { data } = await callReportUnavailable({ consultationId, kind, ...(reason ? { reason } : {}) });
   return data;
 }
 

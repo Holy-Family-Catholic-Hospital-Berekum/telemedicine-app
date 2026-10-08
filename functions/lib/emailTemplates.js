@@ -89,7 +89,7 @@ function patientContent(kind, data, when) {
   const fee = ns ? `GHS ${Number(ns.rescheduleFee || 0)}` : "";
   const noShowRule = ns
     ? online
-      ? `Please be on time. If you haven't joined within ${ns.waitMinutes} minutes of the start (or of your doctor joining, if later), the consultation is marked as missed (a no-show). To book a new time after that, you pay an extra fee of ${fee}; or you can ask for a refund, minus ${ns.forfeitPercent}% of what you paid.`
+      ? `Please be on time. Whoever is in the video room first waits up to ${ns.waitMinutes} minutes for the other (counted from the start time, or from when they joined if later). If your doctor is waiting and you don't join in that time, the consultation is marked as missed (a no-show): to book a new time after that, you pay an extra fee of ${fee}, or you can ask for a refund, minus ${ns.forfeitPercent}% of what you paid. If your doctor doesn't join in time, you get a new time at no cost or a full refund.`
       : `Please be on time. If you don't arrive within ${ns.waitMinutes} minutes of the start, the consultation may be marked as missed (a no-show). To book a new time after that, you pay an extra fee of ${fee}; or you can ask for a refund, minus ${ns.forfeitPercent}% of what you paid.`
     : null;
   // A free hospital visit: say what to pay at the hospital, and that a
@@ -117,8 +117,12 @@ function patientContent(kind, data, when) {
     case "patient_doctor_unavailable": {
       const paid = Number(data.amountPaid || 0);
       return {
-        subject: `Your doctor can't make your consultation on ${shortWhen(when)}`,
-        intro: "We're sorry: your doctor can't make this appointment, so it won't go ahead at this time.",
+        subject: data.incomplete
+          ? `Your consultation on ${shortWhen(when)} couldn't be completed`
+          : `Your doctor can't make your consultation on ${shortWhen(when)}`,
+        intro: data.incomplete
+          ? "We're sorry: your video consultation couldn't be completed. We'll give you a new time to finish it."
+          : "We're sorry: your doctor can't make this appointment, so it won't go ahead at this time.",
         rows,
         paragraphs: [
           "We will email you a new appointment time soon, at no extra cost. If you'd like to tell us a time that suits you, open your dashboard and tap \"Change appointment time\".",
@@ -147,7 +151,9 @@ function patientContent(kind, data, when) {
       return {
         subject: `Your consultation started at ${clock(when)}`,
         intro: data.otherJoined
-          ? "Your doctor is waiting for you on the video call."
+          ? data.by
+            ? `Your doctor is waiting for you on the video call. Please join before ${clock(new Date(data.by))} (Ghana time).`
+            : "Your doctor is waiting for you on the video call."
           : "Your video consultation is due now and you haven't joined yet.",
         rows,
         paragraphs: withRule([
@@ -215,12 +221,12 @@ function doctorContent(kind, data, when) {
     : "The patient will come to the hospital for this consultation.";
   const portal = "Patient details are in the doctor portal.";
   // Being on time (data.noShow: the no-show policy; the same waiting time
-  // applies to the doctor of an online call, noShow.js markMissedByDoctor).
+  // applies to both sides of an online call, lib/consultationLifecycle.js).
   const wait = Number(data.noShow?.waitMinutes ?? data.waitMinutes) || null;
   const cantMakeIt =
     "If you can't make it, tap \"I can't make it\" on this consultation in the doctor portal as early as you can, so the patient is told and given a new time.";
   const onTime = online && wait
-    ? `Please be on time. If you haven't joined the video call within ${wait} minutes of the start time, the appointment counts as one you couldn't make: the patient is told and the hospital gives them a new time or a refund.`
+    ? `Please be on time. If you haven't joined the video call within ${wait} minutes of the start time (or of the patient joining, if later), the appointment counts as one you couldn't make: the patient is told and the hospital gives them a new time or a refund.`
     : null;
   const doctorRules = [onTime, cantMakeIt].filter(Boolean);
 
@@ -266,7 +272,11 @@ function doctorContent(kind, data, when) {
           paragraphs: [howTo, portal, ...doctorRules],
         };
     case "doctor_not_joined": {
-      const by = wait ? clock(new Date(when.getTime() + wait * 60 * 1000)) : null;
+      const by = data.by
+        ? clock(new Date(data.by))
+        : wait
+          ? clock(new Date(when.getTime() + wait * 60 * 1000))
+          : null;
       return {
         subject: data.otherJoined
           ? `Your patient is waiting (${clock(when)} consultation)`
@@ -294,6 +304,7 @@ function doctorContent(kind, data, when) {
 }
 
 const REPORTED_BY = {
+  call_incomplete: "The video call was connected but couldn't be completed.",
   doctor: "The doctor reported that they can't make it.",
   admin: "An admin reported that the doctor can't make it.",
   system: "The doctor hadn't joined the video call within the waiting time.",
@@ -304,8 +315,13 @@ function adminContent(kind, data, when) {
   const online = data.mode === "online";
   const typeLabel = TYPE_LABELS[data.type] || "Consultation";
   return {
-    subject: `Doctor can't make a consultation on ${shortWhen(when)}: needs a new time`,
-    intro: REPORTED_BY[data.by] || "The doctor can't make this consultation.",
+    subject:
+      data.kind === "call_incomplete"
+        ? `Video consultation on ${shortWhen(when)} couldn't be completed: needs a new time`
+        : `Doctor can't make a consultation on ${shortWhen(when)}: needs a new time`,
+    intro:
+      (data.kind === "call_incomplete" ? REPORTED_BY.call_incomplete : REPORTED_BY[data.by]) ||
+      "The doctor can't make this consultation.",
     rows: [
       ["When", formatWhen(when)],
       ["Doctor", data.doctorName || "Not recorded"],
@@ -313,7 +329,7 @@ function adminContent(kind, data, when) {
       ["Booking reference", data.consultationId],
     ],
     paragraphs: [
-      data.patientJoined
+      data.patientJoined && data.kind !== "call_incomplete"
         ? "The patient had joined the video call and was waiting."
         : null,
       "The patient has been emailed. Please give them a new time (with this or another doctor, no fee): Bookings, then Reschedule requests. They may ask for a full refund instead.",

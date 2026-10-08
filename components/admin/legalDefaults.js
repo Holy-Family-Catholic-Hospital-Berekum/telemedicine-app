@@ -85,7 +85,7 @@ We do not sell your information and we do not use it for advertising.`,
 - Email verification before you can book.
 - Automatic sign-out after an hour of inactivity.
 - Doctors hold online consultations only from the hospital's telemedicine room.
-- During a video consultation, your name and the time are shown faintly across the other person's video, so any screenshot or recording shows who made it, and screenshot attempts the call screen detects are logged.
+- During a video consultation, your name and the time are shown across the other person's video and move around the picture, so any screenshot or recording shows who made it; the video is hidden while you are in another app or window; and screenshot attempts the call screen detects are logged. A website cannot fully prevent screenshots or screen recording, so please respect your consultation's privacy and your doctor's.
 - Payments handled entirely by Paystack, not on our servers.
 
 No online service can promise perfect security, but we work to keep your information protected and limit who can see it.`,
@@ -160,7 +160,7 @@ If you are not happy with how we handle your information, you can complain to Gh
 - We send email reminders about a day and about an hour before your appointment. For an online consultation, we also email you if the start time has passed and you have not joined the call yet.
 - Keep your phone reachable and join or arrive on time. You can join the video call from 30 minutes before your appointment until 4 hours after the start time.
 - You can ask to reschedule from your dashboard or by calling the hospital before your appointment. Rescheduling depends on availability.
-- Missed appointments (no-shows): you have a short waiting time to join after the start time, or after your doctor joins the video call if that is later. The waiting time is shown on your dashboard and in your appointment emails. If you have not joined (or, for an in-person visit, arrived) by then, the consultation is marked as missed. For online consultations this happens automatically. See "Cancellations and refunds" for what you can do next.
+- Missed appointments (no-shows): for a video consultation, whoever is in the video room first waits a short time for the other, counted from the start time or from when they joined if that is later. If your doctor is waiting and you are not in the call by then, the consultation is marked as missed; leaving the call before your doctor arrives does not count as attending, and you are told when your doctor joins so you can come back. If nobody has joined by the end of the waiting time after the start, or your doctor does not join in time, it counts as your doctor missing the appointment. Once you and your doctor have been connected in the call, the consultation has taken place. The waiting time is shown on your dashboard and in your appointment emails. If you have not joined (or, for an in-person visit, arrived) by then, the consultation is marked as missed. For online consultations this happens automatically. See "Cancellations and refunds" for what you can do next.
 - For online consultations, you are responsible for a working internet connection, a device with a camera and microphone, and a private place to talk.`,
       },
       {

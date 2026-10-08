@@ -74,8 +74,8 @@ async function activeDoctor(tx, doctorUid, type) {
   };
 }
 
-/** True once both the patient and the doctor have joined the video call. */
-const bothJoined = (c) => Boolean(c.patientFirstJoinedAt && c.doctorFirstJoinedAt);
+/** True once the patient and the doctor were connected in the video call. */
+const bothJoined = (c) => Boolean(c.metAt);
 
 function checkFutureTime(date) {
   const now = Date.now();
@@ -365,8 +365,8 @@ exports.requestReschedule = onCall({ secrets: [PAYSTACK_SECRET_KEY] }, async (re
       // deepcode ignore Sqli: Firestore document ID, not SQL; consultationId read from the patient's server-written booking.
       tx.get(db.collection("refundRequests").doc(booking.consultationId)),
     ]);
-    // A missed consultation can be moved: one the patient, or the doctor,
-    // never joined.
+    // A missed consultation can be moved: one where the patient and the
+    // doctor were never connected.
     if (bothJoined(consultationSnap.data() || {})) {
       throw new HttpsError("failed-precondition", "This consultation has already taken place.");
     }
@@ -529,6 +529,9 @@ exports.rescheduleConsultation = onCall(async (request) => {
       callStartedAt: null,
       patientFirstJoinedAt: FieldValue.delete(),
       doctorFirstJoinedAt: FieldValue.delete(),
+      presence: FieldValue.delete(),
+      waitDeadline: FieldValue.delete(),
+      metAt: FieldValue.delete(),
       doctorUnavailable: FieldValue.delete(),
       reminders: FieldValue.delete(),
       scheduleSetAt: Timestamp.now(),
@@ -543,6 +546,8 @@ exports.rescheduleConsultation = onCall(async (request) => {
       callStartedAt: null,
       patientJoinedAt: FieldValue.delete(),
       doctorJoinedAt: FieldValue.delete(),
+      waitDeadline: FieldValue.delete(),
+      metAt: FieldValue.delete(),
       doctorUnavailable: FieldValue.delete(),
       ...(booking.rescheduleRequest ? { "rescheduleRequest.status": "applied" } : {}),
       updatedAt: serverTime(),

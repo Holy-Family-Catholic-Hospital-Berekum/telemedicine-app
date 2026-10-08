@@ -6,8 +6,13 @@
 //                        booking data, or marks a no-show (booking kept for
 //                        a paid reschedule or a refund; see
 //                        lib/consultationLifecycle.js)
-//   reportDoctorUnavailable the doctor can't make it: patient emailed, sent
-//                        to the admin to reschedule (or refund in full)
+//   reportDoctorUnavailable the doctor can't make it (or, kind
+//                        "call_incomplete", the call couldn't be finished):
+//                        patient and admins emailed, free new time or full
+//                        refund
+//   callHeartbeat        the call screen's check-in every ~15 s: who is in
+//                        the room, whether the two are connected, the
+//                        shared countdown (lib/consultationLifecycle.js)
 //
 // Video is peer-to-peer WebRTC. Signalling goes through calls/{consultationId},
 // which only startVideoCall can create and which Security Rules open to the
@@ -46,7 +51,9 @@ const {
   markNoShow,
   markDoctorUnavailable,
   closeConsultation,
-  noShowDeadline,
+  waitDeadline,
+  deadlineFrom,
+  isPresent,
 } = require("./lib/consultationLifecycle");
 const { loadNoShowPolicy } = require("./siteSettings");
 const { queueEmail } = require("./lib/mailQueue");
@@ -137,6 +144,11 @@ exports.startVideoCall = onCall(async (request) => {
     throw new HttpsError("failed-precondition", "The window for this call has passed.");
   }
 
+  // Someone's waiting time is already up (the every-minute job may not
+  // have run yet): settle it now, the same way the job would.
+  const policy = await loadNoShowPolicy();
+  await enforceDeadlineIfDue(consultationId, consultation, policy.waitMinutes, caller.role);
+
   const callRef = db.collection("calls").doc(consultationId);
   const recordingMode = await currentRecordingMode();
   const recordingEnabled = recordingMode !== "off";
@@ -152,11 +164,19 @@ exports.startVideoCall = onCall(async (request) => {
   // old ones are simply ignored.
   const expiresAt = Timestamp.fromMillis(now + CALL_DOC_TTL_HOURS * 3600 * 1000);
   let patientSeq = null;
-  let firstDoctorJoinWithoutPatient = false;
+  const bookingRef = db.collection("bookings").doc(consultation.bookingId);
+  // deepcode ignore Sqli: Firestore document ID, not SQL; doctorUid read from the server-written consultation.
+  const doctorRef = db.collection("adminUsers").doc(consultation.doctorUid);
   await db.runTransaction(async (tx) => {
-    const [callSnap, consultationSnap] = await Promise.all([tx.get(callRef), tx.get(ref)]);
+    const [callSnap, consultationSnap, bookingSnap, doctorSnap] = await Promise.all([
+      tx.get(callRef),
+      tx.get(ref),
+      tx.get(bookingRef),
+      tx.get(doctorRef),
+    ]);
     const current = consultationSnap.data();
     if (current.doctorUnavailable) throw doctorUnavailableError(caller.role);
+    if (current.status === "no_show") throw noShowError(caller.role);
 
     // Video-consultation consent: once per consultation, before the
     // patient's first join.
@@ -184,9 +204,7 @@ exports.startVideoCall = onCall(async (request) => {
         userAgent: meta.userAgent,
       });
       tx.update(ref, { callConsentId: consentRef.id });
-      tx.update(db.collection("bookings").doc(current.bookingId), {
-        callConsentId: consentRef.id,
-      });
+      tx.update(bookingRef, { callConsentId: consentRef.id });
     }
 
     if (!callSnap.exists) {
@@ -211,13 +229,16 @@ exports.startVideoCall = onCall(async (request) => {
       tx.update(callRef, { patientSeq, answer: FieldValue.delete(), expiresAt });
     }
 
-    // Who has joined decides what the patient can do afterwards: a patient
-    // who joined can't ask for a refund, and a consultation both sides
-    // joined can't be rescheduled. The booking carries a copy for the
-    // patient's dashboard.
+    // First joins are kept for the record (history, reminders); who is in
+    // the room NOW (presence) and whether the two were connected (metAt)
+    // decide the waiting rule (lib/consultationLifecycle.js).
     const joinedField = caller.role === "doctor" ? "doctorFirstJoinedAt" : "patientFirstJoinedAt";
     const bookingJoinedField = caller.role === "doctor" ? "doctorJoinedAt" : "patientJoinedAt";
-    const updates = { status: "in_progress", updatedAt: serverTime() };
+    const updates = {
+      status: "in_progress",
+      [`presence.${caller.role}`]: Timestamp.fromMillis(now),
+      updatedAt: serverTime(),
+    };
     const bookingUpdates = {};
     if (!current.callStartedAt) {
       updates.callStartedAt = serverTime();
@@ -227,12 +248,24 @@ exports.startVideoCall = onCall(async (request) => {
       updates[joinedField] = serverTime();
       bookingUpdates[bookingJoinedField] = serverTime();
     }
-    // The doctor is in and the patient isn't: their waiting time starts.
-    firstDoctorJoinWithoutPatient =
-      caller.role === "doctor" && !current.doctorFirstJoinedAt && !current.patientFirstJoinedAt;
+    // Arriving: the other side's countdown starts now (or is cleared if
+    // they're here).
+    applyArrival({
+      tx,
+      c: current,
+      me: caller.role,
+      now,
+      waitMinutes: policy.waitMinutes,
+      updates,
+      bookingUpdates,
+      booking: bookingSnap.exists ? bookingSnap.data() : null,
+      doctor: doctorSnap.exists ? doctorSnap.data() : null,
+      consultationId,
+      policy,
+    });
     tx.update(ref, updates);
-    if (Object.keys(bookingUpdates).length) {
-      tx.update(db.collection("bookings").doc(current.bookingId), bookingUpdates);
+    if (Object.keys(bookingUpdates).length && bookingSnap.exists) {
+      tx.update(bookingRef, bookingUpdates);
     }
     if (roomDeviceRef) {
       // deepcode ignore Sqli: Firestore document ID, not SQL; room device id checked against /^[A-Za-z0-9]{1,40}$/ in verifyRoomDevice.
@@ -252,47 +285,235 @@ exports.startVideoCall = onCall(async (request) => {
   });
 
   const fresh = (await ref.get()).data();
-
-  // No-show countdown (doctor's call screen): when the patient will be
-  // marked as a no-show if they still haven't joined (noShow.js does it).
-  let noShowAt = null;
-  if (caller.role === "doctor" && !fresh.patientFirstJoinedAt) {
-    const policy = await loadNoShowPolicy();
-    noShowAt = noShowDeadline(fresh, policy.waitMinutes);
-    if (firstDoctorJoinWithoutPatient && noShowAt) {
-      // Tell the patient right away (delivered once email is set up).
-      const bookingSnap = await db.collection("bookings").doc(fresh.bookingId).get();
-      const booking = bookingSnap.exists ? bookingSnap.data() : null;
-      if (booking?.email) {
-        const batch = db.batch();
-        queueEmail(batch, {
-          bookingId: fresh.bookingId,
-          to: booking.email,
-          kind: "patient_doctor_waiting",
-          data: {
-            patientName: booking.guardianName || booking.patientName || "",
-            doctorName: fresh.doctorName || "",
-            type: fresh.type,
-            mode: fresh.mode,
-            scheduledAt: toDate(fresh.scheduledTime).getTime(),
-            consultationId,
-            noShowAt,
-            noShow: policy,
-          },
-          sendBefore: noShowAt,
-        });
-        await batch.commit().catch((err) => logger.warn("doctor-waiting email not queued", err));
-      }
-    }
-  }
-
   return {
     consultationId,
     callStartedAt: toDate(fresh.callStartedAt)?.toISOString() ?? null,
     recordingEnabled,
     // The patient answers only offers carrying this number.
     ...(caller.role === "patient" ? { patientSeq } : {}),
-    ...(caller.role === "doctor" ? { noShowAt } : {}),
+    // The shared countdown both call screens show.
+    waitDeadline: deadlineForClient(fresh, policy.waitMinutes),
+  };
+});
+
+/** The patient's call is over because they were marked as a no-show. */
+function noShowError(role) {
+  return new HttpsError(
+    "failed-precondition",
+    role === "patient"
+      ? "You didn't join in time, so this consultation was marked as missed. Open your dashboard to book a new time or ask for a refund."
+      : "The patient didn't join in time, so this consultation was marked as a no-show.",
+  );
+}
+
+/** { for, at (ms) } or null: the countdown shown on both call screens. */
+function deadlineForClient(c, waitMinutes) {
+  const dl = waitDeadline(c, waitMinutes);
+  return dl ? { for: dl.for, at: dl.at } : null;
+}
+
+/**
+ * If a waiting time is up and that side isn't in the room, settle it now,
+ * as the every-minute job would (noShow.js). Resolves "doctor_unavailable",
+ * "no_show" or null (nothing due).
+ */
+async function settleIfDue(consultationId, c, waitMinutes) {
+  const dl = waitDeadline(c, waitMinutes);
+  if (!dl || c.metAt || Date.now() < dl.at || isPresent(c, dl.for)) return null;
+  const system = { uid: "system", role: "system" };
+  if (dl.for === "doctor") {
+    const marked = await markDoctorUnavailable({ consultationId, actor: system });
+    if (!marked) return null;
+    const { emailDoctorMissed } = require("./noShow");
+    await emailDoctorMissed(marked, waitMinutes).catch(() => {});
+    return "doctor_unavailable";
+  }
+  return (await markNoShow({ consultationId, actor: system }).catch(() => false)) ? "no_show" : null;
+}
+
+/** startVideoCall: a waiting time already up is settled, and the caller told. */
+async function enforceDeadlineIfDue(consultationId, c, waitMinutes, callerRole) {
+  const settled = await settleIfDue(consultationId, c, waitMinutes);
+  if (settled === "doctor_unavailable") throw doctorUnavailableError(callerRole);
+  if (settled === "no_show") throw noShowError(callerRole);
+}
+
+/**
+ * One side has just come into the room (startVideoCall) or is still there
+ * (callHeartbeat). Writes into `updates` / `bookingUpdates`:
+ *   - the other side is here too: no countdown;
+ *   - the other side isn't, and isn't already on a countdown: theirs
+ *     starts now (max(start, now) + W), and they're emailed.
+ * Arriving early counts as arriving at the start time.
+ */
+function applyArrival({ tx, c, me, now, waitMinutes, updates, bookingUpdates, booking, doctor, consultationId, policy }) {
+  if (c.metAt) return;
+  const other = me === "doctor" ? "patient" : "doctor";
+  if (isPresent(c, other, now)) {
+    if (c.waitDeadline) {
+      updates.waitDeadline = FieldValue.delete();
+      bookingUpdates.waitDeadline = FieldValue.delete();
+    }
+    return;
+  }
+  if (c.waitDeadline?.for === other) return; // already counting down
+  const at = deadlineFrom(c, waitMinutes, now);
+  const value = { for: other, at: Timestamp.fromMillis(at) };
+  updates.waitDeadline = value;
+  bookingUpdates.waitDeadline = value;
+  queueWaitingEmail({ tx, c, forRole: other, at, booking, doctor, consultationId, policy });
+}
+
+/** "The other side is waiting for you: join before HH:MM." */
+function queueWaitingEmail({ tx, c, forRole, at, booking, doctor, consultationId, policy }) {
+  const base = {
+    type: c.type,
+    mode: c.mode,
+    scheduledAt: toDate(c.scheduledTime).getTime(),
+  };
+  if (forRole === "patient" && booking?.email) {
+    queueEmail(tx, {
+      bookingId: c.bookingId,
+      to: booking.email,
+      kind: "patient_doctor_waiting",
+      data: {
+        ...base,
+        patientName: booking.guardianName || booking.patientName || "",
+        doctorName: c.doctorName || "",
+        consultationId,
+        noShowAt: at,
+        noShow: policy,
+      },
+      sendBefore: at,
+    });
+  } else if (forRole === "doctor" && doctor?.email && doctor.status === "active") {
+    queueEmail(tx, {
+      to: doctor.email,
+      kind: "doctor_not_joined",
+      data: { ...base, doctorName: doctor.name || c.doctorName || "", otherJoined: true, by: at, noShow: policy },
+      sendBefore: at,
+    });
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* callHeartbeat                                                       */
+/* ------------------------------------------------------------------ */
+
+/**
+ * data: { consultationId, connected?: boolean, leaving?: boolean }
+ * Sent by the call screen every ~15 s while it's open, and once when the
+ * person leaves. Records who is in the room, notices when the two are
+ * actually connected (metAt: the consultation has taken place), starts
+ * the countdown for a side that left, and tells the screen what's
+ * happening:
+ *   { state: "open" | "doctor_unavailable" | "no_show" | "closed",
+ *     kind?, waitDeadline: { for, at } | null, otherPresent, met }
+ */
+exports.callHeartbeat = onCall(async (request) => {
+  const caller = await requireRole(request, ["patient", "doctor"]);
+  const d = request.data || {};
+  const consultationId = docId(d.consultationId, "Consultation");
+  const connected = d.connected === true;
+  const leaving = d.leaving === true;
+  await rateLimit(caller.uid, "callHeartbeat", { max: 600, windowSeconds: 3600 });
+
+  let loaded;
+  try {
+    loaded = await loadForParticipant(caller, consultationId);
+  } catch (err) {
+    if (err?.code === "not-found") return { state: "closed" };
+    throw err;
+  }
+  const { ref, consultation } = loaded;
+  if (consultation.doctorUnavailable) {
+    return { state: "doctor_unavailable", kind: consultation.doctorUnavailable.kind || "doctor_absent" };
+  }
+  if (consultation.status === "no_show") return { state: "no_show" };
+  if (!["scheduled", "in_progress"].includes(consultation.status)) return { state: "closed" };
+
+  const policy = await loadNoShowPolicy();
+  // A countdown that has just run out is settled straight away, so the
+  // screens don't wait for the every-minute job.
+  const settled = leaving ? null : await settleIfDue(consultationId, consultation, policy.waitMinutes);
+  if (settled === "doctor_unavailable") return { state: "doctor_unavailable", kind: "doctor_absent" };
+  if (settled === "no_show") return { state: "no_show" };
+  const me = caller.role;
+  const other = me === "doctor" ? "patient" : "doctor";
+  const bookingRef = db.collection("bookings").doc(consultation.bookingId);
+  // deepcode ignore Sqli: Firestore document ID, not SQL; doctorUid read from the server-written consultation.
+  const doctorRef = db.collection("adminUsers").doc(consultation.doctorUid);
+
+  const result = await db.runTransaction(async (tx) => {
+    const [snap, bookingSnap, doctorSnap] = await Promise.all([
+      tx.get(ref),
+      tx.get(bookingRef),
+      tx.get(doctorRef),
+    ]);
+    if (!snap.exists) return { state: "closed" };
+    const c = snap.data();
+    if (c.doctorUnavailable || !["scheduled", "in_progress"].includes(c.status)) return null;
+    const now = Date.now();
+    const booking = bookingSnap.exists ? bookingSnap.data() : null;
+    const doctor = doctorSnap.exists ? doctorSnap.data() : null;
+    const updates = {};
+    const bookingUpdates = {};
+    const otherPresent = isPresent(c, other, now);
+
+    if (leaving) {
+      updates[`presence.${me}`] = FieldValue.delete();
+      // Leaving while the other side waits (before the two were
+      // connected): your countdown starts now.
+      if (!c.metAt && otherPresent && c.waitDeadline?.for !== me) {
+        const at = deadlineFrom(c, policy.waitMinutes, now);
+        const value = { for: me, at: Timestamp.fromMillis(at) };
+        updates.waitDeadline = value;
+        bookingUpdates.waitDeadline = value;
+        queueWaitingEmail({ tx, c, forRole: me, at, booking, doctor, consultationId, policy });
+      }
+    } else {
+      updates[`presence.${me}`] = Timestamp.fromMillis(now);
+      if (!c.metAt && connected && otherPresent) {
+        // Both in the room and the video connected: it has taken place.
+        updates.metAt = Timestamp.fromMillis(now);
+        bookingUpdates.metAt = Timestamp.fromMillis(now);
+        if (c.waitDeadline) {
+          updates.waitDeadline = FieldValue.delete();
+          bookingUpdates.waitDeadline = FieldValue.delete();
+        }
+      } else {
+        applyArrival({
+          tx,
+          c,
+          me,
+          now,
+          waitMinutes: policy.waitMinutes,
+          updates,
+          bookingUpdates,
+          booking,
+          doctor,
+          consultationId,
+          policy,
+        });
+      }
+    }
+    tx.update(ref, updates);
+    if (Object.keys(bookingUpdates).length && bookingSnap.exists) tx.update(bookingRef, bookingUpdates);
+    return { otherPresent };
+  });
+
+  if (result?.state) return result;
+  const fresh = (await ref.get()).data();
+  if (!fresh) return { state: "closed" };
+  if (fresh.doctorUnavailable) {
+    return { state: "doctor_unavailable", kind: fresh.doctorUnavailable.kind || "doctor_absent" };
+  }
+  if (fresh.status === "no_show") return { state: "no_show" };
+  return {
+    state: "open",
+    waitDeadline: deadlineForClient(fresh, policy.waitMinutes),
+    otherPresent: isPresent(fresh, other),
+    met: Boolean(fresh.metAt),
   };
 });
 
@@ -439,9 +660,9 @@ exports.markConsultationDone = onCall(async (request) => {
 /* ------------------------------------------------------------------ */
 
 /**
- * data: { consultationId, reason? }
+ * data: { consultationId, reason?, kind?: "doctor_absent" | "call_incomplete" }
  * The assigned doctor, or an admin, says the doctor can't make this
- * appointment. The patient is emailed; the booking goes to the admin's
+ * appointment (or that the call, once connected, couldn't be finished). The patient is emailed; the booking goes to the admin's
  * reschedule requests, and the patient may ask for a full refund instead
  * (lib/consultationLifecycle.js markDoctorUnavailable). `reason` is for the
  * admin team only.
@@ -451,12 +672,14 @@ exports.reportDoctorUnavailable = onCall(async (request) => {
   const d = request.data || {};
   const consultationId = docId(d.consultationId, "Consultation");
   const reason = str(d.reason, { field: "Reason", max: 300, optional: true });
+  const kind = d.kind === "call_incomplete" ? "call_incomplete" : "doctor_absent";
   await rateLimit(caller.uid, "reportDoctorUnavailable", { max: 30, windowSeconds: 3600 });
 
   // deepcode ignore Sqli: Firestore document ID, not SQL; consultationId passed docId() (/^[A-Za-z0-9_-]+$/).
   const marked = await markDoctorUnavailable({
     consultationId,
     actor: { uid: caller.uid, role: caller.role },
+    kind,
     reason,
     meta: requestMeta(request),
     expectDoctorUid: caller.role === "doctor" ? caller.uid : null,

@@ -6,9 +6,11 @@ import { callableMessage } from "../../src/constants";
 import ConfirmDialog from "./confirmDialog.jsx";
 
 // No-show policy (functions/siteSettings.js updateNoShowPolicy):
-//   waiting time     how long the patient has to join after the start (or
-//                    after the doctor joined, if later); then an online
-//                    call is marked a no-show automatically
+//   waiting time     how long whoever is in the video room first waits for
+//                    the other (from the start, or from when they joined
+//                    if later); then the absent side's no-show is marked
+//                    automatically (patient: no-show; doctor: free new
+//                    time or full refund). In person: from the start.
 //   share kept       taken off a refund when a no-show asks for one
 //   reschedule fee   what a no-show pays to book a new time
 // Patients see these figures in their booking, emails and the terms.

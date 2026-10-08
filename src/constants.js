@@ -5,12 +5,13 @@
 
 export const TYPE_LABELS = { OPD: "General OPD", SURGICAL: "Surgical" };
 export const MODE_LABELS = { online: "Video call", in_person: "At the hospital" };
-// "cancelled": the doctor couldn't make it and the patient was refunded
-// (closed on the server only; not something staff choose).
+// "cancelled": the doctor couldn't make it, or the video call couldn't be
+// completed, and the patient was refunded (closed on the server only; not
+// something staff choose).
 export const OUTCOME_LABELS = {
   completed: "Completed",
   no_show: "No-show",
-  cancelled: "Cancelled (doctor couldn't make it)",
+  cancelled: "Cancelled by the hospital (refunded)",
 };
 
 // Video room opens this long before the scheduled time. Keep in step with

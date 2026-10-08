@@ -37,8 +37,9 @@ const MAX_FEE = 5000; // typo guard: 2500 instead of 250 is refused
 // No-show policy (admin Control panel; shown to patients in the booking
 // card, reminders and terms). Keep in step with DEFAULT_NO_SHOW in
 // src/siteSettings.js.
-//   waitMinutes     how long after the start (or after the doctor joined,
-//                   if later) the patient has to join an online call
+//   waitMinutes     how long whoever is in the video room first waits for
+//                   the other (from the start, or from when they joined if
+//                   later); lib/consultationLifecycle.js waitDeadline
 //   forfeitPercent  share of the fee kept when a no-show asks for a refund
 //   rescheduleFee   GHS a no-show pays to book a new time
 const DEFAULT_NO_SHOW = { waitMinutes: 5, forfeitPercent: 20, rescheduleFee: 50 };

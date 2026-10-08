@@ -8,8 +8,9 @@
 //   24h  about a day before (skipped if they were told the time in the
 //        last 6 hours)
 //   1h   about an hour before (skipped if told in the last 30 minutes)
-//   late online only: 5 minutes after the start time, to whoever hasn't
-//        joined the call yet (the doctor's says if the patient is waiting)
+//   late online only: a minute after the start time, to whoever hasn't
+//        joined the call yet, with the time they must join by (the shared
+//        countdown, lib/consultationLifecycle.js waitDeadline)
 //
 // Each one is recorded under consultations.reminders.<key>, set in the same
 // transaction that queues the mail, so nothing is sent twice. A reschedule
@@ -22,6 +23,7 @@ const logger = require("firebase-functions/logger");
 const { db, Timestamp, toDate } = require("./lib/core");
 const { queueEmail } = require("./lib/mailQueue");
 const { loadNoShowPolicy } = require("./siteSettings");
+const { waitDeadline, isPresent } = require("./lib/consultationLifecycle");
 
 const MIN = 60 * 1000;
 const HOUR = 60 * MIN;
@@ -32,11 +34,13 @@ const REMINDERS = [
   { lead: "24h", from: -24 * HOUR, to: -3 * HOUR, quietAfterSet: 6 * HOUR },
   { lead: "1h", from: -60 * MIN, to: -5 * MIN, quietAfterSet: 30 * MIN },
 ];
-const LATE_FROM = 5 * MIN;
+// "You haven't joined" goes out a minute after the start (the waiting time
+// can be as short as a few minutes).
+const LATE_FROM = 1 * MIN;
 const LATE_TO = 60 * MIN;
 
 /** Reminder keys due for consultation `c` at `now` that haven't gone out. */
-function dueReminders(c, now) {
+function dueReminders(c, now, waitMinutes = 5) {
   const start = toDate(c.scheduledTime)?.getTime();
   // The doctor can't make it: the patient was told; a new time brings new
   // reminders.
@@ -54,12 +58,16 @@ function dueReminders(c, now) {
     }
   }
 
-  if (c.mode === "online" && now >= start + LATE_FROM && now < start + LATE_TO) {
+  if (c.mode === "online" && !c.metAt && now >= start + LATE_FROM && now < start + LATE_TO) {
+    const dl = waitDeadline(c, waitMinutes);
+    const by = (who) => (dl && dl.for === who ? dl.at : null);
     if (!c.patientFirstJoinedAt && !sent.patientLate) {
-      due.push({ key: "patientLate", who: "patient", kind: "patient_not_joined", otherJoined: Boolean(c.doctorFirstJoinedAt) });
+      // deepcode ignore Sqli: not a query; reads timestamps already on the server-written consultation.
+      due.push({ key: "patientLate", who: "patient", kind: "patient_not_joined", otherJoined: isPresent(c, "doctor", now), by: by("patient") });
     }
     if (!c.doctorFirstJoinedAt && !sent.doctorLate) {
-      due.push({ key: "doctorLate", who: "doctor", kind: "doctor_not_joined", otherJoined: Boolean(c.patientFirstJoinedAt) });
+      // deepcode ignore Sqli: not a query; reads timestamps already on the server-written consultation.
+      due.push({ key: "doctorLate", who: "doctor", kind: "doctor_not_joined", otherJoined: isPresent(c, "patient", now), by: by("doctor") });
     }
   }
   return due;
@@ -80,14 +88,14 @@ exports.sendAppointmentReminders = onSchedule(
     const noShow = snap.empty ? null : await loadNoShowPolicy();
     let queued = 0;
     for (const doc of snap.docs) {
-      if (dueReminders(doc.data(), now).length === 0) continue;
+      if (dueReminders(doc.data(), now, noShow.waitMinutes).length === 0) continue;
       try {
         queued += await db.runTransaction(async (tx) => {
           const fresh = await tx.get(doc.ref);
           const c = fresh.exists ? fresh.data() : null;
           if (!c || !["scheduled", "in_progress"].includes(c.status)) return 0;
           // deepcode ignore Sqli: Firestore document ID, not SQL; the consultation is read back by its own reference.
-          const due = dueReminders(c, Date.now());
+          const due = dueReminders(c, Date.now(), noShow.waitMinutes);
           if (due.length === 0) return 0;
 
           const [bookingSnap, doctorSnap] = await Promise.all([
@@ -109,7 +117,7 @@ exports.sendAppointmentReminders = onSchedule(
           const updates = {};
           for (const r of due) {
             const late = r.kind.endsWith("_not_joined");
-            const extra = late ? { otherJoined: r.otherJoined } : { lead: r.lead };
+            const extra = late ? { otherJoined: r.otherJoined, by: r.by } : { lead: r.lead };
             if (r.who === "patient") {
               queueEmail(tx, {
                 bookingId: bookingSnap.exists ? c.bookingId : null,

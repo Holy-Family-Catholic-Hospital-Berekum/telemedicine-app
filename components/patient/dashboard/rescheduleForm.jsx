@@ -8,19 +8,14 @@ import { openPaystackCheckout } from "../../../src/paystackCheckout";
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // Mirrors rescheduleCountsAsNoShow (functions/lib/consultationLifecycle.js):
-// from the start time on, a patient who hasn't joined pays the no-show fee
-// to move the consultation, unless the doctor is the late one (online: not
-// joined yet, or joined after the waiting time). Only for the wording; the
-// server decides.
-function isLate(booking, waitMinutes, now = Date.now()) {
+// a patient asking for a new time while the doctor is waiting for them in
+// the video room (or after the start of a hospital visit) pays the no-show
+// fee. Only for the wording; the server decides.
+function isLate(booking, now = Date.now()) {
   const start = booking.scheduledTime?.getTime?.();
-  if (!start || now < start || booking.patientJoinedAt) return false;
+  if (!start || now < start || booking.metAt) return false;
   if (booking.rescheduleRequest?.status === "requested") return false;
-  if (booking.mode === "online") {
-    const graceEnd = start + waitMinutes * 60000;
-    const doctorIn = booking.doctorJoinedAt?.getTime?.();
-    if (!doctorIn || doctorIn > graceEnd) return false;
-  }
+  if (booking.mode === "online") return booking.waitDeadline?.for === "patient";
   return true;
 }
 
@@ -33,7 +28,7 @@ export default function RescheduleForm({ booking, onRequested }) {
   const [error, setError] = useState(null);
   const [done, setDone] = useState(false);
   const [paying, setPaying] = useState(false);
-  const late = isLate(booking, noShow.waitMinutes);
+  const late = isLate(booking);
   const fee = Number(noShow.rescheduleFee || 0);
 
   async function handleSubmit(e) {
