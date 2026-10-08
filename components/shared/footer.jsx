@@ -95,6 +95,26 @@ const SOCIAL_LINKS = [
   },
 ];
 
+// Health authorities and local partners, shown under "Useful links".
+const USEFUL_LINKS = [
+  { label: "Ministry of Health", href: "https://moh.gov.gh/" },
+  { label: "Ghana Health Service", href: "https://ghs.gov.gh/" },
+  {
+    label: "National Health Insurance Authority",
+    href: "https://www.nhis.gov.gh/",
+  },
+  { label: "Medical and Dental Council", href: "https://www.mdcghana.org/" },
+  {
+    label: "Nursing and Midwifery Council",
+    href: "https://www.nmcgh.org/t3f/en/",
+  },
+  {
+    label: "Holy Family Nursing and Midwifery Training College, Berekum",
+    href: "https://nmtcberekum.edu.gh/",
+  },
+  { label: "Berekum Municipal Assembly", href: "https://www.berekumcity.com/" },
+];
+
 export default function Footer() {
   return (
     <footer
@@ -113,7 +133,7 @@ export default function Footer() {
 
       <div className="relative mx-auto max-w-6xl px-5 sm:px-8">
         {/* Main footer */}
-        <div className="grid gap-10 py-12 sm:py-16 md:grid-cols-[1.4fr_1fr_1fr] md:gap-12">
+        <div className="grid gap-10 py-12 sm:py-16 sm:grid-cols-2 lg:grid-cols-[1.3fr_0.8fr_1.2fr_1.1fr] lg:gap-10">
           {/* Hospital identity */}
           <div>
             <Link
@@ -196,6 +216,30 @@ export default function Footer() {
               >
                 Dashboard
               </Link>
+            </nav>
+          </div>
+
+          {/* Useful links */}
+          <div>
+            <h3 className="text-[15px] font-bold uppercase tracking-[0.16em] text-white/90">
+              Useful Links
+            </h3>
+
+            <nav
+              aria-label="Useful links"
+              className="mt-5 flex flex-col items-start gap-3.5 text-[16px]"
+            >
+              {USEFUL_LINKS.map(({ label, href }) => (
+                <a
+                  key={href}
+                  href={href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="leading-6 text-white/85 transition-colors hover:text-white"
+                >
+                  {label}
+                </a>
+              ))}
             </nav>
           </div>
 
