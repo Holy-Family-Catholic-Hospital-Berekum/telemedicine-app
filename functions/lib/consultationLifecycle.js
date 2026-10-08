@@ -489,17 +489,22 @@ async function markDoctorUnavailable({
       if (system) return null;
       throw new HttpsError("failed-precondition", "The patient has asked for a refund for this consultation.");
     }
-    // The patient asked for a new time before the start: they called it off
-    // in good time, it's already in the admin's list, and the doctor isn't
-    // at fault. (One asked for after the start, with the doctor absent too,
-    // is still the doctor's no-show: rescheduleCountsAsNoShow.)
-    const requestedAt = toDate(booking?.rescheduleRequest?.requestedAt)?.getTime();
+    // The automatic check leaves alone a booking that's waiting for a new
+    // time at the patient's request:
+    //   - asked for before the start: called off in good time, and the
+    //     doctor isn't at fault;
+    //   - re-opened after the patient's own no-show (rescheduleRequest
+    //     afterNoShow): it still carries the old start time with nobody in
+    //     the room, which must not read as the doctor missing it.
+    // (A request made after the start with neither side there is still the
+    // doctor's no-show: rescheduleCountsAsNoShow.)
+    const request = booking?.rescheduleRequest;
+    const requestedAt = toDate(request?.requestedAt)?.getTime();
     if (
       system &&
-      booking?.rescheduleRequest?.status === "requested" &&
-      !booking.rescheduleRequest.byHospital &&
-      requestedAt &&
-      requestedAt < toDate(c.scheduledTime).getTime()
+      request?.status === "requested" &&
+      !request.byHospital &&
+      (request.afterNoShow || (requestedAt && requestedAt < toDate(c.scheduledTime).getTime()))
     ) {
       return null;
     }

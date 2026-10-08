@@ -228,7 +228,9 @@ export default function BookingsPanel({
   // admin.jsx only loads paid and scheduled bookings; unpaid drafts never
   // appear here.
   const toSchedule = bookings.filter((b) => b.status === "paid" && !b.consultationId);
-  const scheduled = bookings.filter((b) => b.status === "scheduled");
+  // One the doctor couldn't make is waiting for a new time: it's listed
+  // under Reschedule requests only.
+  const scheduled = bookings.filter((b) => b.status === "scheduled" && !b.doctorUnavailable);
   const reschedules = bookings.filter((b) => b.rescheduleRequest?.status === "requested");
   // Missed (no-show) bookings held for the patient to pay the reschedule
   // fee or ask for a refund; closed automatically when the hold ends.
