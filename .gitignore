@@ -12,6 +12,17 @@ dist
 dist-ssr
 *.local
 .env
+.env.*
+!.env.example
+
+# Credentials: never commit service-account keys or Firebase caches
+*-firebase-adminsdk-*.json
+service-account*.json
+serviceAccount*.json
+*.pem
+*.p12
+.firebase/
+.runtimeconfig.json
 
 
 # Editor directories and files

@@ -105,7 +105,8 @@ you're finished with it.
 - The tamper-proof copy: Google Cloud console → **Logging** → **Logs
   Explorer** → *Refine scope* → log bucket `audit-locked`. Its retention is
   locked: nobody can delete or shorten it, including project owners.
-- Alert emails go to teslajunior0552@gmail.com. To add people: Monitoring →
+- Alert emails go to the addresses on the alert's notification channels
+  (keep at least two hospital staff on it). To add people: Monitoring →
   **Alerting** → *Telemedicine security event* → edit notification
   channels.
 
