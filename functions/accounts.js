@@ -226,15 +226,17 @@ exports.updateStaffProfile = onCall(async (request) => {
       .where("status", "in", ["scheduled", "in_progress"])
       .limit(200)
       .get();
-    for (const c of open.docs) {
-      batch.update(c.ref, { doctorName: name });
-      const bookingId = c.data().bookingId;
-      if (bookingId) {
-        batch.update(db.collection("bookings").doc(bookingId), {
-          doctorName: name,
-          doctorDepartment: department,
-        });
-      }
+    // Only bookings that still exist: one missing booking mustn't make the
+    // whole save fail (and every retry count against the daily limit).
+    const bookingRefs = open.docs
+      .map((c) => c.data().bookingId)
+      .filter(Boolean)
+      // deepcode ignore Sqli: Firestore document ID, not SQL; bookingId read from a server-written consultation.
+      .map((id) => db.collection("bookings").doc(id));
+    const bookings = bookingRefs.length ? await db.getAll(...bookingRefs) : [];
+    for (const c of open.docs) batch.update(c.ref, { doctorName: name });
+    for (const b of bookings) {
+      if (b.exists) batch.update(b.ref, { doctorName: name, doctorDepartment: department });
     }
   }
   audit(batch, {

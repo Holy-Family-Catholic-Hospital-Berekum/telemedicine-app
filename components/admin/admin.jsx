@@ -285,8 +285,11 @@ export default function Admin() {
 
   const stats = useMemo(() => {
     const todaysBookings = bookingLogToday.length;
+    // Under way: the patient and doctor were connected (metAt) and it isn't
+    // closed yet. Not a call someone merely opened, and not one the doctor
+    // couldn't make (that waits for a new time).
     const activeConsultations = bookings.filter(
-      (b) => b.status === "scheduled" && b.callStartedAt,
+      (b) => b.status === "scheduled" && b.metAt && !b.doctorUnavailable,
     ).length;
     // On duty = has something scheduled today (hospital time): a scheduled
     // consultation, a paid booking for a slot today, or an admin-created
