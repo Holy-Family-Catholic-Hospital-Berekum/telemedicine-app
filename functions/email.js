@@ -80,7 +80,7 @@ async function deliver(ref) {
       body: JSON.stringify({
         from: FROM,
         to: [m.to],
-        reply_to: REPLY_TO,
+        ...(REPLY_TO ? { reply_to: REPLY_TO } : {}),
         subject,
         text,
         html,

@@ -11,14 +11,16 @@
 // Keep HOSPITAL_PHONE in step with components/shared/contact.js.
 
 const settings = {
-  // e.g. "Holy Family Catholic Hospital <appointments@hfch.org>"
-  FROM: "Holy Family Catholic Hospital <appointments@example.com>",
-  // A mailbox staff actually read; patients' replies go here.
-  REPLY_TO: "appointments@example.com",
+  // Sending subdomain verified in Resend (DNS on Cloudflare), so the
+  // hospital's main hfhberekum.org mail setup is untouched.
+  FROM: "Holy Family Catholic Hospital <appointments@mail.hfhberekum.org>",
+  // No-reply (hospital decision): no Reply-To; every email says replies
+  // aren't read and gives the phone number instead.
+  REPLY_TO: null,
   HOSPITAL_NAME: "Holy Family Catholic Hospital",
   HOSPITAL_TOWN: "Berekum, Ghana",
   HOSPITAL_PHONE: "024 000 0000",
-  SITE_URL: "https://telemedicine-hfch.vercel.app",
+  SITE_URL: "https://telemedicine.hfhberekum.org",
 };
 
 // True once FROM uses a real (verified) domain. Until then the email

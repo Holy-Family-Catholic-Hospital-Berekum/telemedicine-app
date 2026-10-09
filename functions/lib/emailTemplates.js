@@ -374,6 +374,8 @@ function renderEmail(kind, data) {
     : forDoctor
       ? { href: `${SITE_URL}/doctor`, label: "Open the doctor portal" }
       : { href: `${SITE_URL}/dashboard`, label: "Open your dashboard" };
+  // No-reply sender (lib/mailConfig.js): say so, and where to get help.
+  const noReply = `This is an automated email; replies to it aren't read. Questions? Call ${HOSPITAL_PHONE}.`;
   const footer = forAdmin
     ? "You are receiving this email because you are an administrator of the hospital's telemedicine service."
     : forDoctor
@@ -393,6 +395,7 @@ function renderEmail(kind, data) {
     HOSPITAL_TOWN,
     "",
     footer,
+    noReply,
   ].join("\n");
 
   const html = `<!doctype html>
@@ -413,7 +416,8 @@ ${link ? `<p style="margin:16px 0;"><a href="${escapeHtml(link.href)}" style="co
 </td></tr>
 <tr><td style="padding:16px 28px 24px;font-size:12px;color:#5c6b72;border-top:1px solid #e4eaee;">
 ${escapeHtml(HOSPITAL_NAME)}, ${escapeHtml(HOSPITAL_TOWN)}<br>
-${escapeHtml(footer)}
+${escapeHtml(footer)}<br>
+${escapeHtml(noReply)}
 </td></tr>
 </table>
 </td></tr>

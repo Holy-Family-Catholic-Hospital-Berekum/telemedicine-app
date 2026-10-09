@@ -7,7 +7,7 @@ import tailwindcss from "@tailwindcss/vite";
 // previews, robots.txt and sitemap.xml. Set VITE_SITE_URL (Vercel env and
 // .env) when the hospital's own domain goes live; until then the Vercel
 // address is used.
-const DEFAULT_SITE_URL = "https://telemedicine-hfch.vercel.app";
+const DEFAULT_SITE_URL = "https://telemedicine.hfhberekum.org";
 
 // Public pages search engines should list. Private pages (dashboard,
 // booking, admin, doctor) are disallowed in robots.txt and marked noindex;
