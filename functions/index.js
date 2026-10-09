@@ -118,6 +118,7 @@ if (require("./lib/mailConfig").EMAIL_CONFIGURED) {
   const email = require("./email");
   const reminders = require("./reminders");
   exports.sendQueuedEmail = email.sendQueuedEmail;
+  exports.notifyAdminsNewBooking = email.notifyAdminsNewBooking;
   exports.retryQueuedEmails = email.retryQueuedEmails;
   exports.sendAppointmentReminders = reminders.sendAppointmentReminders;
 }

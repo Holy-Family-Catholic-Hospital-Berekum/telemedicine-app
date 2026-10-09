@@ -59,7 +59,7 @@ const {
   audit,
   deleteTree,
 } = require("./core");
-const { queueEmail } = require("./mailQueue");
+const { queueEmail, emailAdmins } = require("./mailQueue");
 const { loadNoShowPolicy } = require("../siteSettings");
 
 const NO_SHOW_HOLD_DAYS = 14;
@@ -603,31 +603,16 @@ async function emailAdminsDoctorUnavailable({
   mode,
   patientJoined,
 }) {
-  const admins = await db
-    .collection("adminUsers")
-    .where("role", "==", "admin")
-    .where("status", "==", "active")
-    .get();
-  if (admins.empty) return;
-  const batch = db.batch();
-  for (const a of admins.docs) {
-    queueEmail(batch, {
-      to: a.data().email,
-      kind: "admin_doctor_unavailable",
-      data: {
-        consultationId,
-        by,
-        kind,
-        doctorName,
-        type,
-        mode,
-        patientJoined,
-        scheduledAt: toDate(scheduledTime).getTime(),
-      },
-      sendBefore: Date.now() + 24 * 3600 * 1000,
-    });
-  }
-  await batch.commit();
+  await emailAdmins("admin_doctor_unavailable", {
+    consultationId,
+    by,
+    kind,
+    doctorName,
+    type,
+    mode,
+    patientJoined,
+    scheduledAt: toDate(scheduledTime).getTime(),
+  });
 }
 
 module.exports = {

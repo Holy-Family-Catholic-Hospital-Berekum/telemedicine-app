@@ -47,4 +47,24 @@ function queueEmail(tx, { to, kind, data, bookingId = null, sendBefore, deleteAf
   return ref.id;
 }
 
-module.exports = { queueEmail };
+/**
+ * Queues `kind` to every active admin (one mail document each). Admin
+ * emails never carry a patient's name (lib/emailTemplates.js).
+ * sendBefore: ms (default: a day from now).
+ */
+async function emailAdmins(kind, data, sendBefore = Date.now() + 24 * 3600 * 1000) {
+  const admins = await db
+    .collection("adminUsers")
+    .where("role", "==", "admin")
+    .where("status", "==", "active")
+    .get();
+  if (admins.empty) return 0;
+  const batch = db.batch();
+  for (const a of admins.docs) {
+    queueEmail(batch, { to: a.data().email, kind, data, sendBefore });
+  }
+  await batch.commit();
+  return admins.size;
+}
+
+module.exports = { queueEmail, emailAdmins };

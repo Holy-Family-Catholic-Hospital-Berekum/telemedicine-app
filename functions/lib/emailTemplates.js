@@ -314,6 +314,31 @@ const REPORTED_BY = {
 function adminContent(kind, data, when) {
   const online = data.mode === "online";
   const typeLabel = TYPE_LABELS[data.type] || "Consultation";
+  if (kind === "admin_new_booking") {
+    const asked = [
+      data.requestedDoctorName || null,
+      data.preferredAt ? formatWhen(new Date(data.preferredAt)) : null,
+    ].filter(Boolean);
+    return {
+      subject: `New booking: ${typeLabel}, ${online ? "video call" : "hospital visit"}`,
+      intro: "A new consultation has been booked and needs a doctor and a time.",
+      rows: [
+        ["Booked", formatWhen(when)],
+        ["Consultation", `${typeLabel}, ${online ? "online (video)" : "in person"}`],
+        [
+          "Payment",
+          data.payAtHospital
+            ? `Pays at the hospital (GHS ${data.amount})`
+            : `Paid online (GHS ${data.amount})`,
+        ],
+        ...(asked.length ? [["Patient asked for", asked.join(", ")]] : []),
+        ["Booking ID", data.bookingId],
+      ],
+      paragraphs: [
+        "Please assign a doctor and a time in the admin portal: Bookings, then To schedule. The patient is emailed as soon as it's scheduled.",
+      ],
+    };
+  }
   return {
     subject:
       data.kind === "call_incomplete"
@@ -347,7 +372,7 @@ function adminContent(kind, data, when) {
  *       "patient_no_show" | "patient_doctor_unavailable" |
  *       "doctor_assigned" | "doctor_rescheduled" | "doctor_unassigned" |
  *       "doctor_reminder" | "doctor_not_joined" | "doctor_missed" |
- *       "admin_doctor_unavailable"
+ *       "admin_doctor_unavailable" | "admin_new_booking"
  * data: { scheduledAt (ms), type, mode, doctorName, patientName?,
  *         consultationId? (patients only), lead? ("24h" | "1h"),
  *         otherJoined?, noShow? (policy), afterDoctorUnavailable?,
@@ -375,7 +400,9 @@ function renderEmail(kind, data) {
       ? { href: `${SITE_URL}/doctor`, label: "Open the doctor portal" }
       : { href: `${SITE_URL}/dashboard`, label: "Open your dashboard" };
   // No-reply sender (lib/mailConfig.js): say so, and where to get help.
-  const noReply = `This is an automated email; replies to it aren't read. Questions? Call ${HOSPITAL_PHONE}.`;
+  const noReply = forAdmin
+    ? "This is an automated email; replies to it aren't read."
+    : `This is an automated email; replies to it aren't read. Questions? Call ${HOSPITAL_PHONE}.`;
   const footer = forAdmin
     ? "You are receiving this email because you are an administrator of the hospital's telemedicine service."
     : forDoctor

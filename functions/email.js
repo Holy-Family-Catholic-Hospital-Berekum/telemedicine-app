@@ -3,6 +3,10 @@
 //   sendQueuedEmail    Firestore trigger: sends each new mail/{id} at once
 //   retryQueuedEmails  every 15 min: retries temporary failures, finishes
 //                      anything a crash left half-sent, deletes old mail docs
+//   notifyAdminsNewBooking  Firestore trigger: every confirmed booking
+//                      (bookingLog/{bookingId}, paid online or pay at the
+//                      hospital) emails the active admins so it gets a
+//                      doctor and a time
 //
 // Sent through Resend (https://resend.com) from the hospital's own verified
 // domain (lib/mailConfig.js). Secret, never committed:
@@ -20,6 +24,7 @@ const logger = require("firebase-functions/logger");
 const { db, Timestamp, serverTime, audit } = require("./lib/core");
 const { FROM, REPLY_TO, EMAIL_CONFIGURED } = require("./lib/mailConfig");
 const { renderEmail } = require("./lib/emailTemplates");
+const { emailAdmins } = require("./lib/mailQueue");
 
 const RESEND_API_KEY = defineSecret("RESEND_API_KEY");
 const MAX_ATTEMPTS = 6;
@@ -119,6 +124,30 @@ async function deliver(ref) {
     logger.error("Appointment email failed", { mailId: ref.id, lastError });
   }
 }
+
+exports.notifyAdminsNewBooking = onDocumentCreated(
+  { document: "bookingLog/{bookingId}" },
+  async (event) => {
+    const log = event.data?.data();
+    if (!log) return;
+    const bookingId = event.params.bookingId;
+    // deepcode ignore Sqli: Firestore document ID, not SQL; the id of the server-written bookingLog entry.
+    const bookingSnap = await db.collection("bookings").doc(bookingId).get();
+    const booking = bookingSnap.exists ? bookingSnap.data() : {};
+    const confirmedAt = log.confirmedAt?.toMillis?.() ?? Date.now();
+    await emailAdmins("admin_new_booking", {
+      bookingId,
+      type: log.type,
+      mode: log.mode,
+      payAtHospital: log.payAtHospital === true,
+      amount: Number(log.amount || 0),
+      requestedDoctorName: booking.requestedDoctorName || null,
+      preferredAt: booking.preferredTime?.toMillis?.() ?? null,
+      // The template's "When" row: when it was booked.
+      scheduledAt: confirmedAt,
+    });
+  },
+);
 
 exports.sendQueuedEmail = onDocumentCreated(
   { document: "mail/{mailId}", secrets: [RESEND_API_KEY] },
