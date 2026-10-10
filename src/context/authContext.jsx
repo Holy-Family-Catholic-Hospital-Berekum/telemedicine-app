@@ -197,6 +197,9 @@ export function AuthProvider({ children }) {
   const [profile, setProfile] = useState(null); // { uid, role, name, department?, phone? }
   const [emailVerifiedFlag, setEmailVerifiedFlag] = useState(false);
   const [initializing, setInitializing] = useState(true);
+  // The signed-in account couldn't be checked because the server couldn't
+  // be reached (offline / very weak connection).
+  const [connectionProblem, setConnectionProblem] = useState(false);
   const idleTimer = useRef(null);
   // Tracks the uid whose profile is currently loaded into `profile`, so
   // signIn() can populate profile/idle-timer itself and the
@@ -320,11 +323,14 @@ export function AuthProvider({ children }) {
         }
         loadedProfileUidRef.current = fbUser.uid;
         setProfile(p);
+        setConnectionProblem(false);
         scheduleIdleLogout(p.role);
       } catch {
         // Couldn't reach Firebase. Stay signed in but with no role, so
-        // protected pages refuse until a reload succeeds.
+        // protected pages refuse until a reload succeeds; they say "you're
+        // offline" rather than "unauthorized" (protectedRoutes.jsx).
         setProfile(null);
+        setConnectionProblem(true);
       } finally {
         setInitializing(false);
       }
@@ -809,6 +815,7 @@ export function AuthProvider({ children }) {
     profile,
     emailVerified: emailVerifiedFlag,
     initializing,
+    connectionProblem,
     signUpPatient,
     signIn,
     signOutUser,

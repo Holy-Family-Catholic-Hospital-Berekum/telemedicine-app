@@ -35,6 +35,7 @@ function PatientPage({ children }) {
 import WhatsAppSupport from "../components/shared/whatsAppSupport";
 import NetworkBanner from "../components/shared/networkBanner";
 import AppUpdate from "../components/shared/appUpdate";
+import { AppErrorBoundary } from "../components/shared/offlineScreen";
 
 // Where signed-out staff are sent: the hidden staff sign-in page.
 const STAFF_HOME = STAFF_LOGIN_PATH || "/";
@@ -45,6 +46,8 @@ export default function App() {
       {/* Every page: connection status, and "new version ready". */}
       <NetworkBanner />
       <AppUpdate />
+      {/* A page that can't load (e.g. offline) shows a message, not a blank screen. */}
+      <AppErrorBoundary>
       <Suspense fallback={<HealthcarePreloader fullscreen label="Loading…" />}>
       <Routes>
         <Route path="/" element={<PatientPage><Home /></PatientPage>} />
@@ -82,6 +85,7 @@ export default function App() {
         </Route>
       </Routes>
       </Suspense>
+      </AppErrorBoundary>
     </AuthProvider>
   );
 }

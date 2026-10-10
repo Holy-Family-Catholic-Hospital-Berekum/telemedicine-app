@@ -43,11 +43,12 @@
 import { Navigate, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "./context/authContext.jsx";
 import HealthcarePreloader from "./components/common/healthcarePreloader.jsx";
+import { OfflineScreen } from "../components/shared/offlineScreen.jsx";
 
 const ROLE_HOME = { patient: "/dashboard", admin: "/admin", doctor: "/doctor" };
 
 export function ProtectedRoute({ allowedRoles, requireVerifiedEmail = false, redirectTo = "/signin" }) {
-  const { user, role, emailVerified, initializing } = useAuth();
+  const { user, role, emailVerified, initializing, connectionProblem } = useAuth();
   const location = useLocation();
 
   if (initializing) {
@@ -56,6 +57,18 @@ export function ProtectedRoute({ allowedRoles, requireVerifiedEmail = false, red
 
   if (!user) {
     return <Navigate to={redirectTo} replace state={{ from: location }} />;
+  }
+
+  // Signed in, but the account couldn't be checked without a connection:
+  // say so (and reload when it's back) instead of "unauthorized". Still no
+  // access until the check succeeds.
+  if (!role && connectionProblem) {
+    return (
+      <OfflineScreen
+        title="You're offline"
+        message="Connect to the internet to see your appointments. This page will reload by itself when you're back online."
+      />
+    );
   }
 
   // Only patients are gated on email verification — staff accounts are

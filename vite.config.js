@@ -63,8 +63,8 @@ function seoFiles(siteUrl) {
 }
 
 // Installable app + offline shell (service worker, Workbox). Built for weak
-// connections: only what the first screen needs is stored up front (page
-// shell, main code, styles, logo, Latin fonts); other pages' code and the
+// connections: the patient pages' code, styles, logo and Latin fonts are
+// stored up front, so the installed app always opens; staff portals and
 // photos are stored the first time they're used. Firestore and the Cloud
 // Functions are never cached (privacy: nothing about appointments is kept
 // on the device). A new version waits until the user taps "Refresh"
@@ -73,8 +73,10 @@ const pwa = VitePWA({
   registerType: "prompt",
   injectRegister: false,
   manifest: {
-    name: "Holy Family Catholic Hospital Telemedicine",
-    short_name: "HFCH Telemedicine",
+    // short_name is the label under the home-screen icon (about 12
+    // characters fit); name is used on the install prompt and splash.
+    name: "Holy Family Telemedicine",
+    short_name: "Holy Family",
     description: "Book and join video consultations with Holy Family Catholic Hospital, Berekum.",
     start_url: "/dashboard",
     scope: "/",
@@ -89,17 +91,23 @@ const pwa = VitePWA({
     ],
   },
   workbox: {
+    // Every page a patient can reach, so the installed app opens offline
+    // (sign-in, dashboard, booking, terms…). Staff portals (admin, doctor,
+    // staff sign-in) and file uploads are left out: staff work online.
     globPatterns: [
       "index.html",
-      "assets/index-*.{js,css}",
-      "assets/react-*.js",
-      "assets/firebase-*.js",
+      "assets/*.{js,css}",
       "assets/logo-*.webp",
       "assets/*-latin-wght-normal-*.woff2",
       "favicon-32.png",
       "apple-touch-icon.png",
     ],
-    globIgnores: ["assets/firebase-storage-*"],
+    globIgnores: [
+      "assets/firebase-storage-*",
+      "assets/admin-*",
+      "assets/doctor-*",
+      "assets/staffSignIn-*",
+    ],
     // Every route is the app (React Router); the shell works offline.
     navigateFallback: "/index.html",
     navigateFallbackDenylist: [/^\/robots\.txt$/, /^\/sitemap\.xml$/, /^\/__\//],
