@@ -20,7 +20,7 @@
    (monospace + a small notch) since those codes are the object at
    the center of the whole booking/payment flow.
 */
-/* Fonts (Manrope, Inter, JetBrains Mono) load from index.html. */
+/* Fonts (Manrope, Inter, Fraunces) are self-hosted: imported in src/index.jsx. */
 
 .admin-root {
   --color-primary: #f88535;
@@ -40,9 +40,9 @@
   --color-warning-bg: #fcf1dc;
   --color-danger: #d6473f;
   --color-danger-bg: #fbeae9;
-  --font-display: "Manrope", "Inter", sans-serif;
-  --font-body: "Inter", sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+  --font-display: "Manrope Variable", "Manrope", "Inter Variable", sans-serif;
+  --font-body: "Inter Variable", "Inter", sans-serif;
+  --font-mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
   --radius-sm: 8px;
   --radius-md: 14px;
   --radius-lg: 20px;

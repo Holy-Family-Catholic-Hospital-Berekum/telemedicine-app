@@ -49,6 +49,15 @@
       ]
     },
     {
+      "source": "/(sw.js|workbox-(.*).js|manifest.webmanifest)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=0, must-revalidate"
+        }
+      ]
+    },
+    {
       "source": "/(sitemap.xml|robots.txt)",
       "headers": [
         {

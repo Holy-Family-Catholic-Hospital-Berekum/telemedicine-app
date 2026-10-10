@@ -32,12 +32,12 @@ import { useSyncExternalStore } from "react";
 import { doc, getFirestore, onSnapshot } from "firebase/firestore";
 import { app } from "./firebase";
 
-import heroDefault from "./assets/hero-consult.jpg";
-import authDefault from "./assets/auth-bg.jpg";
-import slide1 from "../images/sidebarImages/sidebarImage1.jpg";
-import slide2 from "../images/sidebarImages/sidebarImage2.jpg";
-import slide3 from "../images/sidebarImages/sidebarImage3.jpg";
-import slide4 from "../images/sidebarImages/sidebarImage4.jpg";
+import heroDefault from "./assets/hero-consult.webp";
+import authDefault from "./assets/auth-bg.webp";
+import slide1 from "../images/sidebarImages/sidebarImage1.webp";
+import slide2 from "../images/sidebarImages/sidebarImage2.webp";
+import slide3 from "../images/sidebarImages/sidebarImage3.webp";
+import slide4 from "../images/sidebarImages/sidebarImage4.webp";
 
 /** Bundled images used until an admin uploads their own. */
 export const DEFAULT_IMAGES = {

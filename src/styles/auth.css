@@ -3,7 +3,7 @@
    Brand colors for this module: #EA7321 (orange) / #0095D9 (blue) on white.
 */
 
-/* Fonts (Manrope, Inter, JetBrains Mono) load from index.html. */
+/* Fonts are self-hosted: imported in src/index.jsx. */
 
 .auth-root {
   --auth-primary: #ea7321;
@@ -21,7 +21,7 @@
   --auth-danger-bg: #fbeae9;
   --auth-success: #1fa97d;
 
-  font-family: "Inter", sans-serif;
+  font-family: "Inter Variable", "Inter", sans-serif;
   color: var(--auth-ink);
   height: 100vh;
   overflow: hidden;
@@ -34,7 +34,7 @@
 }
 .auth-root h1,
 .auth-root h2 {
-  font-family: "Manrope", sans-serif;
+  font-family: "Manrope Variable", "Manrope", sans-serif;
   margin: 0;
 }
 .auth-root button {
@@ -498,7 +498,7 @@
   }
 }
 .hp-label {
-  font-family: "Inter", sans-serif;
+  font-family: "Inter Variable", "Inter", sans-serif;
   font-size: 15px;
   color: var(--auth-ink-soft, #5b6b7a);
   margin: 0;

@@ -13,13 +13,14 @@ import {
   query,
   where,
   orderBy,
-  getDocs,
+  getDocs as getDocsUntracked,
   doc,
-  getDoc,
+  getDoc as getDocUntracked,
   updateDoc,
   serverTimestamp,
 } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
+import { track, tracked } from "../../src/networkStatus";
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 
 import { db, functions } from "../../src/firebase";
@@ -27,9 +28,14 @@ import { storage } from "../../src/firebaseStorage";
 import { toDate } from "../../src/constants";
 import { getRoomDevice } from "../../src/roomDevice";
 
-const callStartVideoCall = httpsCallable(functions, "startVideoCall");
-const callMarkDone = httpsCallable(functions, "markConsultationDone");
-const callReportUnavailable = httpsCallable(functions, "reportDoctorUnavailable");
+// Reads people wait on show "Your connection is slow" when late (src/networkStatus.js).
+const getDocs = (q) => track(getDocsUntracked(q));
+const getDoc = (r) => track(getDocUntracked(r));
+
+
+const callStartVideoCall = tracked(httpsCallable(functions, "startVideoCall"));
+const callMarkDone = tracked(httpsCallable(functions, "markConsultationDone"));
+const callReportUnavailable = tracked(httpsCallable(functions, "reportDoctorUnavailable"));
 
 export async function fetchAssignedConsultations(doctorUid) {
   const snap = await getDocs(

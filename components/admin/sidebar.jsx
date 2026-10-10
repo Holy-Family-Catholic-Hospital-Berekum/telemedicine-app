@@ -12,7 +12,7 @@ import {
   IconLogout,
 } from "./icons.jsx";
 
-import logo from "./logo.png";
+import logo from "./logo.webp";
 
 const NAV_ITEMS = [
   { key: "overview", label: "Overview", icon: IconOverview },

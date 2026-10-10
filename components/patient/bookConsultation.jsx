@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { httpsCallable } from "firebase/functions";
+import { tracked } from "../../src/networkStatus";
 import { collection, getDocs, query, where } from "firebase/firestore";
 
 import { db, functions } from "../../src/firebase";
@@ -162,9 +163,9 @@ const STEP_LABELS = ["Your details", "Pay", "Done"];
    fee from its own table and decides, on its own, whether money arrived.
    =================================================================== */
 
-const callCreateBookingDraft = httpsCallable(functions, "createBookingDraft");
-const callInitializePayment = httpsCallable(functions, "initializePayment");
-const callGetBookingStatus = httpsCallable(functions, "getBookingStatus");
+const callCreateBookingDraft = tracked(httpsCallable(functions, "createBookingDraft"));
+const callInitializePayment = tracked(httpsCallable(functions, "initializePayment"));
+const callGetBookingStatus = tracked(httpsCallable(functions, "getBookingStatus"));
 
 // Creates an unpaid booking draft. The server computes the fee — we only
 // send what the patient actually chose (including which doctor, if any).
@@ -776,9 +777,8 @@ export default function BookConsultation() {
   return (
     <div className="font-body text-black bg-white min-h-screen overflow-x-hidden">
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600;700&display=swap');
-        .font-display { font-family: 'Fraunces', serif; }
-        .font-body { font-family: 'Inter', sans-serif; }
+        .font-display { font-family: 'Fraunces Variable', 'Fraunces', serif; }
+        .font-body { font-family: 'Inter Variable', 'Inter', sans-serif; }
         @keyframes stepIn {
           from { opacity: 0; transform: translateY(8px); }
           to { opacity: 1; transform: translateY(0); }

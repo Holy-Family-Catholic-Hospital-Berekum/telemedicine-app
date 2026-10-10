@@ -41,7 +41,7 @@ import {
   passwordStrengthLabel,
 } from "../../utils/validators.js";
 import "../../styles/auth.css";
-import logo from "../../assets/logo.png";
+import logo from "../../assets/logo.webp";
 import { usePageMeta } from "../../seo.js";
 
 const ASIDE_POINTS = [

@@ -99,8 +99,8 @@ Swap the bundled hero import for the live one, with the bundled photo kept
 as the fallback:
 
 ```diff
-- import heroImage from "../../src/assets/hero-consult.jpg";
-+ import heroDefault from "../../src/assets/hero-consult.jpg";
+- import heroImage from "../../src/assets/hero-consult.webp";
++ import heroDefault from "../../src/assets/hero-consult.webp";
 + import { useSiteSettings } from "../../src/siteSettings";
 ```
 
@@ -119,11 +119,11 @@ in the hero section already just uses this variable.
 `AuthAside.jsx` wasn't in what you shared, so I can't patch it blind — but
 the change is the same shape as `BrandAside` above (its sibling component).
 Wherever `AuthAside.jsx` currently imports its background photo (likely the
-same `auth-bg.jpg` `BrandAside` used to default to), do:
+same `auth-bg.webp` `BrandAside` used to default to), do:
 
 ```diff
-- import authBgPhoto from "../../src/assets/auth-bg.jpg";
-+ import authDefault from "../../src/assets/auth-bg.jpg";
+- import authBgPhoto from "../../src/assets/auth-bg.webp";
++ import authDefault from "../../src/assets/auth-bg.webp";
 + import { useSiteSettings } from "../../src/siteSettings";
 ```
 

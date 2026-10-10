@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import Header from "../shared/header";
 import Footer from "../shared/footer";
 import { HOSPITAL_PHONE_TEL } from "../shared/contact";
-import landingImage from "../../src/assets/landingImage.jpg";
+import landingImage from "../../src/assets/landingImage.webp";
 import { useAuth } from "../../src/context/authContext.jsx";
 import HealthcarePreloader from "../../src/components/common/healthcarePreloader.jsx";
 
@@ -12,7 +12,7 @@ import HealthcarePreloader from "../../src/components/common/healthcarePreloader
 import { useListedDoctors } from "../../src/doctorDirectory";
 import { DoctorCardSummary } from "./doctorProfileDetails";
 import EmergencyNotice from "./emergencyNotice";
-import heroDefault from "../../src/assets/hero-consult.jpg";
+import heroDefault from "../../src/assets/hero-consult.webp";
 import { useSiteSettings } from "../../src/siteSettings";
 import { fetchAvailableSlots } from "./dashboard/patientFirestoreService";
 import { TYPE_LABELS, MODE_LABELS, formatDateTime } from "../../src/constants";
@@ -48,7 +48,7 @@ import { usePageMeta } from "../../src/seo.js";
  * - CTA banner: the warm gold pill, quieter than the floating one.
  *
  * Images needed:
- * - src/assets/hero-consult.jpg (hero photo, see the import note above)
+ * - src/assets/hero-consult.webp (hero photo, see the import note above)
  * - Doctor portraits come from each doctor's profile photo (doctor portal).
  *   Missing photos degrade to an initials tile, they don't break.
  *

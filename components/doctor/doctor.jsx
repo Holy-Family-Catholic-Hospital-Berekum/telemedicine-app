@@ -25,7 +25,7 @@ import { Pagination } from "../shared/pagination.jsx";
 import { usePagination } from "../shared/usePagination.js";
 // REMOVED: import { currentDoctor } from "./docMockData";
 // ASSUMPTION: this file lives at src/components/doctor/DoctorDashboard.jsx,
-// matching the "../../src/assets/logo.png" import already below — so
+// matching the "../../src/assets/logo.webp" import already below — so
 // "../../context/authContext.jsx" resolves to src/context/authContext.jsx,
 // the same file signIn.jsx already imports. Adjust if your actual depth
 // differs.
@@ -38,7 +38,7 @@ import {
 } from "./docFirestoreService";
 import { useSiteSettings } from "../../src/siteSettings";
 import VideoCallModal from "../video/videoCallModal";
-import hospitalLogo from "../../src/assets/logo.png";
+import hospitalLogo from "../../src/assets/logo.webp";
 import { callableMessage, HOSPITAL_TIME_ZONE } from "../../src/constants";
 import { getRoomDevice } from "../../src/roomDevice";
 import { usePageMeta } from "../../src/seo.js";

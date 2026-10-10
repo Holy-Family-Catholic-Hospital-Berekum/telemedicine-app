@@ -11,20 +11,25 @@ import {
   query,
   where,
   orderBy,
-  getDocs,
+  getDocs as getDocsUntracked,
   limit,
 } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
+import { track, tracked } from "../../../src/networkStatus";
 
 import { db, functions } from "../../../src/firebase";
 import { toDate } from "../../../src/constants";
 
-const callRequestReschedule = httpsCallable(functions, "requestReschedule");
-const callStartVideoCall = httpsCallable(functions, "startVideoCall");
-const callGetBookingStatus = httpsCallable(functions, "getBookingStatus");
-const callRequestRefund = httpsCallable(functions, "requestRefund");
-const callStartNoShowReschedule = httpsCallable(functions, "startNoShowReschedule");
-const callGetNoShowFeeStatus = httpsCallable(functions, "getNoShowFeeStatus");
+// Reads people wait on show "Your connection is slow" when late (src/networkStatus.js).
+const getDocs = (q) => track(getDocsUntracked(q));
+
+
+const callRequestReschedule = tracked(httpsCallable(functions, "requestReschedule"));
+const callStartVideoCall = tracked(httpsCallable(functions, "startVideoCall"));
+const callGetBookingStatus = tracked(httpsCallable(functions, "getBookingStatus"));
+const callRequestRefund = tracked(httpsCallable(functions, "requestRefund"));
+const callStartNoShowReschedule = tracked(httpsCallable(functions, "startNoShowReschedule"));
+const callGetNoShowFeeStatus = tracked(httpsCallable(functions, "getNoShowFeeStatus"));
 
 /** The patient's refund requests, keyed by consultationId. */
 export async function fetchMyRefundRequests(patientUid) {

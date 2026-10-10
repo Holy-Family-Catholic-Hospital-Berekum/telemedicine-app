@@ -15,7 +15,7 @@ import {
   EyeOff,
 } from "lucide-react";
 import { useWebRTCCall } from "./useWebRTCCall";
-import hospitalLogo from "../../src/assets/logo.png";
+import hospitalLogo from "../../src/assets/logo.webp";
 import { functions } from "../../src/firebase";
 import { useAuth } from "../../src/context/authContext.jsx";
 

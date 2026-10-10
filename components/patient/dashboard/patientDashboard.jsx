@@ -34,8 +34,9 @@ import ConsultationHistory from "./consultationHistory";
 import PatientSettings from "./patientSettings";
 
 import VideoCallModal from "../../video/videoCallModal";
+import InstallAppPrompt from "./installAppPrompt";
 import BrandAside from "../../shared/brandAside";
-import logo from "../../../src/assets/logo.png";
+import logo from "../../../src/assets/logo.webp";
 import Footer from "../../shared/footer";
 import { usePageMeta } from "../../../src/seo.js";
 
@@ -48,6 +49,10 @@ export default function Dashboard() {
 
   const [tab, setTab] = useState("appointments"); // "appointments" | "settings"
   const [bookings, setBookings] = useState(null);
+  // The first load failed (usually the connection): say so, with Try again,
+  // instead of looking like there are no appointments.
+  const [loadError, setLoadError] = useState(false);
+  const [loadKey, setLoadKey] = useState(0);
   const [slots, setSlots] = useState([]);
   const [history, setHistory] = useState(null);
   const [historyMax, setHistoryMax] = useState(HISTORY_STEP);
@@ -79,6 +84,7 @@ export default function Dashboard() {
       .catch((error) => {
         console.error("Failed to load dashboard:", error);
         if (cancelled) return;
+        setLoadError(true);
         setBookings([]);
         setSlots([]);
         setHistory([]);
@@ -87,7 +93,7 @@ export default function Dashboard() {
     return () => {
       cancelled = true;
     };
-  }, [user]);
+  }, [user, loadKey]);
 
 
   // While a video appointment's room is open (and the patient isn't in the
@@ -406,7 +412,24 @@ export default function Dashboard() {
                 </section>
               )}
 
-                            {groups.length === 0 ? (
+              {loadError ? (
+                <section className="rounded-xl border border-[#B23A3A]/30 bg-[#B23A3A]/5 px-5 py-8 text-center">
+                  <p className="text-lg font-medium">We couldn&apos;t load your appointments.</p>
+                  <p className="mt-1 text-base text-black/70">
+                    Please check your internet connection, then try again.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLoadError(false);
+                      setLoadKey((k) => k + 1);
+                    }}
+                    className="mt-4 rounded-md bg-[#0095D9] px-5 py-2.5 text-base font-semibold text-white"
+                  >
+                    Try again
+                  </button>
+                </section>
+              ) : groups.length === 0 ? (
                 <section className="rounded-xl border border-dashed border-black/20 px-5 py-10 text-center">
                   <p className="text-lg font-medium">You don't have any appointments yet.</p>
                   <p className="mt-1 text-base text-black/70">
@@ -502,6 +525,9 @@ export default function Dashboard() {
             }}
           />
         )}
+
+        {/* "Add to home screen", once per device; never over a call. */}
+        <InstallAppPrompt hidden={Boolean(activeCallBooking || consentFor)} />
 
         <Footer />
       </div>

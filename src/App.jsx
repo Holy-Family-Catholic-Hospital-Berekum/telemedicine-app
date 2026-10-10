@@ -33,6 +33,8 @@ function PatientPage({ children }) {
   );
 }
 import WhatsAppSupport from "../components/shared/whatsAppSupport";
+import NetworkBanner from "../components/shared/networkBanner";
+import AppUpdate from "../components/shared/appUpdate";
 
 // Where signed-out staff are sent: the hidden staff sign-in page.
 const STAFF_HOME = STAFF_LOGIN_PATH || "/";
@@ -40,6 +42,9 @@ const STAFF_HOME = STAFF_LOGIN_PATH || "/";
 export default function App() {
   return (
     <AuthProvider>
+      {/* Every page: connection status, and "new version ready". */}
+      <NetworkBanner />
+      <AppUpdate />
       <Suspense fallback={<HealthcarePreloader fullscreen label="Loading…" />}>
       <Routes>
         <Route path="/" element={<PatientPage><Home /></PatientPage>} />

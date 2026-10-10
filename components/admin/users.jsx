@@ -289,7 +289,7 @@ function SetupCodeDialog({ shown, onClose }) {
         </p>
         <p
           style={{
-            fontFamily: "JetBrains Mono, monospace",
+            fontFamily: "ui-monospace, Menlo, Consolas, monospace",
             fontSize: 28,
             fontWeight: 700,
             letterSpacing: "0.12em",

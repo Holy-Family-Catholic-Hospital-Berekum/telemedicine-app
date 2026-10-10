@@ -26,7 +26,7 @@
 // ASSUMPTION: lives at src/components/shared/BrandAside.jsx, alongside
 // header.jsx and footer.jsx, with src/siteSettings.js one level up.
 import { Link } from "react-router-dom";
-import logo from "../../src/assets/logo.png";
+import logo from "../../src/assets/logo.webp";
 import { useSiteSettings, DEFAULT_IMAGES } from "../../src/siteSettings";
 
 // How long (seconds) each photo stays fully visible before crossfading

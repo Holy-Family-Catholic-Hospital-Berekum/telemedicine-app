@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { onAuthStateChanged, signOut } from "firebase/auth";
-import logo from "../../src/assets/logo.png";
+import logo from "../../src/assets/logo.webp";
 import { auth } from "../../src/firebase";
 import { HOSPITAL_PHONE_DISPLAY, HOSPITAL_PHONE_TEL } from "./contact";
 
@@ -95,7 +95,6 @@ export default function Header({
 
   const sharedStyle = (
     <style>{`
-      @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600;700&display=swap');
 
       :root {
         --brand-orange: #F88535;
@@ -105,11 +104,11 @@ export default function Header({
       }
 
       .font-display {
-        font-family: 'Fraunces', serif;
+        font-family: 'Fraunces Variable', 'Fraunces', serif;
       }
 
       .font-body {
-        font-family: 'Inter', sans-serif;
+        font-family: 'Inter Variable', 'Inter', sans-serif;
       }
     `}</style>
   );

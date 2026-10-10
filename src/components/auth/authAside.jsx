@@ -5,12 +5,12 @@
 // only the headline copy changing.
 
 import { Link } from "react-router-dom";
-import logo from "../../assets/logo.png";
-// Add your background photo at src/assets/auth-bg.jpg (same folder as
+import logo from "../../assets/logo.webp";
+// Add your background photo at src/assets/auth-bg.webp (same folder as
 // the logo). If you're using a different extension or filename, just
 // update this import to match.
 
-import authDefault from "../../assets/auth-bg.jpg";
+import authDefault from "../../assets/auth-bg.webp";
 import { useSiteSettings } from "../../siteSettings";
 
 export default function AuthAside({ heading, body, points }) {
