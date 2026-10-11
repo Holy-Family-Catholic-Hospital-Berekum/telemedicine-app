@@ -1473,7 +1473,7 @@ function HomeContent({ isLoggedIn }) {
               </h2>
               <p className="mt-4 text-[16px] sm:text-[16px] leading-relaxed text-[var(--parchment)]/75">
                 After your consultation, we delete the details you gave when
-                booking (date of birth, sex, where you live and phone). We
+                booking (age, sex, where you live and phone). We
                 only keep a short note of the visit: the doctor, the date and
                 what you paid. Video calls may be recorded by the hospital.
                 You will see a red REC sign when this happens, and only a few

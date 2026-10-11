@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import SensitiveDetails from "../sensitiveDetails";
 import { getCallWindow } from "../docUtils";
+import { useCallWarmup } from "../../../src/callWarmup";
 import { TYPE_LABELS, formatTime, formatDateTime } from "../../../src/constants";
 
 const MODE_STYLE = {
@@ -34,6 +35,8 @@ export default function ConsultationCard({
   const { unlocked, minutesUntilUnlock } = getCallWindow(
     consultation.scheduledTime,
   );
+  // A video call whose room is open: keep the call server awake.
+  useCallWarmup(isOnline && unlocked);
 
   const [callError, setCallError] = useState(null);
   const [starting, setStarting] = useState(false);

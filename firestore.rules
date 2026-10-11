@@ -35,7 +35,15 @@ service cloud.firestore {
       let fb = request.auth.token.get('firebase', {});
       return fb.get('sign_in_second_factor', '') == 'totp'
         && fb.get('second_factor_identifier', '') == staffDoc().get('mfaFactorUid', '-')
-        && authAgeSeconds() < 43200;
+        && authAgeSeconds() < 43200
+        && staffNotIdle();
+    }
+    // Inactivity, as on the server (functions/lib/core.js
+    // STAFF_IDLE_LIMIT_MINUTES = 35): no activity recorded in that time
+    // means signed out. No record yet = allowed (set on the next request).
+    function staffNotIdle() {
+      let last = staffDoc().get('lastActiveAt', null);
+      return last == null || request.time < last + duration.value(35, 'm');
     }
     function isAdmin() {
       return signedIn() && role() == 'admin' && staffActive() && staffSecondFactor();

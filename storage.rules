@@ -29,7 +29,13 @@ service firebase.storage {
       let fb = request.auth.token.get('firebase', {});
       return fb.get('sign_in_second_factor', '') == 'totp'
         && fb.get('second_factor_identifier', '') == staffDoc().get('mfaFactorUid', '-')
-        && request.time.toMillis() / 1000 - request.auth.token.auth_time < 43200;
+        && request.time.toMillis() / 1000 - request.auth.token.auth_time < 43200
+        && staffNotIdle();
+    }
+    // Inactivity, as in firestore.rules (35 minutes without activity).
+    function staffNotIdle() {
+      let last = staffDoc().get('lastActiveAt', null);
+      return last == null || request.time < last + duration.value(35, 'm');
     }
     function isAdmin() {
       return signedIn() && role() == 'admin' && staffActive() && staffSecondFactor();

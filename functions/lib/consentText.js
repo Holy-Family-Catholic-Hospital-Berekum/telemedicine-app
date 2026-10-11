@@ -38,9 +38,23 @@ const BOOKING_CONSENT_TEXT = {
     "authorised hospital administrators, and every access is logged. " +
     "Payment is handled by Paystack; we never see or store your mobile " +
     "money PIN.",
+  // Age instead of date of birth (hospital decision, October 2026).
+  "2026-10-v3":
+    "To set up and carry out this consultation we collect your age, " +
+    "sex, location and phone number. Only hospital administrators and " +
+    "the doctor assigned to you can see them, and they are permanently " +
+    "deleted when your consultation is closed. We keep a short record " +
+    "of each consultation (doctor, date, start and end time, and the " +
+    "amount paid) so you and the hospital can see your history. Online " +
+    "video consultations may be recorded, either as video with sound " +
+    "or as sound only, when the hospital has call recording switched " +
+    "on; a REC sign shows on screen whenever a call is being recorded. " +
+    "Recordings are stored securely, can only be opened by authorised " +
+    "hospital administrators, and every access is logged. Payment is " +
+    "handled by Paystack; we never see or store your mobile money PIN.",
 };
 
-const CURRENT_BOOKING_CONSENT = "2026-10-v2";
+const CURRENT_BOOKING_CONSENT = "2026-10-v3";
 
 // Shown once, the first time a patient joins each video consultation.
 const CALL_CONSENT_TEXT = {
@@ -83,9 +97,18 @@ const GUARDIAN_CONSENT_TEXT = {
     "carry out the consultation, as described above and in the privacy " +
     "policy. I am responsible for this booking, and I or another " +
     "responsible adult will be with the child during the consultation.",
+  // Age instead of date of birth.
+  "2026-10-guardian-v2":
+    "I am the parent or legal guardian of the child this consultation " +
+    "is for, who is under 18. On the child's behalf, I consent to the " +
+    "hospital collecting and using the child's name, age, sex, " +
+    "location and phone number given in this booking to set up and " +
+    "carry out the consultation, as described above and in the privacy " +
+    "policy. I am responsible for this booking, and I or another " +
+    "responsible adult will be with the child during the consultation.",
 };
 
-const CURRENT_GUARDIAN_CONSENT = "2026-10-guardian-v1";
+const CURRENT_GUARDIAN_CONSENT = "2026-10-guardian-v2";
 
 module.exports = {
   BOOKING_CONSENT_TEXT,

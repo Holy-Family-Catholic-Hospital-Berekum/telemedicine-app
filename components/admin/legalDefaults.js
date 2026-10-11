@@ -27,7 +27,7 @@ export const DEFAULT_LEGAL = {
         body: `We only collect what we need to run your consultation.
 
 - Account details: your name, phone number and email address, and a password that is handled by our sign-in provider (we never see or store it in readable form).
-- Booking details: consultation type, whether you see the doctor by video call or at the hospital, your phone number, and the doctor you choose, if any. For a video call we also ask for your date of birth, sex, town or city and area or nearest landmark; for a visit at the hospital we don't. When you book for your child, these are your child's details, plus your child's name.
+- Booking details: consultation type, whether you see the doctor by video call or at the hospital, your phone number, and the doctor you choose, if any. For a video call we also ask for your age, sex, town or city and area or nearest landmark; for a visit at the hospital we don't. When you book for your child, these are your child's details, plus your child's name.
 - Your confirmation that you are 18 or older, given when you create an account, and, when you book for a child, your consent as their parent or guardian.
 - Payment details: the amount, the payment reference and whether the payment succeeded, and for refunds, the amount and its progress. Payment is made by mobile money through Paystack, and refunds go back through Paystack to the wallet you paid from. We never see or store your mobile money PIN.
 - Consultation information: what you share with your doctor during the consultation and, when the hospital has call recording switched on, a recording of online consultations (video with sound, or sound only) (see "Consultation recording" below).
@@ -69,7 +69,7 @@ We do not sell your information and we do not use it for advertising.`,
       {
         id: "retention",
         title: "How long we keep it",
-        body: `- The details you give when booking (phone number and, for a video call, date of birth, sex and location) are permanently deleted once your consultation is closed. If a consultation is marked as missed, they are kept for up to 14 days so you can book a new time or ask for a refund, then deleted when it closes. Unpaid bookings are deleted after 24 hours.
+        body: `- The details you give when booking (phone number and, for a video call, age, sex and location) are permanently deleted once your consultation is closed. If a consultation is marked as missed, they are kept for up to 14 days so you can book a new time or ask for a refund, then deleted when it closes. Unpaid bookings are deleted after 24 hours.
 - To protect against data loss, we keep encrypted backups of our database for 7 days. Information deleted from the platform can remain in these backups until they expire, at most 7 days later, and is only used to restore the service after a fault.
 - A short record of each consultation (doctor, date, start and end time, outcome and amount paid) is kept so you and the hospital can see your history.
 - A record that you agreed to this policy, and when, is kept as proof of your consent.

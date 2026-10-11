@@ -98,7 +98,7 @@ export default function MarkDoneModal({ consultation, onClose, onSubmit }) {
               <p className="text-sm text-[#12242C]">
                 {outcome === 'no_show'
                   ? "This marks the visit as missed and removes it from your list. The patient's booking is kept for 14 days so they can book a new time or ask for a refund, then its details are deleted."
-                  : "This closes the consultation and permanently deletes the patient's booking details (date of birth, sex, location, phone). A short record (doctor, times, amount) is kept. This can't be undone."}
+                  : "This closes the consultation and permanently deletes the patient's booking details (age, sex, location, phone). A short record (doctor, times, amount) is kept. This can't be undone."}
               </p>
             </div>
             {inPerson ? (

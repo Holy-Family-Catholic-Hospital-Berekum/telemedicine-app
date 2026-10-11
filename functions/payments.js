@@ -49,8 +49,7 @@ const {
   str,
   oneOf,
   docId,
-  dateOfBirth,
-  ageInYears,
+  patientAge,
   phoneE164,
   randomCode,
   sha256,
@@ -469,7 +468,7 @@ async function markBookingPaid(bookingRef, paystackData, via) {
 /* ------------------------------------------------------------------ */
 
 /**
- * data: { type, mode, dateOfBirth?, sex?, town?, area?, phone?,
+ * data: { type, mode, ageYears?, ageMonths?, sex?, town?, area?, phone?,
  *         doctorUid?, slotId?, consentVersion,
  *         forChild?, childName?, guardianConsentVersion? }
  *
@@ -508,7 +507,8 @@ exports.createBookingDraft = onCall({ secrets: [PAYSTACK_SECRET_KEY] }, async (r
     if (slotSnap.exists && MODES.includes(slotSnap.data().mode)) mode = slotSnap.data().mode;
   }
   const online = mode === "online";
-  const dob = online ? dateOfBirth(d.dateOfBirth) : null;
+  // Age (years; months too under 2), not a date of birth (hospital decision).
+  const patientAgeGiven = online ? patientAge(d.ageYears, d.ageMonths) : null;
   const sex = online ? oneOf(d.sex, SEXES, "sex") : null;
   const town = online ? str(d.town, { field: "Town", max: 80 }) : null;
   const area = online ? str(d.area, { field: "Area", max: 120 }) : null;
@@ -522,16 +522,16 @@ exports.createBookingDraft = onCall({ secrets: [PAYSTACK_SECRET_KEY] }, async (r
     );
   }
   const forChild = d.forChild === true;
-  // Age is checked only where a date of birth is asked for (video calls);
-  // every account holder has declared they are 18 or over at sign-up.
-  const age = dob ? ageInYears(dob) : null;
+  // Age is checked only where it's asked for (video calls); every account
+  // holder has declared they are 18 or over at sign-up.
+  const age = patientAgeGiven ? patientAgeGiven.years : null;
   let childName = null;
   if (forChild) {
     childName = str(d.childName, { field: "Child's full name", max: 100, min: 2 });
     if (age !== null && age >= 18) {
       throw new HttpsError(
         "invalid-argument",
-        "This date of birth is 18 or over. Adults book from their own account.",
+        "This age is 18 or over. Adults book from their own account.",
       );
     }
     if (d.guardianConsentVersion !== CURRENT_GUARDIAN_CONSENT) {
@@ -723,7 +723,7 @@ exports.createBookingDraft = onCall({ secrets: [PAYSTACK_SECRET_KEY] }, async (r
       mode,
       // Personal details (video calls only): deleted with the booking when
       // it closes.
-      dateOfBirth: dob,
+      age: patientAgeGiven,
       sex,
       location: online ? `${area}, ${town}` : null,
       phone,

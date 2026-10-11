@@ -123,9 +123,27 @@ notification channels; add more people there).
   016AE0-40E755-785DFD, USD 50 a month): emails at $20 spent, $50 spent
   and when the month is forecast to reach $50. A budget only warns; it
   never stops the app. Change it in Billing → Budgets & alerts.
-- `startVideoCall` keeps one instance warm (`minInstances: 1` in
-  functions/consultations.js), so joining a call never waits for a cold
-  start. That's a small fixed monthly cost; set it to 0 to turn it off.
+- No function is kept always-on (no fixed cost). Instead the call screens
+  wake `startVideoCall` shortly before a call (src/callWarmup.js), inside
+  the free allowance.
+
+## Staff inactivity
+
+Staff are signed out after 30 idle minutes in the browser, and the server
+and database rules refuse a staff account with no activity for 35 minutes
+(`adminUsers.lastActiveAt`, updated at most once a minute while they work
+or are in a call). Reloading the page doesn't revive an idle session; a
+fresh sign-in (password + authenticator code) does.
+
+## Deleting a patient
+
+Admin → Users → Delete (type DELETE). Every booking of theirs is removed
+and anything they paid for a consultation that never took place is
+refunded in full automatically (Payment issues, "Patient account deleted
+before the consultation"). History, payment records, consents, audit log
+and recordings are kept. Deleting the account in the Firebase console
+instead is also handled, by the daily maintenance run (within 24 hours).
+To block access without deleting, use Deactivate.
 
 ## Data retention (to decide)
 

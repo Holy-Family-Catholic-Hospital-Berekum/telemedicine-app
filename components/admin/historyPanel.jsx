@@ -5,7 +5,7 @@ import { Pagination, LoadOlder } from "../shared/pagination.jsx";
 import { usePagination } from "../shared/usePagination.js";
 
 // Consultation history, written by markConsultationDone. It survives the
-// deletion of the booking details, so it holds no date of birth, sex,
+// deletion of the booking details, so it holds no age, sex,
 // location or phone: doctor, times, outcome and amounts only.
 //
 // Timing rules:
@@ -59,7 +59,7 @@ export default function HistoryPanel({ history, window: win }) {
         <IconShield size={18} />
         <p>
           Doctor, timing, outcome and amount only. The patient's booking details
-          (date of birth, sex, location, phone) are deleted when a consultation
+          (age, sex, location, phone) are deleted when a consultation
           is closed.
         </p>
       </div>

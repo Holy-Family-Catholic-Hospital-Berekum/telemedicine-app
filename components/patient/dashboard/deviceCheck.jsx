@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Loader2, Mic, Video, X, AlertTriangle } from "lucide-react";
+import { warmCallServer } from "../../../src/callWarmup";
 
 // Camera and microphone check before a patient enters the video room: they
 // see themselves and a microphone level, and fix a blocked permission here
@@ -21,6 +22,9 @@ export default function DeviceCheck({ onReady, onCancel }) {
   const [error, setError] = useState(null);
   const [level, setLevel] = useState(0);
   const [attempt, setAttempt] = useState(0);
+
+  // Joining comes right after this check: make sure the server is awake.
+  useEffect(() => warmCallServer(), []);
 
   useEffect(() => {
     let cancelled = false;

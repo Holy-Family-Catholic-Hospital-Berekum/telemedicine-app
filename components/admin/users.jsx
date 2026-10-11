@@ -323,6 +323,7 @@ export default function Users({
   onDoctorAuthenticator,
   onDeactivate,
   onReactivate,
+  onDeletePatient,
 }) {
   const [subtab, setSubtab] = useState("all");
   const [creatingDoctor, setCreatingDoctor] = useState(false);
@@ -330,6 +331,10 @@ export default function Users({
   const [authFor, setAuthFor] = useState(null); // doctor whose authenticator to reset/issue
   const [deactivating, setDeactivating] = useState(null);
   const [reactivating, setReactivating] = useState(null);
+  const [deleting, setDeleting] = useState(null); // patient to delete for good
+  const [deleteWord, setDeleteWord] = useState("");
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState(null);
 
   // One query per subtab, same reasoning as BookingsPanel: switching
   // between "Doctors" and "Patients" to compare something shouldn't lose
@@ -496,6 +501,18 @@ export default function Users({
                               <IconUserCheck size={14} /> Reactivate
                             </button>
                           )}
+                          {u.role === "patient" && (
+                            <button
+                              className="btn btn-outline danger"
+                              onClick={() => {
+                                setDeleting(u);
+                                setDeleteWord("");
+                                setDeleteError(null);
+                              }}
+                            >
+                              Delete
+                            </button>
+                          )}
                         </div>
                       ) : (
                         <span className="admin-cell-sub">
@@ -578,6 +595,55 @@ export default function Users({
           }}
           onClose={() => setDeactivating(null)}
         />
+      )}
+
+      {deleting && (
+        <div className="admin-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="delete-patient-title">
+          <div className="admin-modal">
+            <h3 id="delete-patient-title">Delete {deleting.name} for good?</h3>
+            <p>
+              This permanently deletes the patient&apos;s account and every booking they have. Any
+              payment for a consultation that hasn&apos;t taken place is <strong>refunded in full</strong>{" "}
+              to the wallet they paid from. Their consultation history and payment records are kept.
+              This can&apos;t be undone; to block access for now, use Deactivate instead.
+            </p>
+            <div className="admin-field" style={{ marginTop: 12 }}>
+              <label htmlFor="delete-confirm">Type DELETE to confirm</label>
+              <input
+                id="delete-confirm"
+                value={deleteWord}
+                onChange={(e) => setDeleteWord(e.target.value)}
+                autoComplete="off"
+              />
+            </div>
+            {deleteError && (
+              <p style={{ color: "var(--color-danger)", marginTop: 8 }}>{deleteError}</p>
+            )}
+            <div className="admin-modal-actions">
+              <button className="btn btn-outline" onClick={() => setDeleting(null)} disabled={deleteBusy}>
+                Cancel
+              </button>
+              <button
+                className="btn btn-primary danger"
+                disabled={deleteWord.trim() !== "DELETE" || deleteBusy}
+                onClick={async () => {
+                  setDeleteBusy(true);
+                  setDeleteError(null);
+                  try {
+                    await onDeletePatient(deleting);
+                    setDeleting(null);
+                  } catch (err) {
+                    setDeleteError(callableMessage(err, "The patient couldn't be deleted."));
+                  } finally {
+                    setDeleteBusy(false);
+                  }
+                }}
+              >
+                {deleteBusy ? "Deleting…" : "Delete patient"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {reactivating && (

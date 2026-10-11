@@ -129,6 +129,11 @@ const callUpdatePatientProfile = httpsCallable(functions, "updatePatientProfile"
 const callSyncAccountEmail = httpsCallable(functions, "syncAccountEmail");
 const callUpdateStaffProfile = httpsCallable(functions, "updateStaffProfile");
 const callConfirmStaffSession = httpsCallable(functions, "confirmStaffSession");
+const callStaffActivity = httpsCallable(functions, "staffActivity");
+// Staff: tell the server the session is in use at most this often while
+// someone is active (the server refuses accounts idle for 35 minutes:
+// functions/lib/core.js). Well inside Firebase's free allowance.
+const STAFF_ACTIVITY_EVERY_MS = 2 * 60 * 1000;
 
 const AuthContext = createContext(null);
 
@@ -338,12 +343,28 @@ export function AuthProvider({ children }) {
     return unsubscribe;
   }, [loadProfile, scheduleIdleLogout, clearIdleTimer]);
 
-  // Reset the idle timer on real user activity.
+  // Reset the idle timer on real user activity. Staff also tell the server
+  // (at most every 2 minutes), which enforces the same limit; if it says
+  // the session went idle, sign out here too.
   useEffect(() => {
     if (!firebaseUser || !profile) return;
-    const reset = () => scheduleIdleLogout(profile.role);
+    const staff = STAFF_ROLES.includes(profile.role);
+    let lastPing = 0;
+    const ping = () => {
+      const now = Date.now();
+      if (now - lastPing < STAFF_ACTIVITY_EVERY_MS) return;
+      lastPing = now;
+      callStaffActivity({}).catch((err) => {
+        if (err?.details?.reason === "idle") signOut(auth).catch(() => {});
+      });
+    };
+    const reset = () => {
+      scheduleIdleLogout(profile.role);
+      if (staff) ping();
+    };
     const events = ["mousemove", "keydown", "click", "scroll", "touchstart"];
     events.forEach((e) => window.addEventListener(e, reset, { passive: true }));
+    if (staff) ping();
     return () => {
       events.forEach((e) => window.removeEventListener(e, reset));
       clearIdleTimer();

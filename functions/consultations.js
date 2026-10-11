@@ -45,7 +45,10 @@ const {
   rateLimit,
   sha256,
 } = require("./lib/core");
-const { CALL_CONSENT_TEXT, CURRENT_CALL_CONSENT } = require("./lib/consentText");
+const {
+  CALL_CONSENT_TEXT,
+  CURRENT_CALL_CONSENT,
+} = require("./lib/consentText");
 const { verifyRoomDevice } = require("./roomDevices");
 const {
   markNoShow,
@@ -113,23 +116,34 @@ function doctorUnavailableError(role) {
  * video-consultation consent version; it's stored as a consent record and
  * later joins don't ask again.
  */
-// One instance kept warm (minInstances: 1) so a doctor or patient joining
-// after a quiet spell doesn't wait 2-5 s for a cold start. Costs a small
-// fixed amount a month; set to 0 to turn it off.
-exports.startVideoCall = onCall({ minInstances: 1 }, async (request) => {
+// No always-on instance (hospital decision: no fixed cost). Instead the
+// dashboards send { warmup: true } shortly before a call can start
+// (src/callWarmup.js), so the function is awake by the time someone taps
+// Join; a warm-up returns at once and touches no data.
+exports.startVideoCall = onCall(async (request) => {
+  if (request.data?.warmup === true) return { warm: true };
   const caller = await requireRole(request, ["patient", "doctor"]);
   if (caller.role === "patient") requireVerifiedEmail(caller);
   const d = request.data || {};
   const consultationId = docId(d.consultationId, "Consultation");
 
-  await rateLimit(caller.uid, "startVideoCall", { max: 30, windowSeconds: 3600 });
+  await rateLimit(caller.uid, "startVideoCall", {
+    max: 30,
+    windowSeconds: 3600,
+  });
 
   const roomDeviceRef =
     caller.role === "doctor" ? await verifyRoomDevice(d.roomDevice) : null;
 
-  const { ref, consultation } = await loadForParticipant(caller, consultationId);
+  const { ref, consultation } = await loadForParticipant(
+    caller,
+    consultationId,
+  );
   if (consultation.mode !== "online") {
-    throw new HttpsError("failed-precondition", "This is an in-person consultation.");
+    throw new HttpsError(
+      "failed-precondition",
+      "This is an in-person consultation.",
+    );
   }
   if (!["scheduled", "in_progress"].includes(consultation.status)) {
     throw new HttpsError("failed-precondition", "This consultation is closed.");
@@ -144,13 +158,21 @@ exports.startVideoCall = onCall({ minInstances: 1 }, async (request) => {
     );
   }
   if (now > scheduled.getTime() + JOIN_CLOSES_HOURS_AFTER * 3600 * 1000) {
-    throw new HttpsError("failed-precondition", "The window for this call has passed.");
+    throw new HttpsError(
+      "failed-precondition",
+      "The window for this call has passed.",
+    );
   }
 
   // Someone's waiting time is already up (the every-minute job may not
   // have run yet): settle it now, the same way the job would.
   const policy = await loadNoShowPolicy();
-  await enforceDeadlineIfDue(consultationId, consultation, policy.waitMinutes, caller.role);
+  await enforceDeadlineIfDue(
+    consultationId,
+    consultation,
+    policy.waitMinutes,
+    caller.role,
+  );
 
   const callRef = db.collection("calls").doc(consultationId);
   const recordingMode = await currentRecordingMode();
@@ -165,18 +187,21 @@ exports.startVideoCall = onCall({ minInstances: 1 }, async (request) => {
   //   never answers a stale one.
   // ICE candidates are tagged with the offer/answer id they belong to, so
   // old ones are simply ignored.
-  const expiresAt = Timestamp.fromMillis(now + CALL_DOC_TTL_HOURS * 3600 * 1000);
+  const expiresAt = Timestamp.fromMillis(
+    now + CALL_DOC_TTL_HOURS * 3600 * 1000,
+  );
   let patientSeq = null;
   const bookingRef = db.collection("bookings").doc(consultation.bookingId);
   // deepcode ignore Sqli: Firestore document ID, not SQL; doctorUid read from the server-written consultation.
   const doctorRef = db.collection("adminUsers").doc(consultation.doctorUid);
   await db.runTransaction(async (tx) => {
-    const [callSnap, consultationSnap, bookingSnap, doctorSnap] = await Promise.all([
-      tx.get(callRef),
-      tx.get(ref),
-      tx.get(bookingRef),
-      tx.get(doctorRef),
-    ]);
+    const [callSnap, consultationSnap, bookingSnap, doctorSnap] =
+      await Promise.all([
+        tx.get(callRef),
+        tx.get(ref),
+        tx.get(bookingRef),
+        tx.get(doctorRef),
+      ]);
     const current = consultationSnap.data();
     if (current.doctorUnavailable) throw doctorUnavailableError(caller.role);
     if (current.status === "no_show") throw noShowError(caller.role);
@@ -226,17 +251,27 @@ exports.startVideoCall = onCall({ minInstances: 1 }, async (request) => {
         expiresAt,
       });
     } else if (caller.role === "doctor") {
-      tx.update(callRef, { offer: FieldValue.delete(), answer: FieldValue.delete(), expiresAt });
+      tx.update(callRef, {
+        offer: FieldValue.delete(),
+        answer: FieldValue.delete(),
+        expiresAt,
+      });
     } else {
       patientSeq = (callSnap.data().patientSeq || 0) + 1;
-      tx.update(callRef, { patientSeq, answer: FieldValue.delete(), expiresAt });
+      tx.update(callRef, {
+        patientSeq,
+        answer: FieldValue.delete(),
+        expiresAt,
+      });
     }
 
     // First joins are kept for the record (history, reminders); who is in
     // the room NOW (presence) and whether the two were connected (metAt)
     // decide the waiting rule (lib/consultationLifecycle.js).
-    const joinedField = caller.role === "doctor" ? "doctorFirstJoinedAt" : "patientFirstJoinedAt";
-    const bookingJoinedField = caller.role === "doctor" ? "doctorJoinedAt" : "patientJoinedAt";
+    const joinedField =
+      caller.role === "doctor" ? "doctorFirstJoinedAt" : "patientFirstJoinedAt";
+    const bookingJoinedField =
+      caller.role === "doctor" ? "doctorJoinedAt" : "patientJoinedAt";
     const updates = {
       status: "in_progress",
       [`presence.${caller.role}`]: Timestamp.fromMillis(now),
@@ -272,12 +307,18 @@ exports.startVideoCall = onCall({ minInstances: 1 }, async (request) => {
     }
     if (roomDeviceRef) {
       // deepcode ignore Sqli: Firestore document ID, not SQL; room device id checked against /^[A-Za-z0-9]{1,40}$/ in verifyRoomDevice.
-      tx.update(roomDeviceRef, { lastUsedAt: serverTime(), lastUsedByUid: caller.uid });
+      tx.update(roomDeviceRef, {
+        lastUsedAt: serverTime(),
+        lastUsedByUid: caller.uid,
+      });
     }
     audit(tx, {
       actorId: caller.uid,
       actorRole: caller.role,
-      action: caller.role === "doctor" ? "Doctor joined a video call" : "Patient joined a video call",
+      action:
+        caller.role === "doctor"
+          ? "Doctor joined a video call"
+          : "Patient joined a video call",
       code: "consultation.joined",
       category: "consultation",
       targetType: "consultation",
@@ -325,19 +366,32 @@ async function settleIfDue(consultationId, c, waitMinutes) {
   if (!dl || c.metAt || Date.now() < dl.at || isPresent(c, dl.for)) return null;
   const system = { uid: "system", role: "system" };
   if (dl.for === "doctor") {
-    const marked = await markDoctorUnavailable({ consultationId, actor: system });
+    const marked = await markDoctorUnavailable({
+      consultationId,
+      actor: system,
+    });
     if (!marked) return null;
     const { emailDoctorMissed } = require("./noShow");
     await emailDoctorMissed(marked, waitMinutes).catch(() => {});
     return "doctor_unavailable";
   }
-  return (await markNoShow({ consultationId, actor: system }).catch(() => false)) ? "no_show" : null;
+  return (await markNoShow({ consultationId, actor: system }).catch(
+    () => false,
+  ))
+    ? "no_show"
+    : null;
 }
 
 /** startVideoCall: a waiting time already up is settled, and the caller told. */
-async function enforceDeadlineIfDue(consultationId, c, waitMinutes, callerRole) {
+async function enforceDeadlineIfDue(
+  consultationId,
+  c,
+  waitMinutes,
+  callerRole,
+) {
   const settled = await settleIfDue(consultationId, c, waitMinutes);
-  if (settled === "doctor_unavailable") throw doctorUnavailableError(callerRole);
+  if (settled === "doctor_unavailable")
+    throw doctorUnavailableError(callerRole);
   if (settled === "no_show") throw noShowError(callerRole);
 }
 
@@ -349,7 +403,19 @@ async function enforceDeadlineIfDue(consultationId, c, waitMinutes, callerRole) 
  *     starts now (max(start, now) + W), and they're emailed.
  * Arriving early counts as arriving at the start time.
  */
-function applyArrival({ tx, c, me, now, waitMinutes, updates, bookingUpdates, booking, doctor, consultationId, policy }) {
+function applyArrival({
+  tx,
+  c,
+  me,
+  now,
+  waitMinutes,
+  updates,
+  bookingUpdates,
+  booking,
+  doctor,
+  consultationId,
+  policy,
+}) {
   if (c.metAt) return;
   const other = me === "doctor" ? "patient" : "doctor";
   if (isPresent(c, other, now)) {
@@ -364,11 +430,29 @@ function applyArrival({ tx, c, me, now, waitMinutes, updates, bookingUpdates, bo
   const value = { for: other, at: Timestamp.fromMillis(at) };
   updates.waitDeadline = value;
   bookingUpdates.waitDeadline = value;
-  queueWaitingEmail({ tx, c, forRole: other, at, booking, doctor, consultationId, policy });
+  queueWaitingEmail({
+    tx,
+    c,
+    forRole: other,
+    at,
+    booking,
+    doctor,
+    consultationId,
+    policy,
+  });
 }
 
 /** "The other side is waiting for you: join before HH:MM." */
-function queueWaitingEmail({ tx, c, forRole, at, booking, doctor, consultationId, policy }) {
+function queueWaitingEmail({
+  tx,
+  c,
+  forRole,
+  at,
+  booking,
+  doctor,
+  consultationId,
+  policy,
+}) {
   const base = {
     type: c.type,
     mode: c.mode,
@@ -389,11 +473,21 @@ function queueWaitingEmail({ tx, c, forRole, at, booking, doctor, consultationId
       },
       sendBefore: at,
     });
-  } else if (forRole === "doctor" && doctor?.email && doctor.status === "active") {
+  } else if (
+    forRole === "doctor" &&
+    doctor?.email &&
+    doctor.status === "active"
+  ) {
     queueEmail(tx, {
       to: doctor.email,
       kind: "doctor_not_joined",
-      data: { ...base, doctorName: doctor.name || c.doctorName || "", otherJoined: true, by: at, noShow: policy },
+      data: {
+        ...base,
+        doctorName: doctor.name || c.doctorName || "",
+        otherJoined: true,
+        by: at,
+        noShow: policy,
+      },
       sendBefore: at,
     });
   }
@@ -419,7 +513,10 @@ exports.callHeartbeat = onCall(async (request) => {
   const consultationId = docId(d.consultationId, "Consultation");
   const connected = d.connected === true;
   const leaving = d.leaving === true;
-  await rateLimit(caller.uid, "callHeartbeat", { max: 600, windowSeconds: 3600 });
+  await rateLimit(caller.uid, "callHeartbeat", {
+    max: 600,
+    windowSeconds: 3600,
+  });
 
   let loaded;
   try {
@@ -430,16 +527,23 @@ exports.callHeartbeat = onCall(async (request) => {
   }
   const { ref, consultation } = loaded;
   if (consultation.doctorUnavailable) {
-    return { state: "doctor_unavailable", kind: consultation.doctorUnavailable.kind || "doctor_absent" };
+    return {
+      state: "doctor_unavailable",
+      kind: consultation.doctorUnavailable.kind || "doctor_absent",
+    };
   }
   if (consultation.status === "no_show") return { state: "no_show" };
-  if (!["scheduled", "in_progress"].includes(consultation.status)) return { state: "closed" };
+  if (!["scheduled", "in_progress"].includes(consultation.status))
+    return { state: "closed" };
 
   const policy = await loadNoShowPolicy();
   // A countdown that has just run out is settled straight away, so the
   // screens don't wait for the every-minute job.
-  const settled = leaving ? null : await settleIfDue(consultationId, consultation, policy.waitMinutes);
-  if (settled === "doctor_unavailable") return { state: "doctor_unavailable", kind: "doctor_absent" };
+  const settled = leaving
+    ? null
+    : await settleIfDue(consultationId, consultation, policy.waitMinutes);
+  if (settled === "doctor_unavailable")
+    return { state: "doctor_unavailable", kind: "doctor_absent" };
   if (settled === "no_show") return { state: "no_show" };
   const me = caller.role;
   const other = me === "doctor" ? "patient" : "doctor";
@@ -455,7 +559,8 @@ exports.callHeartbeat = onCall(async (request) => {
     ]);
     if (!snap.exists) return { state: "closed" };
     const c = snap.data();
-    if (c.doctorUnavailable || !["scheduled", "in_progress"].includes(c.status)) return null;
+    if (c.doctorUnavailable || !["scheduled", "in_progress"].includes(c.status))
+      return null;
     const now = Date.now();
     const booking = bookingSnap.exists ? bookingSnap.data() : null;
     const doctor = doctorSnap.exists ? doctorSnap.data() : null;
@@ -472,7 +577,16 @@ exports.callHeartbeat = onCall(async (request) => {
         const value = { for: me, at: Timestamp.fromMillis(at) };
         updates.waitDeadline = value;
         bookingUpdates.waitDeadline = value;
-        queueWaitingEmail({ tx, c, forRole: me, at, booking, doctor, consultationId, policy });
+        queueWaitingEmail({
+          tx,
+          c,
+          forRole: me,
+          at,
+          booking,
+          doctor,
+          consultationId,
+          policy,
+        });
       }
     } else {
       updates[`presence.${me}`] = Timestamp.fromMillis(now);
@@ -501,7 +615,8 @@ exports.callHeartbeat = onCall(async (request) => {
       }
     }
     tx.update(ref, updates);
-    if (Object.keys(bookingUpdates).length && bookingSnap.exists) tx.update(bookingRef, bookingUpdates);
+    if (Object.keys(bookingUpdates).length && bookingSnap.exists)
+      tx.update(bookingRef, bookingUpdates);
     return { otherPresent };
   });
 
@@ -509,7 +624,10 @@ exports.callHeartbeat = onCall(async (request) => {
   const fresh = (await ref.get()).data();
   if (!fresh) return { state: "closed" };
   if (fresh.doctorUnavailable) {
-    return { state: "doctor_unavailable", kind: fresh.doctorUnavailable.kind || "doctor_absent" };
+    return {
+      state: "doctor_unavailable",
+      kind: fresh.doctorUnavailable.kind || "doctor_absent",
+    };
   }
   if (fresh.status === "no_show") return { state: "no_show" };
   return {
@@ -530,13 +648,20 @@ exports.getTurnCredentials = onCall(
   async (request) => {
     const caller = await requireRole(request, ["patient", "doctor"]);
     const consultationId = docId(request.data?.consultationId, "Consultation");
-    await rateLimit(caller.uid, "getTurnCredentials", { max: 30, windowSeconds: 3600 });
+    await rateLimit(caller.uid, "getTurnCredentials", {
+      max: 30,
+      windowSeconds: 3600,
+    });
 
     const { consultation } = await loadForParticipant(caller, consultationId);
     if (!["scheduled", "in_progress"].includes(consultation.status)) {
-      throw new HttpsError("failed-precondition", "This consultation is closed.");
+      throw new HttpsError(
+        "failed-precondition",
+        "This consultation is closed.",
+      );
     }
-    if (consultation.doctorUnavailable) throw doctorUnavailableError(caller.role);
+    if (consultation.doctorUnavailable)
+      throw doctorUnavailableError(caller.role);
 
     const response = await fetch(
       `https://rtc.live.cloudflare.com/v1/turn/keys/${CLOUDFLARE_TURN_KEY_ID.value()}/credentials/generate-ice-servers`,
@@ -552,14 +677,18 @@ exports.getTurnCredentials = onCall(
       },
     );
     if (!response.ok) {
-      logger.error("Cloudflare TURN request failed", { status: response.status });
+      logger.error("Cloudflare TURN request failed", {
+        status: response.status,
+      });
       throw new HttpsError("unavailable", "Couldn't get relay credentials.");
     }
     const data = await response.json();
     // Cloudflare returns either one server object or an array. Browsers
     // block port 53, so drop those URLs (Cloudflare's own advice) to avoid
     // slow ICE timeouts.
-    const servers = Array.isArray(data.iceServers) ? data.iceServers : [data.iceServers];
+    const servers = Array.isArray(data.iceServers)
+      ? data.iceServers
+      : [data.iceServers];
     const iceServers = servers
       .filter((s) => s && s.urls)
       .map((s) => ({
@@ -589,15 +718,23 @@ exports.getTurnCredentials = onCall(
 exports.reportCaptureAttempt = onCall(async (request) => {
   const caller = await requireRole(request, ["patient", "doctor"]);
   const consultationId = docId(request.data?.consultationId, "Consultation");
-  const method = oneOf(request.data?.method, ["print_screen", "screenshot_shortcut", "record_shortcut"], "method");
-  await rateLimit(caller.uid, "reportCaptureAttempt", { max: 20, windowSeconds: 3600 });
+  const method = oneOf(
+    request.data?.method,
+    ["print_screen", "screenshot_shortcut", "record_shortcut"],
+    "method",
+  );
+  await rateLimit(caller.uid, "reportCaptureAttempt", {
+    max: 20,
+    windowSeconds: 3600,
+  });
   const { consultation } = await loadForParticipant(caller, consultationId);
   await audit(null, {
     actorId: caller.uid,
     actorRole: caller.role,
-    action: caller.role === "doctor"
-      ? "Doctor tried to capture a video consultation"
-      : "Patient tried to capture a video consultation",
+    action:
+      caller.role === "doctor"
+        ? "Doctor tried to capture a video consultation"
+        : "Patient tried to capture a video consultation",
     code: "consultation.capture_attempt",
     category: "security",
     result: "failed",
@@ -630,7 +767,11 @@ exports.markConsultationDone = onCall(async (request) => {
   if (caller.role === "doctor" && outcome === "no_show") {
     // deepcode ignore Sqli: Firestore document ID, not SQL; consultationId passed docId() (/^[A-Za-z0-9_-]+$/).
     const snap = await db.collection("consultations").doc(consultationId).get();
-    if (snap.exists && snap.data().doctorUid === caller.uid && snap.data().mode !== "in_person") {
+    if (
+      snap.exists &&
+      snap.data().doctorUid === caller.uid &&
+      snap.data().mode !== "in_person"
+    ) {
       throw new HttpsError(
         "permission-denied",
         "Video calls are marked as a no-show automatically when the patient doesn't join in time.",
@@ -651,10 +792,21 @@ exports.markConsultationDone = onCall(async (request) => {
     return { consultationId, outcome };
   }
 
-  const closed = await closeConsultation({ consultationId, outcome, actor, meta, expectDoctorUid });
+  const closed = await closeConsultation({
+    consultationId,
+    outcome,
+    actor,
+    meta,
+    expectDoctorUid,
+  });
   // Doctors aren't shown payment figures; only admins get them back.
   return caller.role === "admin" && closed
-    ? { consultationId, outcome, forfeitAmount: closed.forfeitAmount, refundOwed: closed.refundOwed }
+    ? {
+        consultationId,
+        outcome,
+        forfeitAmount: closed.forfeitAmount,
+        refundOwed: closed.refundOwed,
+      }
     : { consultationId, outcome };
 });
 
@@ -675,8 +827,12 @@ exports.reportDoctorUnavailable = onCall(async (request) => {
   const d = request.data || {};
   const consultationId = docId(d.consultationId, "Consultation");
   const reason = str(d.reason, { field: "Reason", max: 300, optional: true });
-  const kind = d.kind === "call_incomplete" ? "call_incomplete" : "doctor_absent";
-  await rateLimit(caller.uid, "reportDoctorUnavailable", { max: 30, windowSeconds: 3600 });
+  const kind =
+    d.kind === "call_incomplete" ? "call_incomplete" : "doctor_absent";
+  await rateLimit(caller.uid, "reportDoctorUnavailable", {
+    max: 30,
+    windowSeconds: 3600,
+  });
 
   // deepcode ignore Sqli: Firestore document ID, not SQL; consultationId passed docId() (/^[A-Za-z0-9_-]+$/).
   const marked = await markDoctorUnavailable({

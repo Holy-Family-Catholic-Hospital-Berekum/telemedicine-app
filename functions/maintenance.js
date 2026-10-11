@@ -7,11 +7,14 @@
 //                           after one last check with Paystack
 //   releaseSlotHolds        every 15 min: returns abandoned slot holds
 //   cleanupSignalling       hourly: removes call signalling docs past expiry
-//   cleanupRateLimits       daily: removes old rate-limit counters
+//   cleanupRateLimits       daily: removes old rate-limit counters, and
+//                           cleans up patients deleted in the Firebase
+//                           console (lib/accountDeletion.js)
 
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const logger = require("firebase-functions/logger");
 const { db, Timestamp, FieldValue, serverTime, deleteTree } = require("./lib/core");
+const { sweepDeletedPatients } = require("./lib/accountDeletion");
 const { checkAttempts, discardDraft, PAYSTACK_SECRET_KEY } = require("./payments");
 
 const BATCH = 200;
@@ -85,7 +88,7 @@ exports.cleanupSignalling = onSchedule("every 60 minutes", async () => {
   await Promise.all(snap.docs.map((doc) => deleteTree(doc.ref)));
 });
 
-exports.cleanupRateLimits = onSchedule("every 24 hours", async () => {
+exports.cleanupRateLimits = onSchedule({ schedule: "every 24 hours", timeoutSeconds: 540 }, async () => {
   const snap = await db
     .collection("rateLimits")
     .where("expiresAt", "<", Timestamp.now())
@@ -94,4 +97,12 @@ exports.cleanupRateLimits = onSchedule("every 24 hours", async () => {
   const batch = db.batch();
   snap.docs.forEach((doc) => batch.delete(doc.ref));
   if (!snap.empty) await batch.commit();
+
+  // Same daily run (no extra scheduled job): patients whose account was
+  // deleted in the Firebase console are cleaned up like an admin's delete.
+  const purged = await sweepDeletedPatients().catch((err) => {
+    logger.error("Deleted-patient sweep failed", { err: err.message });
+    return 0;
+  });
+  if (purged) logger.info("Deleted patient accounts cleaned up", { purged });
 });

@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { Lock, ChevronDown } from "lucide-react";
 
-function age(dobString) {
+/** Whole years from a YYYY-MM-DD date of birth (older bookings). */
+function yearsFromDob(dobString) {
   const dob = new Date(dobString);
   const now = new Date();
   let years = now.getFullYear() - dob.getFullYear();
@@ -10,6 +11,21 @@ function age(dobString) {
     (now.getMonth() === dob.getMonth() && now.getDate() < dob.getDate());
   if (notYetHadBirthday) years -= 1;
   return years;
+}
+
+/** "34 years", "1 year 4 months", "7 months". */
+function describeAge({ age, dateOfBirth }) {
+  if (age && Number.isInteger(age.years)) {
+    const y = age.years;
+    const m = Number.isInteger(age.months) ? age.months : null;
+    const yText = `${y} ${y === 1 ? "year" : "years"}`;
+    const mText = m !== null ? `${m} ${m === 1 ? "month" : "months"}` : "";
+    if (y === 0 && mText) return mText;
+    return mText ? `${yText} ${mText}` : yText;
+  }
+  // Bookings made before age replaced the date of birth.
+  if (dateOfBirth) return `${yearsFromDob(dateOfBirth)} years`;
+  return null;
 }
 
 // Visibility is enforced by Firestore Security Rules (only the assigned
@@ -38,24 +54,8 @@ export default function SensitiveDetails({ details }) {
       {open && (
         <div className="grid grid-cols-2 gap-4 px-5 pb-4 text-sm">
           <div>
-            <p className="text-xs text-[#5C6B72]">Date of birth</p>
-            <p className="text-[#12242C]">
-              {details.dateOfBirth ? (
-                <>
-                  {new Date(`${details.dateOfBirth}T00:00:00Z`).toLocaleDateString("en-GB", {
-                    timeZone: "UTC",
-                    year: "numeric",
-                    month: "short",
-                    day: "numeric",
-                  })}{" "}
-                  <span className="text-[#5C6B72]">
-                    ({age(details.dateOfBirth)} yrs)
-                  </span>
-                </>
-              ) : (
-                "—"
-              )}
-            </p>
+            <p className="text-xs text-[#5C6B72]">Age</p>
+            <p className="text-[#12242C]">{describeAge(details) || "—"}</p>
           </div>
           <div>
             <p className="text-xs text-[#5C6B72]">Sex</p>

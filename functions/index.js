@@ -35,6 +35,7 @@ const refundSync = require("./refundSync");
 
 // Staff sign-in second factor (authenticator app for admins and doctors)
 exports.confirmStaffSession = staffAuth.confirmStaffSession;
+exports.staffActivity = staffAuth.staffActivity;
 exports.resetStaffAuthenticator = staffAuth.resetStaffAuthenticator;
 
 // Accounts
@@ -44,6 +45,7 @@ exports.syncAccountEmail = accounts.syncAccountEmail;
 exports.updateStaffProfile = accounts.updateStaffProfile;
 exports.createDoctorAccount = accounts.createDoctorAccount;
 exports.setAccountStatus = accounts.setAccountStatus;
+exports.deletePatientAccount = accounts.deletePatientAccount;
 
 // Booking and payment
 exports.createBookingDraft = payments.createBookingDraft;

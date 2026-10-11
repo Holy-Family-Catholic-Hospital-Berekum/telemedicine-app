@@ -140,8 +140,53 @@ async function requireRole(request, roles) {
     );
   }
   const profile = snap.data();
-  if (STAFF_ROLES.includes(role)) assertStaffSecondFactor(auth.token, profile);
+  if (STAFF_ROLES.includes(role)) {
+    assertStaffSecondFactor(auth.token, profile);
+    await touchStaffActivity(snap.ref, profile);
+  }
   return { uid: auth.uid, role, profile, token: auth.token };
+}
+
+/* ------------------------------------------------------------------ */
+/* staff inactivity                                                    */
+/* ------------------------------------------------------------------ */
+
+// Staff are signed out after 30 idle minutes in the browser
+// (src/context/authContext.jsx); the server refuses an account idle for
+// longer than this, even if the browser was tampered with. 5 minutes of
+// margin covers the gap between the page's "still here" calls. The
+// database and storage rules check the same field (firestore.rules,
+// storage.rules staffSecondFactor()).
+const STAFF_IDLE_LIMIT_MINUTES = 35;
+// adminUsers.lastActiveAt is written at most this often (free-tier cheap).
+const ACTIVITY_WRITE_EVERY_MS = 60 * 1000;
+
+function staffIdleError() {
+  return new HttpsError(
+    "permission-denied",
+    "You've been inactive for a while, so you were signed out. Please sign in again.",
+    { reason: "idle" },
+  );
+}
+
+/** Throws if a staff account has been idle past the limit. */
+function assertStaffNotIdle(profile, now = Date.now()) {
+  const last = profile.lastActiveAt?.toMillis?.();
+  // No record yet (first request after this check went live): allowed.
+  if (last && now - last > STAFF_IDLE_LIMIT_MINUTES * 60 * 1000) throw staffIdleError();
+}
+
+/**
+ * Every staff request: refuse if idle too long, otherwise record the
+ * activity (at most once a minute). Video-call check-ins count, so a
+ * doctor in a long call is never idle.
+ */
+async function touchStaffActivity(ref, profile, now = Date.now()) {
+  assertStaffNotIdle(profile, now);
+  const last = profile.lastActiveAt?.toMillis?.() ?? 0;
+  if (now - last >= ACTIVITY_WRITE_EVERY_MS) {
+    await ref.update({ lastActiveAt: Timestamp.fromMillis(now) }).catch(() => {});
+  }
 }
 
 /** Patients must have verified their email before booking or joining. */
@@ -217,30 +262,22 @@ function isoDateTime(value, field) {
 }
 
 /** YYYY-MM-DD, a real calendar date in the past. */
-function dateOfBirth(value) {
-  const s = str(value, { field: "Date of birth", max: 10 });
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) {
-    throw new HttpsError("invalid-argument", "Enter a valid date of birth.");
+/**
+ * A patient's age as entered on the booking form: whole years (0-120),
+ * plus months (0-11) for a child under 2. Resolves { years, months }
+ * (months null from 2 years on).
+ */
+function patientAge(yearsValue, monthsValue) {
+  const years = Number(yearsValue);
+  if (!Number.isInteger(years) || years < 0 || years > 120) {
+    throw new HttpsError("invalid-argument", "Enter a valid age in years.");
   }
-  const d = new Date(`${s}T00:00:00Z`);
-  const now = new Date();
-  if (
-    Number.isNaN(d.getTime()) ||
-    d.toISOString().slice(0, 10) !== s ||
-    d > now ||
-    d.getUTCFullYear() < 1900
-  ) {
-    throw new HttpsError("invalid-argument", "Enter a valid date of birth.");
+  if (years >= 2) return { years, months: null };
+  const months = Number(monthsValue);
+  if (!Number.isInteger(months) || months < 0 || months > 11) {
+    throw new HttpsError("invalid-argument", "For a child under 2, also enter their age in months (0 to 11).");
   }
-  return s;
-}
-
-/** Whole years between a YYYY-MM-DD date of birth and `now`. */
-function ageInYears(dob, now = new Date()) {
-  const [y, m, d] = dob.split("-").map(Number);
-  let age = now.getUTCFullYear() - y;
-  if (now.getUTCMonth() + 1 < m || (now.getUTCMonth() + 1 === m && now.getUTCDate() < d)) age--;
-  return age;
+  return { years, months };
 }
 
 /** Ghana numbers to E.164 (+233XXXXXXXXX); other countries kept as dialled. */
@@ -377,6 +414,9 @@ module.exports = {
   Timestamp,
   serverTime,
   REGION,
+  RUNTIME_SERVICE_ACCOUNT,
+  STAFF_IDLE_LIMIT_MINUTES,
+  assertStaffNotIdle,
   TYPES,
   TYPE_LABELS,
   MODES,
@@ -393,8 +433,7 @@ module.exports = {
   oneOf,
   docId,
   isoDateTime,
-  dateOfBirth,
-  ageInYears,
+  patientAge,
   phoneE164,
   toDate,
   newConsultationId,

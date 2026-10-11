@@ -157,7 +157,9 @@ exports.scheduleConsultation = onCall(async (request) => {
       guardianName: booking.guardianName || null,
       // What the doctor needs to see. Deleted when the consultation closes.
       patientDetails: {
-        dateOfBirth: booking.dateOfBirth,
+        age: booking.age ?? null,
+        // Bookings made before age replaced the date of birth.
+        dateOfBirth: booking.dateOfBirth ?? null,
         sex: booking.sex,
         location: booking.location,
       },

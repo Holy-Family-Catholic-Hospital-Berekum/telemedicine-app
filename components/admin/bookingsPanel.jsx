@@ -762,7 +762,7 @@ export default function BookingsPanel({
               This closes {closing.booking.patientName}'s consultation{" "}
               {closing.booking.consultationId} and{" "}
               <strong>permanently deletes their booking details</strong>{" "}
-              (date of birth, sex, location, phone). A short history record
+              (age, sex, location, phone). A short history record
               (doctor, times, amount) is kept. It can't be undone.
               {closing.outcome === "completed" &&
                 ` Only continue if ${closing.booking.doctorName || "the doctor"} has seen the patient.`}

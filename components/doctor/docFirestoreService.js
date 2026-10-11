@@ -72,7 +72,8 @@ export async function fetchAssignedConsultations(doctorUid) {
         location: c.patientDetails?.location || "",
       },
       sensitiveDetails: {
-        dateOfBirth: c.patientDetails?.dateOfBirth || null,
+        age: c.patientDetails?.age || null,
+        dateOfBirth: c.patientDetails?.dateOfBirth || null, // older bookings
         sex: c.patientDetails?.sex || null,
       },
       rescheduleHistory: (c.rescheduleHistory || []).map((r) => ({

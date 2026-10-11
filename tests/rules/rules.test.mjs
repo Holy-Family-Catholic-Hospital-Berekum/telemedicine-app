@@ -16,7 +16,7 @@ import {
   assertSucceeds,
   initializeTestEnvironment,
 } from "@firebase/rules-unit-testing";
-import { doc, getDoc, serverTimestamp, setDoc, updateDoc } from "firebase/firestore";
+import { doc, getDoc, serverTimestamp, setDoc, Timestamp, updateDoc } from "firebase/firestore";
 import { ref, uploadBytes } from "firebase/storage";
 
 const PROJECT_ID = "demo-telemedicine";
@@ -112,6 +112,20 @@ describe("admins need their pinned authenticator", () => {
   test("a deactivated admin is refused", async () => {
     await env.withSecurityRulesDisabled((ctx) =>
       updateDoc(doc(ctx.firestore(), "adminUsers/admin1"), { status: "deactivated" }));
+    await assertFails(get(admin(), "auditLog/a1"));
+  });
+  test("an admin active in the last 35 minutes is allowed", async () => {
+    await env.withSecurityRulesDisabled((ctx) =>
+      updateDoc(doc(ctx.firestore(), "adminUsers/admin1"), {
+        lastActiveAt: Timestamp.fromMillis(Date.now() - 10 * 60 * 1000),
+      }));
+    await assertSucceeds(get(admin(), "auditLog/a1"));
+  });
+  test("an admin idle for more than 35 minutes is refused", async () => {
+    await env.withSecurityRulesDisabled((ctx) =>
+      updateDoc(doc(ctx.firestore(), "adminUsers/admin1"), {
+        lastActiveAt: Timestamp.fromMillis(Date.now() - 40 * 60 * 1000),
+      }));
     await assertFails(get(admin(), "auditLog/a1"));
   });
 });

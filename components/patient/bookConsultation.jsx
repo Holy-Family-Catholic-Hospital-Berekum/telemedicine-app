@@ -21,7 +21,6 @@ import {
 } from "../../src/consentText";
 import { usePageMeta } from "../../src/seo.js";
 import { openPaystackCheckout } from "../../src/paystackCheckout";
-import DateSelect from "../shared/dateSelect";
 
 /** "+233241234567" -> "0241234567"; other numbers as stored; none -> "". */
 function localPhone(e164) {
@@ -30,13 +29,12 @@ function localPhone(e164) {
   return m ? `0${m[1]}` : e164;
 }
 
-/** Whole years from a YYYY-MM-DD date of birth to today. */
-function ageFrom(dob) {
-  const [y, m, d] = dob.split("-").map(Number);
-  const now = new Date();
-  let age = now.getFullYear() - y;
-  if (now.getMonth() + 1 < m || (now.getMonth() + 1 === m && now.getDate() < d)) age--;
-  return age;
+/** Whole years typed in the age box, or null if it isn't 0-120. */
+function parseYears(value) {
+  const t = String(value).trim();
+  if (!/^\d{1,3}$/.test(t)) return null;
+  const n = Number(t);
+  return n <= 120 ? n : null;
 }
 
 /**
@@ -440,7 +438,12 @@ export default function BookConsultation() {
   const [forChild, setForChild] = useState(false);
   const [childName, setChildName] = useState("");
   const [guardianConsent, setGuardianConsent] = useState(false);
-  const [dateOfBirth, setDateOfBirth] = useState("");
+  // Age (hospital decision: age, not date of birth). Months as well for a
+  // child under 2 (doctors need it for babies).
+  const [ageYears, setAgeYears] = useState("");
+  const [ageMonths, setAgeMonths] = useState("");
+  const parsedYears = parseYears(ageYears);
+  const needsMonths = parsedYears !== null && parsedYears < 2;
   const [sex, setSex] = useState("");
   const [town, setTown] = useState("");
   const [area, setArea] = useState("");
@@ -546,7 +549,13 @@ export default function BookConsultation() {
       type,
       mode,
       ...(online
-        ? { dateOfBirth, sex, town: town.trim(), area: area.trim() }
+        ? {
+            ageYears: parsedYears,
+            ...(needsMonths ? { ageMonths: Number(ageMonths) } : {}),
+            sex,
+            town: town.trim(),
+            area: area.trim(),
+          }
         : {}),
       phone: phone.trim(),
       doctorUid: selectedDoctor?.id || null,
@@ -571,15 +580,19 @@ export default function BookConsultation() {
       showError("Enter your child's full name to continue.");
       return;
     }
-    if (online && !dateOfBirth) {
+    if (online && parsedYears === null) {
       showError(
         forChild
-          ? "Enter your child's date of birth to continue."
-          : "Enter your date of birth to continue.",
+          ? "Enter your child's age in years to continue."
+          : "Enter your age in years to continue.",
       );
       return;
     }
-    const age = online ? ageFrom(dateOfBirth) : null;
+    if (online && needsMonths && ageMonths === "") {
+      showError("For a child under 2, also choose their age in months.");
+      return;
+    }
+    const age = online ? parsedYears : null;
     if (online && !forChild && age < 18) {
       showError(
         "You must be 18 or older to book for yourself. If this consultation is for your child, choose \"My child (under 18)\" above.",
@@ -588,7 +601,7 @@ export default function BookConsultation() {
     }
     if (online && forChild && age >= 18) {
       showError(
-        "This date of birth is 18 or over. Adults need to book from their own account.",
+        "This age is 18 or over. Adults need to book from their own account.",
       );
       return;
     }
@@ -1177,19 +1190,52 @@ export default function BookConsultation() {
                     <div className="grid sm:grid-cols-2 gap-4">
                       <div>
                         <label
-                          htmlFor="dateOfBirth"
+                          htmlFor="ageYears"
                           className="block text-[16px] font-medium mb-1.5"
                         >
-                          Date of birth
+                          {forChild ? "Child's age (years)" : "Your age (years)"}
                         </label>
-                        <DateSelect
-                          id="dateOfBirth"
-                          value={dateOfBirth}
-                          onChange={setDateOfBirth}
-                          fromYear={new Date().getUTCFullYear() - 120}
-                          toYear={new Date().getUTCFullYear()}
-                          newestFirst
-                        />
+                        <div className="flex gap-3">
+                          <input
+                            id="ageYears"
+                            type="text"
+                            inputMode="numeric"
+                            autoComplete="off"
+                            maxLength={3}
+                            placeholder={forChild ? "e.g. 6" : "e.g. 34"}
+                            value={ageYears}
+                            onChange={(e) => {
+                              setAgeYears(e.target.value.replace(/\D/g, ""));
+                              setAgeMonths("");
+                            }}
+                            className="w-full rounded-xl border border-black/20 px-4 py-3 text-[16px]
+                                       focus:outline-none focus:border-[#F88535] focus:ring-1 focus:ring-[#F88535]"
+                          />
+                          {needsMonths && (
+                            <select
+                              id="ageMonths"
+                              aria-label="And months"
+                              value={ageMonths}
+                              onChange={(e) => setAgeMonths(e.target.value)}
+                              className="w-full rounded-xl border border-black/20 bg-white px-4 py-3 text-[16px]
+                                         focus:outline-none focus:border-[#F88535] focus:ring-1 focus:ring-[#F88535]"
+                            >
+                              <option value="" disabled>
+                                and months
+                              </option>
+                              {Array.from({ length: 12 }, (_, m) => (
+                                <option key={m} value={m}>
+                                  {m} {m === 1 ? "month" : "months"}
+                                </option>
+                              ))}
+                            </select>
+                          )}
+                        </div>
+                        {needsMonths && (
+                          <p className="mt-1.5 text-[14px] text-[#3E4E56]">
+                            Under 2: please also choose the months (e.g. 1 year and 4 months).
+                          </p>
+                        )}
                       </div>
 
                       <div>

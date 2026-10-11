@@ -7,6 +7,7 @@ import { CURRENT_CALL_CONSENT } from "../../../src/consentText";
 import CallConsentDialog from "./callConsentDialog";
 import DeviceCheck from "./deviceCheck";
 import { useSiteSettings } from "../../../src/siteSettings";
+import { useCallWarmup } from "../../../src/callWarmup";
 
 function formatWait(minutes) {
   if (minutes < 60) return `${minutes} min`;
@@ -33,6 +34,8 @@ export default function JoinCallPanel({ booking, onJoined }) {
   const [checking, setChecking] = useState(false);
   const [askConsent, setAskConsent] = useState(false);
   const { unlocked, minutesUntilUnlock } = getCallWindow(booking.scheduledTime);
+  // The room is open: wake the call server so Join is quick.
+  useCallWarmup(unlocked);
   // The two were connected: the consultation is under way.
   const met = Boolean(booking.metAt);
   const deadline = !met ? booking.waitDeadline : null;

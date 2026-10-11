@@ -35,6 +35,8 @@ const {
   rateLimit,
   profileRef,
   assertStaffSecondFactor,
+  assertStaffNotIdle,
+  Timestamp,
 } = require("./lib/core");
 const { SETUP_CODE_MAX_ATTEMPTS } = require("./lib/securityConfig");
 const { issueSetupCode, setupHash } = require("./lib/staffSetup");
@@ -166,7 +168,38 @@ exports.confirmStaffSession = onCall(async (request) => {
     });
     throw err;
   }
+
+  // Inactivity (core.js): a fresh sign-in (password + code in the last few
+  // minutes) starts a new active period; reloading the page doesn't, so an
+  // idle session can't be revived that way.
+  const now = Date.now();
+  const freshSignIn = now / 1000 - Number(caller.token.auth_time || 0) < FRESH_SIGN_IN_SECONDS;
+  if (!freshSignIn) {
+    try {
+      assertStaffNotIdle(caller.profile, now);
+    } catch {
+      return { status: "idle" };
+    }
+  }
+  await caller.ref.update({ lastActiveAt: Timestamp.fromMillis(now) });
   return { status: "ok" };
+});
+
+// A sign-in this recent counts as fresh (confirmStaffSession above).
+const FRESH_SIGN_IN_SECONDS = 10 * 60;
+
+/* ------------------------------------------------------------------ */
+/* staffActivity                                                       */
+/* ------------------------------------------------------------------ */
+
+/**
+ * No data. The staff portals call this at most every 2 minutes while
+ * someone is using them, so the server knows the session is in use
+ * (requireRole records it, or refuses an account idle too long).
+ */
+exports.staffActivity = onCall(async (request) => {
+  await requireRole(request, ["admin", "doctor"]);
+  return { ok: true };
 });
 
 /* ------------------------------------------------------------------ */

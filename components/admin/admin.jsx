@@ -277,6 +277,14 @@ export default function Admin() {
     quietly(callAdmin("setAccountStatus", { uid: u.id, status: "deactivated" }));
   const handleReactivateUser = (u) =>
     quietly(callAdmin("setAccountStatus", { uid: u.id, status: "active" }));
+  // Throws so the dialog can show the reason (and stay open).
+  const handleDeletePatient = async (u) => {
+    const result = await callAdmin("deletePatientAccount", { uid: u.id });
+    setNotice(
+      `${u.name || "The patient"} was deleted.` +
+        (result?.refunds ? ` ${result.refunds} payment(s) are being refunded in full (Payment issues).` : ""),
+    );
+  };
 
   const toSchedule = useMemo(
     () => bookings.filter((b) => b.status === "paid" && !b.consultationId),
@@ -407,6 +415,7 @@ export default function Admin() {
               onDoctorAuthenticator={handleDoctorAuthenticator}
               onDeactivate={handleDeactivateUser}
               onReactivate={handleReactivateUser}
+              onDeletePatient={handleDeletePatient}
             />
           )}
 
