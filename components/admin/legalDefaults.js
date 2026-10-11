@@ -11,7 +11,7 @@
 
 export const DEFAULT_LEGAL = {
   privacy: {
-    lastUpdated: "6 October 2026",
+    lastUpdated: "11 October 2026",
     contactEmail: "info@hfhberekum.org",
     intro:
       "This policy explains what personal information the hospital's telemedicine platform collects, why, who sees it, and how long we keep it. We have tried to keep it short and plain.",
@@ -55,9 +55,13 @@ export const DEFAULT_LEGAL = {
 
 We use a small number of service providers to run the platform. They process information on our behalf and only for that purpose:
 
-- Google Firebase, for sign-in, database and file storage.
+- Google (Firebase and Google Cloud), for sign-in, our database, file storage (including consultation recordings) and the servers that run the service.
+- Vercel, which hosts the website.
+- Resend, which sends our appointment emails (your email address, name and appointment details).
+- Cloudflare, which relays a video call when your device can't connect directly to the doctor's. The call stays encrypted and is not stored.
 - Paystack, for mobile money payments.
-- A video conferencing service, for online consultations.
+
+Where your information is kept: our database, files and servers are in the European Union (Belgium and the Netherlands), and the other providers above may process information in other countries. This means your information is stored and processed outside Ghana. We use these providers only to run this service, and they protect it with encryption and access controls.
 
 We do not sell your information and we do not use it for advertising.`,
       },
@@ -81,9 +85,9 @@ We do not sell your information and we do not use it for advertising.`,
         title: "How we protect it",
         body: `- Role-based access, so patients, doctors and administrators only see what they are allowed to.
 - Hospital staff sign in with a password and a code from an authenticator app on their own phone.
-- Deleting a consultation recording needs two administrators: one to ask and another to approve.
+- Playing, downloading or deleting a consultation recording needs two administrators: one to ask and another to approve.
 - Email verification before you can book.
-- Automatic sign-out after an hour of inactivity.
+- Automatic sign-out after an hour of inactivity (30 minutes for hospital staff, also enforced on our servers).
 - Doctors hold online consultations only from the hospital's telemedicine room.
 - During a video consultation, your name and the time are shown across the other person's video and move around the picture, so any screenshot or recording shows who made it; the video is hidden while you are in another app or window; and screenshot attempts the call screen detects are logged. A website cannot fully prevent screenshots or screen recording, so please respect your consultation's privacy and your doctor's.
 - Payments handled entirely by Paystack, not on our servers.
@@ -111,7 +115,7 @@ If you are not happy with how we handle your information, you can complain to Gh
   },
 
   terms: {
-    lastUpdated: "6 October 2026",
+    lastUpdated: "11 October 2026",
     contactEmail: "info@hfhberekum.org",
     intro:
       "These terms explain the rules for using the hospital's telemedicine platform to book and attend consultations. Please read them before you book.",

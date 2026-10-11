@@ -10,6 +10,7 @@ import { httpsCallable } from "firebase/functions";
 
 import { functions } from "../../src/firebase";
 import { useLegalDoc, LEGAL_LIMITS } from "../../src/legalDocs";
+import { DEFAULT_LEGAL } from "./legalDefaults";
 import ConfirmDialog from "./confirmDialog.jsx";
 
 const callUpdateLegal = httpsCallable(functions, "updateLegalDocument");
@@ -101,6 +102,23 @@ function LegalEditor({ meta, onAudit }) {
     if (j < 0 || j >= next.length) return;
     [next[i], next[j]] = [next[j], next[i]];
     edit({ sections: next });
+  };
+  // The wording built into the app (components/admin/legalDefaults.js),
+  // kept up to date with how the app works. Loads it into the draft for an
+  // admin to review and publish; replaces a stale saved version.
+  const builtIn = DEFAULT_LEGAL[meta.id];
+  const builtInDraft = {
+    intro: builtIn.intro,
+    contactEmail: builtIn.contactEmail,
+    sections: builtIn.sections.map((s) => ({ id: s.id, title: s.title, body: s.body, key: `builtin-${s.id}` })),
+  };
+  const matchesBuiltIn = JSON.stringify(project(shown)) === JSON.stringify(project(builtInDraft));
+  const loadBuiltIn = () => {
+    setDraft(builtInDraft);
+    setNote({
+      tone: "ok",
+      text: "The built-in text is loaded below. Check it, then choose Review and save to publish it.",
+    });
   };
   const remove = (key) =>
     edit({ sections: shown.sections.filter((s) => s.key !== key) });
@@ -278,6 +296,11 @@ function LegalEditor({ meta, onAudit }) {
         >
           Add section
         </button>
+        {!matchesBuiltIn && (
+          <button type="button" className="btn btn-outline" onClick={loadBuiltIn} disabled={busy}>
+            Start from the built-in text
+          </button>
+        )}
       </div>
 
       {note && (

@@ -17,8 +17,8 @@ computer signed in to the Google Cloud CLI as a project Owner
 | Protection | What it does | Where |
 |---|---|---|
 | Staff authenticator app | Admins and doctors sign in with password + authenticator code (Google/Microsoft Authenticator). Only the authenticator linked with a one-time **setup code** works. Fresh sign-in every 12 h. | Every function (`requireRole`), Firestore and Storage rules |
-| Idle sign-out | Staff after 30 min, patients after 60 min. Never during a video call. | Website |
-| Two-admin recording deletion | One admin requests, a *different* admin approves; nothing is deleted before that. Requests expire after 72 h. | `recordings.js` |
+| Idle sign-out | Staff after 30 min, patients after 60 min. Never during a video call. Staff also on the server: no activity for 35 min = refused. | Website; `requireRole`, both rules files |
+| Two-admin recording access and deletion | Playing, downloading or deleting a recording: one admin requests, a *different* admin approves. Requests expire after 72 h. **Needs at least two admins.** | `recordings.js` |
 | Password policy | 10+ characters, upper and lower case, number, symbol. | Firebase Authentication |
 | Sign-in reCAPTCHA (audit) | Every email/password sign-in and sign-up is scored by reCAPTCHA; nothing is blocked (see "Still to do"). | Firebase Authentication |
 | Email enumeration protection | Sign-in doesn't reveal which emails have accounts. | Firebase Authentication |
@@ -27,10 +27,10 @@ computer signed in to the Google Cloud CLI as a project Owner
 | Tamper-proof audit copy | Every audit entry is copied to the `audit-locked` log bucket (365 days). | `mirrorAuditLog` → log sink `audit-to-locked` |
 | Security alerts | Email to the security contact on: failed/refused staff sign-in steps, authenticator resets, staff sign-in email changes, screenshot attempts, forged payment webhooks, recording deletion requests and deletions, missing recordings. | Cloud Monitoring policy *Telemedicine security event* |
 | Least-privilege functions | Functions run as `functions-runtime@…` with only the roles listed below. | `lib/core.js` |
-| App Check | Requests carry proof they come from the real site (reCAPTCHA Enterprise). Monitoring now; enforce later (see "Still to do"). | Firestore, Storage, functions |
+| App Check | Requests carry proof they come from the real site (reCAPTCHA Enterprise). **Enforced** on Firestore, Storage, Authentication and (since 11 Oct 2026) every callable function. | Firebase console; `functions/lib/securityConfig.js` |
 | API key restriction | The public web key only works from the hospital's sites. | Google Cloud credentials |
 | Security headers | CSP, HSTS, no framing, etc. | `vercel.json` |
-| Rule tests | `npm run test:rules` checks the access rules on the emulator. Run before every rules change. | `tests/rules/` |
+| Rule tests | `npm run test:rules` checks the access rules on the emulator (needs Java 21). Also run on GitHub for every push that changes the rules. | `tests/rules/`, `.github/workflows/rules-tests.yml` |
 
 ---
 
@@ -173,22 +173,7 @@ dashboard. Their hospital admin account is enough.
 
 ## Still to do
 
-1. **Enforce App Check** once the console shows nearly all traffic as
-   verified (App Check → APIs → metrics):
-   - Firestore → **Enforce**; Storage → **Enforce**.
-   - Functions: `ENFORCE_APP_CHECK: true` in `functions/lib/securityConfig.js`,
-     then `firebase deploy --only functions`.
-   - Test patient booking, a call, doctor and admin sign-in. If anything
-     breaks, unenforce while investigating.
-2. **Custom domain** (when bought):
-   - Add it in Vercel, then to: Firebase Authentication → *Authorized
-     domains*; the reCAPTCHA key's allowed domains; the browser API key's
-     website restrictions; `SITE_URL` in `functions/lib/mailConfig.js`.
-   - Set up Resend for that domain (SPF, DKIM, DMARC records), set `FROM`
-     and `REPLY_TO` in `mailConfig.js`, run
-     `firebase functions:secrets:set RESEND_API_KEY`, and deploy functions.
-     That switches on appointment emails and reminders.
-3. **Sign-in reCAPTCHA stays in audit mode** (it scores sign-ins but
+1. **Sign-in reCAPTCHA stays in audit mode** (it scores sign-ins but
    blocks nothing). On 5 Oct 2026, enforce mode blocked a genuine admin
    sign-in, which showed up as "Invalid email or password", while a request
    with no reCAPTCHA token got through. Don't switch it to enforce on the
@@ -196,10 +181,29 @@ dashboard. Their hospital admin account is enough.
    someone ready to run `node scripts/staffAdmin.js auth-recaptcha` (which
    sets audit) to undo it. Password guessing is still limited by Firebase's
    built-in throttling, the password policy and the staff authenticator.
-4. **Replace the placeholders** in `components/shared/contact.js`: the
+2. **Replace the placeholders** in `components/shared/contact.js`: the
    hospital phone number and the WhatsApp support number.
-5. **Paystack go-live** (in this order; see "Payments go-live checklist"
+3. **Paystack go-live** (in this order; see "Payments go-live checklist"
    below for the detail).
+4. **Development against the live project.** `localhost` is an authorized
+   sign-in domain and `.env` holds an App Check debug token, because
+   development uses the live Firebase project. A debug token lets its
+   holder past App Check: keep it out of Vercel and anywhere shared, and
+   delete it in App Check → Apps → Manage debug tokens when you aren't
+   developing. Better, once the hospital has time: a separate test
+   Firebase project for development, then remove `localhost` here.
+
+## Publish the current privacy policy
+
+The privacy policy was saved in the admin editor on 4 Oct 2026, so the
+site shows that saved copy rather than the built-in text, which has been
+kept up to date since (age instead of date of birth, where data is stored,
+two-admin recording access, staff inactivity). To publish the current
+wording: admin → Control panel → Legal documents → Privacy policy →
+**Start from the built-in text** → read it → **Review and save**. Have the
+medical director (and, if possible, a lawyer) read the terms and privacy
+policy before launch, and confirm the hospital is registered with Ghana's
+Data Protection Commission as the data controller.
 
 ## Payments go-live checklist
 

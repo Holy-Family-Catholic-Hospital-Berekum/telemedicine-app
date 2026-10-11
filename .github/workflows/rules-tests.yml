@@ -1,0 +1,63 @@
+name: Security rules tests
+
+# Runs tests/rules/rules.test.mjs against the Firestore and Storage
+# emulators whenever the rules (or their tests) change, so a rule change
+# that locks out staff or opens data to the wrong person fails here, before
+# it's deployed. Uses a demo project: nothing touches the live database.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "firestore.rules"
+      - "storage.rules"
+      - "firebase.json"
+      - "tests/rules/**"
+      - ".github/workflows/rules-tests.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "firestore.rules"
+      - "storage.rules"
+      - "firebase.json"
+      - "tests/rules/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rules-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The Firebase emulators need Java 21.
+      - name: Setup Java
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Same Firebase CLI version the project deploys with.
+      - name: Run rules tests on the emulators
+        run: >
+          npx --yes firebase-tools@15.31.0 emulators:exec
+          --only firestore,storage --project demo-telemedicine
+          "node --test tests/rules/rules.test.mjs"

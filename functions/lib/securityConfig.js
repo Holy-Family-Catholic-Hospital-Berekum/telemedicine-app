@@ -15,7 +15,9 @@
 //   authenticator. A fresh sign-in is needed every STAFF_SESSION_MAX_HOURS.
 
 module.exports = {
-  ENFORCE_APP_CHECK: false,
+  // On since October 2026: a week of live traffic showed every callable
+  // request carrying a valid App Check token.
+  ENFORCE_APP_CHECK: true,
   STAFF_SESSION_MAX_HOURS: 12,
   SETUP_CODE_HOURS: 72,
   SETUP_CODE_MAX_ATTEMPTS: 5,
