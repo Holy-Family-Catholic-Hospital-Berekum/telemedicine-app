@@ -110,6 +110,33 @@ you're finished with it.
   **Alerting** → *Telemedicine security event* → edit notification
   channels.
 
+## Cost and error alerts
+
+Both email the "Security alerts (owner)" channel (Monitoring → Alerting →
+notification channels; add more people there).
+
+- **Telemedicine function errors** (alert policy): any Cloud Function that
+  logs an error (failed email, payment check, scheduled job, crash). At
+  most one email an hour; it closes itself after a day. To look: Logs
+  Explorer, severity ERROR, around the alert time.
+- **Telemedicine monthly spend** (budget on billing account
+  016AE0-40E755-785DFD, USD 50 a month): emails at $20 spent, $50 spent
+  and when the month is forecast to reach $50. A budget only warns; it
+  never stops the app. Change it in Billing → Budgets & alerts.
+- `startVideoCall` keeps one instance warm (`minInstances: 1` in
+  functions/consultations.js), so joining a call never waits for a cold
+  start. That's a small fixed monthly cost; set it to 0 to turn it off.
+
+## Data retention (to decide)
+
+Nothing below is deleted automatically yet (hospital decision, October
+2026: decide with management and legal, Ghana Data Protection Act):
+`auditLog` (the locked 365-day copy in Cloud Logging is separate),
+`consultationHistory`, and call `recordings` (deleted only by two admins).
+Recordings are the largest and most sensitive: roughly 110 MB per
+20-minute video call. Once periods are agreed, they can be enforced by a
+nightly job.
+
 ## Service accounts
 
 Functions run as `functions-runtime@telemedicine-hfch.iam.gserviceaccount.com`

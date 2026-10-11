@@ -38,6 +38,9 @@ const REMINDERS = [
 // can be as short as a few minutes).
 const LATE_FROM = 1 * MIN;
 const LATE_TO = 60 * MIN;
+// Paging: 400 a page, up to 8,000 open appointments in the next 24 hours.
+const PAGE_SIZE = 400;
+const MAX_PAGES = 20;
 
 /** Reminder keys due for consultation `c` at `now` that haven't gone out. */
 function dueReminders(c, now, waitMinutes = 5) {
@@ -74,20 +77,33 @@ function dueReminders(c, now, waitMinutes = 5) {
 }
 
 exports.sendAppointmentReminders = onSchedule(
-  { schedule: "every 5 minutes", timeoutSeconds: 120 },
+  { schedule: "every 5 minutes", timeoutSeconds: 240 },
   async () => {
     const now = Date.now();
-    // Single-field range on scheduledTime: no composite index needed.
-    const snap = await db
+    // Open consultations starting in the next 24 h (or started up to an
+    // hour ago), a page at a time so any volume fits in one run. Index:
+    // status, scheduledTime (firestore.indexes.json).
+    const base = db
       .collection("consultations")
+      .where("status", "in", ["scheduled", "in_progress"])
       .where("scheduledTime", ">=", Timestamp.fromMillis(now - LATE_TO))
       .where("scheduledTime", "<=", Timestamp.fromMillis(now + 24 * HOUR))
-      .get();
+      .orderBy("scheduledTime")
+      .limit(PAGE_SIZE);
+    const docs = [];
+    let last = null;
+    for (let page = 0; page < MAX_PAGES; page++) {
+      const snap = await (last ? base.startAfter(last) : base).get();
+      docs.push(...snap.docs);
+      if (snap.size < PAGE_SIZE) break;
+      last = snap.docs[snap.docs.length - 1];
+      if (page === MAX_PAGES - 1) logger.error("Reminders: more appointments than MAX_PAGES covers");
+    }
 
     // The no-show rule goes into every patient email (lib/emailTemplates.js).
-    const noShow = snap.empty ? null : await loadNoShowPolicy();
+    const noShow = docs.length ? await loadNoShowPolicy() : null;
     let queued = 0;
-    for (const doc of snap.docs) {
+    for (const doc of docs) {
       if (dueReminders(doc.data(), now, noShow.waitMinutes).length === 0) continue;
       try {
         queued += await db.runTransaction(async (tx) => {

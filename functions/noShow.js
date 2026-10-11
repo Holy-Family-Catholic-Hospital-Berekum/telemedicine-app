@@ -66,42 +66,52 @@ const CURRENCY = "GHS";
 exports.autoMarkNoShows = onSchedule({ schedule: "every 1 minutes", timeoutSeconds: 120 }, async () => {
   const policy = await loadNoShowPolicy();
   const now = Date.now();
-  // Single-field range on scheduledTime: no composite index needed. A
-  // deadline is never before the start, and the room closes 4 h after it.
-  const snap = await db
+  const system = { uid: "system", role: "system" };
+  // Open video calls whose start is within the look-back window (a deadline
+  // is never before the start, and the room closes 4 h after it), read a
+  // page at a time so any volume is covered. Index: mode, status,
+  // scheduledTime (firestore.indexes.json).
+  const base = db
     .collection("consultations")
+    .where("mode", "==", "online")
+    .where("status", "in", ["scheduled", "in_progress"])
     .where("scheduledTime", ">=", Timestamp.fromMillis(now - LOOKBACK_MS))
     .where("scheduledTime", "<=", Timestamp.fromMillis(now))
-    .limit(500)
-    .get();
-  const system = { uid: "system", role: "system" };
-  for (const doc of snap.docs) {
-    const c = doc.data();
-    if (
-      c.mode !== "online" ||
-      !["scheduled", "in_progress"].includes(c.status) ||
-      c.doctorUnavailable ||
-      c.metAt
-    ) {
-      continue;
-    }
-    const dl = waitDeadline(c, policy.waitMinutes);
-    if (!dl || now < dl.at || isPresent(c, dl.for, now)) continue;
-    try {
-      if (dl.for === "doctor") {
-        const marked = await markDoctorUnavailable({ consultationId: doc.id, actor: system });
-        if (marked) await emailDoctorMissed(marked, policy.waitMinutes);
-      } else {
-        await markNoShow({ consultationId: doc.id, actor: system });
+    .orderBy("scheduledTime")
+    .limit(PAGE_SIZE);
+  let last = null;
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const snap = await (last ? base.startAfter(last) : base).get();
+    for (const doc of snap.docs) {
+      const c = doc.data();
+      if (c.doctorUnavailable || c.metAt) continue;
+      const dl = waitDeadline(c, policy.waitMinutes);
+      if (!dl || now < dl.at || isPresent(c, dl.for, now)) continue;
+      try {
+        if (dl.for === "doctor") {
+          const marked = await markDoctorUnavailable({ consultationId: doc.id, actor: system });
+          if (marked) await emailDoctorMissed(marked, policy.waitMinutes);
+        } else {
+          await markNoShow({ consultationId: doc.id, actor: system });
+        }
+      } catch (err) {
+        logger.warn("Automatic no-show skipped", { consultationId: doc.id, for: dl.for, err: err.message });
       }
-    } catch (err) {
-      logger.warn("Automatic no-show skipped", { consultationId: doc.id, for: dl.for, err: err.message });
     }
+    if (snap.size < PAGE_SIZE) return;
+    last = snap.docs[snap.docs.length - 1];
   }
+  logger.error("autoMarkNoShows: more open video calls than MAX_PAGES covers", { pages: MAX_PAGES });
 });
 
-// How far back the job looks (the video room closes 4 h after the start).
-const LOOKBACK_MS = 6 * 3600 * 1000;
+// Paging for autoMarkNoShows: 300 a page, up to 6,000 open video calls in
+// the window (far beyond what the hospital's rooms can hold).
+const PAGE_SIZE = 300;
+const MAX_PAGES = 20;
+
+// How far back the job looks (the video room closes 4 h after the start;
+// the waiting time is at most 30 minutes).
+const LOOKBACK_MS = 5 * 3600 * 1000;
 
 /** Tells the doctor their call was passed to the hospital to reschedule. */
 async function emailDoctorMissed(c, waitMinutes) {

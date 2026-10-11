@@ -113,7 +113,10 @@ function doctorUnavailableError(role) {
  * video-consultation consent version; it's stored as a consent record and
  * later joins don't ask again.
  */
-exports.startVideoCall = onCall(async (request) => {
+// One instance kept warm (minInstances: 1) so a doctor or patient joining
+// after a quiet spell doesn't wait 2-5 s for a cold start. Costs a small
+// fixed amount a month; set to 0 to turn it off.
+exports.startVideoCall = onCall({ minInstances: 1 }, async (request) => {
   const caller = await requireRole(request, ["patient", "doctor"]);
   if (caller.role === "patient") requireVerifiedEmail(caller);
   const d = request.data || {};
