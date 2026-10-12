@@ -8,8 +8,6 @@ import { useAuth } from "../../src/context/authContext.jsx";
 import { callableMessage } from "../../src/constants";
 import { useFirestoreCollection } from "./hooks/useFirestoreCollection.js";
 import { useWindowedCollection } from "./hooks/useWindowedCollection.js";
-import { useWeeklyMetrics } from "./hooks/useWeeklyMetrics.js";
-import { useOutcomeBreakdown } from "./hooks/useOutcomeBreakdown.js";
 
 import Sidebar from "./sidebar.jsx";
 import StaffAccountSettings from "../shared/staffAccountSettings.jsx";
@@ -205,8 +203,6 @@ export default function Admin() {
       });
   }, [staffUsers, doctorProfiles]);
 
-  const weeklyMetrics = useWeeklyMetrics(history);
-  const outcomeBreakdown = useOutcomeBreakdown(history);
 
   const [actionError, setActionError] = useState(null);
   const [notice, setNotice] = useState(null);
@@ -382,7 +378,6 @@ export default function Admin() {
           {tab === "overview" && (
             <OverviewPanel
               stats={stats}
-              weeklyMetrics={weeklyMetrics}
               recentActivity={audit}
               names={actorNames}
             />
@@ -432,10 +427,7 @@ export default function Admin() {
           {tab === "audit" && <AuditPanel entries={audit} window={auditWin} names={actorNames} />}
 
           {tab === "metrics" && (
-            <MetricsPanel
-              weeklyMetrics={weeklyMetrics}
-              outcomeBreakdown={outcomeBreakdown}
-            />
+            <MetricsPanel />
           )}
 
           {tab === "control" && <ControlPanel />}

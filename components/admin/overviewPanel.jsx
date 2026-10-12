@@ -1,4 +1,6 @@
 import StatCard from "./statCard.jsx";
+import RefreshRow from "./refreshRow.jsx";
+import { useConsultationStats } from "./hooks/useServerTotals.js";
 import { formatDateTime } from "../../src/constants";
 import { actorLabel } from "./actorName.js";
 import { BarChart } from "./miniCharts.jsx";
@@ -21,12 +23,10 @@ function tintFor(entry) {
 // Payments are confirmed automatically by Paystack — there is no manual
 // "awaiting verification" step for admin, so that stat card (and the
 // old manual-MoMo-confirmation flow it implied) has been removed.
-export default function OverviewPanel({
-  stats,
-  weeklyMetrics = [],
-  recentActivity = [],
-  names,
-}) {
+export default function OverviewPanel({ stats, recentActivity = [], names }) {
+  // Counted by the database (all history, not just what's loaded).
+  const consultationStats = useConsultationStats();
+  const weeklyMetrics = consultationStats.data?.weekly ?? [];
   return (
     <>
       <div className="admin-stat-grid">
@@ -56,8 +56,8 @@ export default function OverviewPanel({
         <section className="admin-panel">
           <div className="admin-panel-head">
             <div>
-              <h2>This week's consultation volume</h2>
-              <p>General OPD vs. Surgical, by day</p>
+              <h2>Consultations in the last 7 days</h2>
+              <p>Closed consultations, General OPD vs. Surgical, by day</p>
             </div>
             <div className="chart-legend">
               <span>
@@ -70,6 +70,7 @@ export default function OverviewPanel({
               </span>
             </div>
           </div>
+          <RefreshRow totals={consultationStats} what="the consultation figures" />
           <div className="admin-panel-body" style={{ padding: "18px 22px" }}>
             <BarChart data={weeklyMetrics} seriesA="opd" seriesB="surgical" />
           </div>

@@ -1,16 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
-import {
-  Timestamp,
-  collection,
-  count,
-  getAggregateFromServer,
-  orderBy,
-  query,
-  sum,
-  where,
-} from "firebase/firestore";
+import { useMemo, useState } from "react";
+import { collection, query, where } from "firebase/firestore";
 import { db } from "../../src/firebase";
 import { useFirestoreCollection } from "./hooks/useFirestoreCollection.js";
+import { useRevenueTotals } from "./hooks/useServerTotals.js";
+import RefreshRow from "./refreshRow.jsx";
 import { IconInfo } from "./icons.jsx"; // ASSUMPTION: swap for whatever icons.jsx exports for an informational (non-warning) banner — see note below
 
 // Revenue is a reporting view now, not a fraud-reconciliation tool.
@@ -38,10 +31,9 @@ import { IconInfo } from "./icons.jsx"; // ASSUMPTION: swap for whatever icons.j
 //   column if you don't have it.
 // - Field is `paidAt`.
 //
-// SCALE: this panel never downloads every payment ever made. A period
-// (7 / 30 / 90 days) loads only that period's payments; "All time" asks
-// Firestore for the totals (sum and count, overall and per type) without
-// downloading the payments themselves, so it costs the same at any size.
+// SCALE: this panel never downloads payments. Every figure, for a period
+// or all time, is a Firestore count/sum (hooks/useServerTotals.js), so it
+// costs the same at any size. Loaded when the tab opens and on Refresh.
 
 const ghs = (n) =>
   `GHS ${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -52,7 +44,6 @@ const RANGES = [
   { key: "90", label: "Last 90 days" },
   { key: "all", label: "All time" },
 ];
-const TYPES = ["OPD", "SURGICAL", "NO_SHOW_FEE"];
 const TYPE_NAME = { OPD: "General OPD", SURGICAL: "Surgical", NO_SHOW_FEE: "No-show fees" };
 
 // Refunds (refundRequests: patients' requests; paymentIssues: payments we
@@ -63,52 +54,10 @@ const REFUND_SOURCES = [
   { col: "refundRequests", inProgress: ["refund_starting", "processing"], waiting: ["requested", "failed"], waitingAmount: "suggestedRefund" },
   { col: "paymentIssues", inProgress: ["refund_starting", "refund_processing"], waiting: ["refund_due", "refund_failed"], waitingAmount: "amount" },
 ];
-const refundAmount = (r) => Number(r.amountRefunded ?? r.amount ?? 0);
-
-/** All-time refunded totals (Firestore aggregation, nothing downloaded). */
-function useAllTimeRefunds(enabled) {
-  const [totals, setTotals] = useState(null);
-  useEffect(() => {
-    if (!enabled) return undefined;
-    let active = true;
-    Promise.all(
-      REFUND_SOURCES.map((s) =>
-        getAggregateFromServer(
-          query(collection(db, s.col), where("status", "==", "refunded")),
-          { amount: sum("amountRefunded"), count: count() },
-        ),
-      ),
-    )
-      .then((parts) => {
-        if (!active) return;
-        setTotals({
-          amount: parts.reduce((t, p) => t + (p.data().amount || 0), 0),
-          count: parts.reduce((t, p) => t + (p.data().count || 0), 0),
-        });
-      })
-      .catch(() => active && setTotals({ error: true }));
-    return () => {
-      active = false;
-    };
-  }, [enabled]);
-  return totals;
-}
 
 /** Refund figures for the chosen period, plus what is open right now. */
-function RefundsSection({ allTime, since, confirmedTotal }) {
-  const periodQueries = useMemo(
-    () =>
-      REFUND_SOURCES.map((s) =>
-        allTime
-          ? null
-          : query(
-              collection(db, s.col),
-              where("status", "==", "refunded"),
-              where("refundedAt", ">=", Timestamp.fromMillis(since)),
-            ),
-      ),
-    [allTime, since],
-  );
+function RefundsSection({ refunded, confirmedTotal }) {
+  // Refunds open right now: a short list admins act on, kept live.
   const openQueries = useMemo(
     () =>
       REFUND_SOURCES.map((s) =>
@@ -116,18 +65,8 @@ function RefundsSection({ allTime, since, confirmedTotal }) {
       ),
     [],
   );
-  const { data: periodRequests } = useFirestoreCollection(periodQueries[0]);
-  const { data: periodIssues } = useFirestoreCollection(periodQueries[1]);
   const { data: openRequests } = useFirestoreCollection(openQueries[0]);
   const { data: openIssues } = useFirestoreCollection(openQueries[1]);
-  const allTimeTotals = useAllTimeRefunds(allTime);
-
-  const refunded = allTime
-    ? { amount: allTimeTotals?.amount ?? 0, count: allTimeTotals?.count ?? 0 }
-    : {
-        amount: [...periodRequests, ...periodIssues].reduce((t, r) => t + refundAmount(r), 0),
-        count: periodRequests.length + periodIssues.length,
-      };
 
   const tally = (rows, source, which) =>
     rows
@@ -160,11 +99,6 @@ function RefundsSection({ allTime, since, confirmedTotal }) {
           </p>
         </div>
       </div>
-      {allTime && allTimeTotals?.error && (
-        <div className="admin-empty" role="alert">
-          Couldn't load the all-time refund totals. Refresh the page or pick a period.
-        </div>
-      )}
       <div className="summary-grid">
         <div>
           <span className="summary-value">{ghs(refunded.amount)}</span>
@@ -187,36 +121,6 @@ function RefundsSection({ allTime, since, confirmedTotal }) {
   );
 }
 
-/** All-time totals computed by Firestore (no documents downloaded). */
-function useAllTimeTotals(enabled) {
-  const [totals, setTotals] = useState(null);
-  useEffect(() => {
-    if (!enabled) return undefined;
-    let active = true;
-    const col = collection(db, "confirmedPayments");
-    const agg = (q) => getAggregateFromServer(q, { amount: sum("amount"), count: count() });
-    Promise.all([
-      getAggregateFromServer(col, { amount: sum("amount"), fees: sum("fees"), count: count() }),
-      ...TYPES.map((t) => agg(query(col, where("type", "==", t)))),
-    ])
-      .then(([all, ...perType]) => {
-        if (!active) return;
-        setTotals({
-          total: all.data().amount || 0,
-          fees: all.data().fees || 0,
-          count: all.data().count || 0,
-          byType: TYPES.map((t, i) => [t, { amount: perType[i].data().amount || 0, count: perType[i].data().count || 0 }])
-            .filter(([, v]) => v.count > 0),
-        });
-      })
-      .catch(() => active && setTotals({ error: true }));
-    return () => {
-      active = false;
-    };
-  }, [enabled]);
-  return totals;
-}
-
 export default function RevenuePanel() {
   const [range, setRange] = useState("7");
   const [settlementTotal, setSettlementTotal] = useState("");
@@ -224,47 +128,17 @@ export default function RevenuePanel() {
   const [openedAt] = useState(() => Date.now());
   const allTime = range === "all";
 
-  // A period: only that period's payments are loaded.
-  const periodQuery = useMemo(
-    () =>
-      allTime
-        ? null
-        : query(
-          collection(db, "confirmedPayments"),
-          where("paidAt", ">=", Timestamp.fromMillis(openedAt - parseInt(range, 10) * 86400000)),
-          orderBy("paidAt", "desc"),
-        ),
-    [allTime, range, openedAt],
-  );
-  const { data: rows } = useFirestoreCollection(periodQuery);
-  const totals = useAllTimeTotals(allTime);
-
-  const total = allTime ? (totals?.total ?? 0) : rows.reduce((s, p) => s + p.amount, 0);
+  const since = allTime ? null : openedAt - parseInt(range, 10) * 86400000;
+  const totals = useRevenueTotals(since);
+  const t = totals.data;
+  const total = t?.total ?? 0;
   // Paystack's charges (recorded per payment from Paystack's own data);
   // net is what reaches the hospital's Paystack settlement.
-  const fees = allTime ? (totals?.fees ?? 0) : rows.reduce((s, p) => s + Number(p.fees || 0), 0);
+  const fees = t?.fees ?? 0;
   const net = total - fees;
-  const paymentCount = allTime ? (totals?.count ?? 0) : rows.length;
-
-  const byType = useMemo(() => {
-    if (allTime) return totals?.byType ?? [];
-    const m = new Map();
-    rows.forEach((p) => {
-      const cur = m.get(p.type) ?? { count: 0, amount: 0 };
-      m.set(p.type, { count: cur.count + 1, amount: cur.amount + p.amount });
-    });
-    return [...m.entries()];
-  }, [rows, allTime, totals]);
-
-  const byChannel = useMemo(() => {
-    const m = new Map();
-    rows.forEach((p) => {
-      const key = p.channel || "Unspecified";
-      const cur = m.get(key) ?? { count: 0, amount: 0 };
-      m.set(key, { count: cur.count + 1, amount: cur.amount + p.amount });
-    });
-    return [...m.entries()].sort((a, b) => b[1].amount - a[1].amount);
-  }, [rows]);
+  const paymentCount = t?.count ?? 0;
+  const byType = t?.byType ?? [];
+  const byChannel = t?.byChannel ?? [];
 
   const entered = parseFloat(settlementTotal.replace(/[^\d.]/g, ""));
   const hasSettlement = Number.isFinite(entered);
@@ -304,11 +178,7 @@ export default function RevenuePanel() {
           </div>
         </div>
 
-        {allTime && totals?.error && (
-          <div className="admin-empty" role="alert">
-            Couldn't load the all-time totals. Refresh the page or pick a period.
-          </div>
-        )}
+        <RefreshRow totals={totals} what="the totals" />
         <div className="summary-grid">
           <div>
             <span className="summary-value">{ghs(total)}</span>
@@ -337,11 +207,7 @@ export default function RevenuePanel() {
         </div>
       </section>
 
-      <RefundsSection
-        allTime={allTime}
-        since={allTime ? 0 : openedAt - parseInt(range, 10) * 86400000}
-        confirmedTotal={total}
-      />
+      <RefundsSection refunded={t?.refunded ?? { amount: 0, count: 0 }} confirmedTotal={total} />
 
       <div className="metrics-grid">
         <section className="admin-panel">
@@ -351,11 +217,7 @@ export default function RevenuePanel() {
               <p>Card, mobile money, etc. — over the selected period</p>
             </div>
           </div>
-          {allTime ? (
-            <div className="admin-empty">
-              Choose a period to see the breakdown by channel.
-            </div>
-          ) : byChannel.length === 0 ? (
+          {byChannel.length === 0 ? (
             <div className="admin-empty">
               No payments were confirmed in this period.
             </div>

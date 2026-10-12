@@ -1,13 +1,16 @@
 import { BarChart, Donut } from "./miniCharts.jsx";
 import { IconShield } from "./icons.jsx";
 import MetricsExport from "./metricsExport.jsx";
+import RefreshRow from "./refreshRow.jsx";
+import { useConsultationStats } from "./hooks/useServerTotals.js";
 
 // metrics collection (4.6) — date, type, mode, outcome, doctorOrDept only.
 // No patient name, phone, email or consultation ID is ever stored here.
-export default function MetricsPanel({
-  weeklyMetrics = [],
-  outcomeBreakdown = [],
-}) {
+export default function MetricsPanel() {
+  // Counted by the database over all history, not just what's loaded.
+  const consultationStats = useConsultationStats();
+  const weeklyMetrics = consultationStats.data?.weekly ?? [];
+  const outcomeBreakdown = consultationStats.data?.outcomes ?? [];
   const totalOpd = weeklyMetrics.reduce((s, d) => s + d.opd, 0);
   const totalSurgical = weeklyMetrics.reduce((s, d) => s + d.surgical, 0);
   const total = totalOpd + totalSurgical;
@@ -23,7 +26,8 @@ export default function MetricsPanel({
       <div className="admin-banner">
         <IconShield size={18} />
         <p>
-          Built from consultation history. Patients' booking details are
+          Counted by the database from consultation history (press Refresh
+          for the latest). Patients' booking details are
           deleted when a consultation closes; history keeps only doctor,
           times, type, mode, outcome and amount.
         </p>
@@ -31,12 +35,14 @@ export default function MetricsPanel({
 
       <MetricsExport />
 
+      <RefreshRow totals={consultationStats} what="the consultation figures" />
+
       <div className="metrics-grid">
         <section className="admin-panel">
           <div className="admin-panel-head">
             <div>
               <h2>Consultation volume</h2>
-              <p>This week, by day and type</p>
+              <p>Last 7 days, by day and type</p>
             </div>
             <div className="chart-legend">
               <span>
@@ -58,7 +64,7 @@ export default function MetricsPanel({
           <div className="admin-panel-head">
             <div>
               <h2>Outcomes</h2>
-              <p>How sessions ended</p>
+              <p>How consultations ended, all time</p>
             </div>
           </div>
           <div className="donut-wrap">
@@ -79,7 +85,7 @@ export default function MetricsPanel({
       <section className="admin-panel">
         <div className="admin-panel-head">
           <div>
-            <h2>Week summary</h2>
+            <h2>Last 7 days</h2>
             <p>Totals across all departments</p>
           </div>
         </div>
