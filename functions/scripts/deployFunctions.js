@@ -8,6 +8,8 @@
 //   npm run deploy:functions -- --project live  live project
 //   ... -- --dry-run                            only show what would deploy
 //   ... -- --all                                deploy every function
+//   ... -- --dry-run --changed a.js,lib/b.js     what WOULD deploy if those
+//                                               functions/ files changed
 //
 // How it decides: the commit last deployed to each project is kept as the
 // git tag `functions-deployed/<project id>`. Files changed since then are
@@ -30,6 +32,15 @@ const git = (...args) => execFileSync("git", args, { cwd: REPO, encoding: "utf8"
 const { projectId, argv } = chooseProject(process.argv.slice(2));
 const DRY = argv.includes("--dry-run");
 const ALL = argv.includes("--all");
+const ASSUME = (() => {
+  const i = argv.indexOf("--changed");
+  if (i < 0) return null;
+  if (!DRY) throw new Error("--changed only works with --dry-run.");
+  return String(argv[i + 1] || "")
+    .split(",")
+    .filter(Boolean)
+    .map((f) => `functions/${f.trim().replace(/^functions\//, "")}`);
+})();
 const alias = Object.keys(PROJECTS).find((k) => PROJECTS[k] === projectId) || projectId;
 const TAG = `functions-deployed/${projectId}`;
 
@@ -91,7 +102,7 @@ function deployedFunctionNames() {
 }
 
 function plan() {
-  if (git("status", "--porcelain", "--", "functions")) {
+  if (!ASSUME && git("status", "--porcelain", "--", "functions")) {
     throw new Error("functions/ has uncommitted changes. Commit them first, so what's deployed is a commit.");
   }
   const head = git("rev-parse", "HEAD");
@@ -103,11 +114,10 @@ function plan() {
   }
   const names = deployedFunctionNames();
   if (ALL) return { head, all: true, reason: "--all", names };
-  if (!base) return { head, all: true, reason: `no ${TAG} tag yet (first deploy with this tool)`, names };
-  if (base === head) return { head, names: [], reason: "nothing changed since the last deploy" };
+  if (!ASSUME && !base) return { head, all: true, reason: `no ${TAG} tag yet (first deploy with this tool)`, names };
+  if (!ASSUME && base === head) return { head, names: [], reason: "nothing changed since the last deploy" };
 
-  const changed = git("diff", "--name-only", `${base}..${head}`, "--", "functions")
-    .split(/\r?\n/)
+  const changed = (ASSUME || git("diff", "--name-only", `${base}..${head}`, "--", "functions").split(/\r?\n/))
     .filter(Boolean)
     .filter((f) => !IGNORED.some((re) => re.test(f)));
   if (changed.length === 0) return { head, names: [], reason: "only tests, scripts or docs changed" };
