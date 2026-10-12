@@ -101,6 +101,9 @@ exports.updateLegalDocument = legalDocs.updateLegalDocument;
 // Admin metrics report (Metrics & reports tab: CSV / PDF export)
 exports.exportMetrics = require("./reports").exportMetrics;
 
+// Errors in visitors' browsers -> Cloud Logging "CLIENT_ERROR" (alerted)
+exports.reportClientError = require("./clientErrors").reportClientError;
+
 // Tamper-proof copy of the audit log (Cloud Logging -> locked bucket)
 exports.mirrorAuditLog = auditMirror.mirrorAuditLog;
 

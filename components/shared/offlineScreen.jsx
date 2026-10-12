@@ -1,4 +1,5 @@
 import { Component, useEffect } from "react";
+import { reportError } from "../../src/errorReporting";
 import { WifiOff } from "lucide-react";
 import logo from "../../src/assets/logo.webp";
 
@@ -50,6 +51,7 @@ export class AppErrorBoundary extends Component {
 
   componentDidCatch(error) {
     console.error("Page failed to load:", error);
+    reportError(error, "react");
   }
 
   render() {

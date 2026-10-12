@@ -6,7 +6,10 @@ import "@fontsource-variable/fraunces";
 import "./index.css";
 // Catches Chrome's "add to home screen" event as early as possible.
 import "./installPrompt";
+// Browser errors go to Google Cloud Logging with an email alert.
+import { installErrorReporting } from "./errorReporting";
 import App from "./App";
+installErrorReporting();
 const root = createRoot(document.getElementById("root"));
 import { BrowserRouter } from "react-router-dom";
 

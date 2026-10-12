@@ -133,6 +133,11 @@ export default defineConfig(({ mode }) => {
   const siteUrl = (env.VITE_SITE_URL || DEFAULT_SITE_URL).replace(/\/+$/, "");
   return {
     plugins: [react(), tailwindcss(), seoFiles(siteUrl), pwa],
+    // Which release a browser error came from (src/errorReporting.js):
+    // the commit Vercel builds, or "local".
+    define: {
+      "import.meta.env.VITE_BUILD_ID": JSON.stringify((process.env.VERCEL_GIT_COMMIT_SHA || "local").slice(0, 7)),
+    },
     build: {
       rollupOptions: {
         output: {
