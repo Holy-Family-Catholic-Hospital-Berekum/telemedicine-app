@@ -27,7 +27,8 @@
 // booking was closed or already reopened is flagged and refunded
 // automatically, like any other payment we can't use.
 
-const { onSchedule } = require("firebase-functions/v2/scheduler");
+// Run by jobs.js (one of three scheduled jobs), not deployed on its own.
+const { task } = require("./lib/task");
 const logger = require("firebase-functions/logger");
 const {
   onCall,
@@ -62,7 +63,7 @@ const CURRENCY = "GHS";
 /* automatic no-show and expiry                                        */
 /* ------------------------------------------------------------------ */
 
-exports.autoMarkNoShows = onSchedule({ schedule: "every 1 minutes", timeoutSeconds: 120 }, async () => {
+exports.autoMarkNoShows = task("autoMarkNoShows", { schedule: "every 1 minutes", timeoutSeconds: 120 }, async () => {
   const policy = await loadNoShowPolicy();
   const now = Date.now();
   const system = { uid: "system", role: "system" };
@@ -135,7 +136,7 @@ async function emailDoctorMissed(c, waitMinutes) {
   await batch.commit().catch((err) => logger.warn("doctor-missed email not queued", err));
 }
 
-exports.closeExpiredNoShows = onSchedule({ schedule: "every 60 minutes", timeoutSeconds: 300 }, async () => {
+exports.closeExpiredNoShows = task("closeExpiredNoShows", { schedule: "every 60 minutes", timeoutSeconds: 300 }, async () => {
   const snap = await db
     .collection("consultations")
     .where("status", "==", "no_show")

@@ -17,7 +17,8 @@
 // consultation's payment is never mistaken for an unknown one.
 // Other payments on the same Paystack account (not ours) are ignored.
 
-const { onSchedule } = require("firebase-functions/v2/scheduler");
+// Run by jobs.js (one of three scheduled jobs), not deployed on its own.
+const { task } = require("./lib/task");
 const logger = require("firebase-functions/logger");
 const { db, audit } = require("./lib/core");
 const { PAYSTACK_SECRET_KEY, PAYSTACK_API, secretKey } = require("./lib/paystack");
@@ -47,7 +48,7 @@ async function listSuccessfulTransactions(fromIso) {
   return out;
 }
 
-exports.reconcilePaystack = onSchedule(
+exports.reconcilePaystack = task("reconcilePaystack", 
   {
     schedule: "every day 02:00",
     timeZone: "Africa/Accra",

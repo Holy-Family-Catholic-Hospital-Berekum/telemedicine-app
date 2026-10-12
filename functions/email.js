@@ -18,7 +18,8 @@
 // can see whether the patient was told (and phone them if not).
 
 const { onDocumentCreated } = require("firebase-functions/v2/firestore");
-const { onSchedule } = require("firebase-functions/v2/scheduler");
+// Run by jobs.js (one of three scheduled jobs), not deployed on its own.
+const { task } = require("./lib/task");
 const { defineSecret } = require("firebase-functions/params");
 const logger = require("firebase-functions/logger");
 const { db, Timestamp, serverTime, audit } = require("./lib/core");
@@ -156,7 +157,7 @@ exports.sendQueuedEmail = onDocumentCreated(
   },
 );
 
-exports.retryQueuedEmails = onSchedule(
+exports.retryQueuedEmails = task("retryQueuedEmails", 
   { schedule: "every 15 minutes", secrets: [RESEND_API_KEY], timeoutSeconds: 300 },
   async () => {
     const pending = await db

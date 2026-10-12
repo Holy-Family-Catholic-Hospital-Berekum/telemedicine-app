@@ -11,7 +11,8 @@
 //                           cleans up patients deleted in the Firebase
 //                           console (lib/accountDeletion.js)
 
-const { onSchedule } = require("firebase-functions/v2/scheduler");
+// Run by jobs.js (one of three scheduled jobs), not deployed on its own.
+const { task } = require("./lib/task");
 const logger = require("firebase-functions/logger");
 const { db, Timestamp, FieldValue, serverTime, deleteTree } = require("./lib/core");
 const { sweepDeletedPatients } = require("./lib/accountDeletion");
@@ -19,7 +20,7 @@ const { checkAttempts, discardDraft, PAYSTACK_SECRET_KEY } = require("./payments
 
 const BATCH = 200;
 
-exports.cleanupExpiredBookings = onSchedule(
+exports.cleanupExpiredBookings = task("cleanupExpiredBookings", 
   { schedule: "every 60 minutes", secrets: [PAYSTACK_SECRET_KEY], timeoutSeconds: 300 },
   async () => {
     const snap = await db
@@ -50,7 +51,7 @@ exports.cleanupExpiredBookings = onSchedule(
   },
 );
 
-exports.releaseSlotHolds = onSchedule("every 15 minutes", async () => {
+exports.releaseSlotHolds = task("releaseSlotHolds", "every 15 minutes", async () => {
   const snap = await db
     .collection("availableSlots")
     .where("status", "==", "held")
@@ -79,7 +80,7 @@ exports.releaseSlotHolds = onSchedule("every 15 minutes", async () => {
   }
 });
 
-exports.cleanupSignalling = onSchedule("every 60 minutes", async () => {
+exports.cleanupSignalling = task("cleanupSignalling", "every 60 minutes", async () => {
   const snap = await db
     .collection("calls")
     .where("expiresAt", "<", Timestamp.now())
@@ -88,7 +89,7 @@ exports.cleanupSignalling = onSchedule("every 60 minutes", async () => {
   await Promise.all(snap.docs.map((doc) => deleteTree(doc.ref)));
 });
 
-exports.cleanupRateLimits = onSchedule({ schedule: "every 24 hours", timeoutSeconds: 540 }, async () => {
+exports.cleanupRateLimits = task("cleanupRateLimits", { schedule: "every 24 hours", timeoutSeconds: 540 }, async () => {
   const snap = await db
     .collection("rateLimits")
     .where("expiresAt", "<", Timestamp.now())

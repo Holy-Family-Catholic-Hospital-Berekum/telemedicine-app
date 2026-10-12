@@ -13,7 +13,8 @@
 // Paystack and saving the answer) is matched by looking up the payment's
 // refunds on Paystack, so it is neither lost nor repeated.
 
-const { onSchedule } = require("firebase-functions/v2/scheduler");
+// Run by jobs.js (one of three scheduled jobs), not deployed on its own.
+const { task } = require("./lib/task");
 const logger = require("firebase-functions/logger");
 const { db, serverTime, audit } = require("./lib/core");
 const {
@@ -134,7 +135,7 @@ async function syncAll() {
   }
 }
 
-exports.syncPaystackRefunds = onSchedule(
+exports.syncPaystackRefunds = task("syncPaystackRefunds", 
   { schedule: "every 15 minutes", secrets: [PAYSTACK_SECRET_KEY], timeoutSeconds: 300 },
   syncAll,
 );

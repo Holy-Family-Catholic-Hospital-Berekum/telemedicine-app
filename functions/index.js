@@ -104,27 +104,27 @@ exports.exportMetrics = require("./reports").exportMetrics;
 // Tamper-proof copy of the audit log (Cloud Logging -> locked bucket)
 exports.mirrorAuditLog = auditMirror.mirrorAuditLog;
 
-// Scheduled jobs. Left out where SCHEDULED_JOBS=off: the test project
-// (functions/.env.telemedicine-hfch-test), so it costs nothing (each
-// Cloud Scheduler job beyond the free three costs a little). Their logic is
-// covered by the automated tests (functions/test/).
+// Background tasks (lib/task.js), run by three scheduled jobs (jobs.js):
+// every minute, every 15 minutes and daily. Left out where
+// SCHEDULED_JOBS=off: the test project (functions/.env.telemedicine-hfch-test),
+// so it costs nothing; their logic is covered by the automated tests.
 const SCHEDULED = process.env.SCHEDULED_JOBS !== "off";
-if (SCHEDULED) {
+const TASKS = [
   // No-shows and "doctor didn't join" after the waiting time; closing held
   // no-shows (noShow.js)
-  exports.autoMarkNoShows = noShow.autoMarkNoShows;
-  exports.closeExpiredNoShows = noShow.closeExpiredNoShows;
+  noShow.autoMarkNoShows,
+  noShow.closeExpiredNoShows,
   // Payments: nightly reconciliation, following refunds
-  exports.reconcilePaystack = require("./reconcile").reconcilePaystack;
-  exports.syncPaystackRefunds = refundSync.syncPaystackRefunds;
+  require("./reconcile").reconcilePaystack,
+  refundSync.syncPaystackRefunds,
   // Recordings left unfinished
-  exports.recoverStaleRecordings = recordings.recoverStaleRecordings;
+  recordings.recoverStaleRecordings,
   // Housekeeping
-  exports.cleanupExpiredBookings = maintenance.cleanupExpiredBookings;
-  exports.releaseSlotHolds = maintenance.releaseSlotHolds;
-  exports.cleanupSignalling = maintenance.cleanupSignalling;
-  exports.cleanupRateLimits = maintenance.cleanupRateLimits;
-}
+  maintenance.cleanupExpiredBookings,
+  maintenance.releaseSlotHolds,
+  maintenance.cleanupSignalling,
+  maintenance.cleanupRateLimits,
+];
 
 // Appointment emails and reminders to patients and doctors. Sending needs
 // the RESEND_API_KEY secret, so these are only deployed once
@@ -134,8 +134,7 @@ if (require("./lib/mailConfig").EMAIL_CONFIGURED) {
   const reminders = require("./reminders");
   exports.sendQueuedEmail = email.sendQueuedEmail;
   exports.notifyAdminsNewBooking = email.notifyAdminsNewBooking;
-  if (SCHEDULED) {
-    exports.retryQueuedEmails = email.retryQueuedEmails;
-    exports.sendAppointmentReminders = reminders.sendAppointmentReminders;
-  }
+  TASKS.push(email.retryQueuedEmails, reminders.sendAppointmentReminders);
 }
+
+if (SCHEDULED) Object.assign(exports, require("./jobs").scheduledJobs(TASKS));

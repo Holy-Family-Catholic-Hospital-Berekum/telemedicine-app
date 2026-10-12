@@ -18,7 +18,8 @@
 // go through the outbox (lib/mailQueue.js); like email.js this job is only
 // deployed once a verified sending domain is set in lib/mailConfig.js.
 
-const { onSchedule } = require("firebase-functions/v2/scheduler");
+// Run by jobs.js (one of three scheduled jobs), not deployed on its own.
+const { task } = require("./lib/task");
 const logger = require("firebase-functions/logger");
 const { db, Timestamp, toDate } = require("./lib/core");
 const { queueEmail } = require("./lib/mailQueue");
@@ -76,7 +77,7 @@ function dueReminders(c, now, waitMinutes = 5) {
   return due;
 }
 
-exports.sendAppointmentReminders = onSchedule(
+exports.sendAppointmentReminders = task("sendAppointmentReminders", 
   { schedule: "every 5 minutes", timeoutSeconds: 240 },
   async () => {
     const now = Date.now();

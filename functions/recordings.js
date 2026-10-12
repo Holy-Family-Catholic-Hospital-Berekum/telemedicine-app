@@ -34,7 +34,8 @@
 // itself for that (see the deploy notes).
 
 const crypto = require("crypto");
-const { onSchedule } = require("firebase-functions/v2/scheduler");
+// Run by jobs.js (one of three scheduled jobs), not deployed on its own.
+const { task } = require("./lib/task");
 const logger = require("firebase-functions/logger");
 const {
   onCall,
@@ -320,7 +321,7 @@ exports.finalizeRecording = onCall(
 /* recoverStaleRecordings (scheduled)                                  */
 /* ------------------------------------------------------------------ */
 
-exports.recoverStaleRecordings = onSchedule(
+exports.recoverStaleRecordings = task("recoverStaleRecordings", 
   { schedule: "every 60 minutes", timeoutSeconds: 540, memory: "1GiB" },
   async () => {
     const now = Date.now();
