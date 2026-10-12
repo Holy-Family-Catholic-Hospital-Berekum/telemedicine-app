@@ -4,25 +4,27 @@
 // are deliberately not creatable from the app.
 //
 // Credentials: `gcloud auth application-default login` with an account
-// that has Firebase Admin on the project, then from functions/:
+// that has Firebase Admin on the project, then from functions/. Every
+// command acts on the TEST project unless you add `--project live`
+// (scripts/project.js); the project is printed first:
 //
-//   node scripts/staffAdmin.js make-admin someone@hospital.org "Full Name"
+//   node scripts/staffAdmin.js make-admin someone@hospital.org "Full Name" [--project live]
 //       Promotes an existing Auth user (sign up first, or create the user
 //       in the Firebase console) to admin: sets the role claim and writes
 //       adminUsers/{uid}.
 //
-//   node scripts/staffAdmin.js sync-claims
+//   node scripts/staffAdmin.js sync-claims [--project live]
 //       Gives every existing adminUsers / users document's account the
 //       matching role claim. Use once after upgrading, so accounts created
 //       before claims existed can still sign in.
 //
-//   node scripts/staffAdmin.js reset-mfa someone@hospital.org
+//   node scripts/staffAdmin.js reset-mfa someone@hospital.org [--project live]
 //       Lost or replaced phone: removes their authenticator, signs them out
 //       everywhere and prints a new one-time SETUP CODE. Verify who is
 //       asking first (in person or by a call to a known number), never by
 //       email alone. Doctors can also be reset by an admin (Users tab).
 //
-//   node scripts/staffAdmin.js issue-setup-code someone@hospital.org
+//   node scripts/staffAdmin.js issue-setup-code someone@hospital.org [--project live]
 //       Prints a new setup code without removing anything (the old one
 //       expired before they used it).
 //
@@ -33,12 +35,12 @@
 // One-off project hardening (needs the Identity Platform upgrade; see
 // SECURITY_SETUP.md). Each prints what it changed:
 //
-//   node scripts/staffAdmin.js enable-totp
+//   node scripts/staffAdmin.js enable-totp [--project live]
 //       Turns on authenticator-app (TOTP) multi-factor sign-in.
-//   node scripts/staffAdmin.js password-policy
+//   node scripts/staffAdmin.js password-policy [--project live]
 //       Enforces the sign-up page's password rules on Firebase's side too
 //       (10+ characters, upper and lower case, a number and a symbol).
-//   node scripts/staffAdmin.js auth-recaptcha
+//   node scripts/staffAdmin.js auth-recaptcha [--project live]
 //       Puts reCAPTCHA Enterprise on email/password sign-in and sign-up in
 //       AUDIT mode: every request is scored, nothing is blocked.
 //       Don't switch it to ENFORCE: on 5 Oct 2026 enforcement blocked a
@@ -51,7 +53,9 @@ const { initializeApp } = require("firebase-admin/app");
 const { getFirestore, FieldValue } = require("firebase-admin/firestore");
 const { getAuth } = require("firebase-admin/auth");
 
-const PROJECT_ID = process.env.GCLOUD_PROJECT || "telemedicine-hfch";
+// Test project unless `--project live` (scripts/project.js).
+const { chooseProject } = require("./project");
+const { projectId: PROJECT_ID, argv: ARGV } = chooseProject(process.argv.slice(2));
 initializeApp({ projectId: PROJECT_ID });
 const db = getFirestore();
 // After initializeApp, so lib/core reuses this app.
@@ -196,7 +200,7 @@ async function syncClaims() {
   console.log(`Updated ${count} account(s). Affected users must sign in again.`);
 }
 
-const [command, ...args] = process.argv.slice(2);
+const [command, ...args] = ARGV;
 const COMMANDS = {
   "make-admin": () => makeAdmin(args[0], args.slice(1).join(" ")),
   "sync-claims": () => syncClaims(),

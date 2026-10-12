@@ -7,7 +7,9 @@ restoring data), and the few steps still to do.
 
 All `node scripts/...` commands run from the `functions/` folder, on a
 computer signed in to the Google Cloud CLI as a project Owner
-(`gcloud auth login --update-adc`). That Google account must itself have
+(`gcloud auth login --update-adc`). They act on the TEST project unless
+you add `--project live`; every live procedure below includes it, and the
+script prints the project before doing anything. That Google account must itself have
 2-Step Verification on: it controls all patient data.
 
 ---
@@ -38,7 +40,7 @@ computer signed in to the Google Cloud CLI as a project Owner
 
 **New admin** (IT, with Owner access):
 ```
-node scripts/staffAdmin.js make-admin someone@hospital.org "Full Name"
+node scripts/staffAdmin.js make-admin someone@hospital.org "Full Name" --project live
 ```
 It prints a **setup code** (valid 72 hours). Give it to them **in person or
 by phone, never by email or message**. They then:
@@ -69,7 +71,7 @@ already had. Never on the strength of an email alone.
 
 - **Doctor**: Users → their row → **Reset authenticator**. They're signed
   out everywhere; give them the new setup code.
-- **Admin**: `node scripts/staffAdmin.js reset-mfa admin@hospital.org`
+- **Admin**: `node scripts/staffAdmin.js reset-mfa admin@hospital.org --project live`
   (prints the new setup code).
 
 If a staff member signs in and is asked for an authenticator code they
@@ -177,7 +179,7 @@ dashboard. Their hospital admin account is enough.
    sign-in, which showed up as "Invalid email or password", while a request
    with no reCAPTCHA token got through. Don't switch it to enforce on the
    live site. If you revisit it, test with a throwaway account and keep
-   someone ready to run `node scripts/staffAdmin.js auth-recaptcha` (which
+   someone ready to run `node scripts/staffAdmin.js auth-recaptcha --project live` (which
    sets audit) to undo it. Password guessing is still limited by Firebase's
    built-in throttling, the password policy and the staff authenticator.
 2. **Replace the placeholders** in `components/shared/contact.js`: the
@@ -214,8 +216,9 @@ Everything paid before go-live is Paystack TEST money. Do these in order.
    Paystack settlement schedule? Refunds are paid from the Paystack balance,
    so keep enough in it.
 2. **Clear the test data** (owner, from `functions/`):
-   `node scripts/resetTestPayments.js` (dry run, shows counts), then
-   `node scripts/resetTestPayments.js --confirm telemedicine-hfch`.
+   `node scripts/resetTestPayments.js --project live` (dry run, shows
+   counts), then
+   `node scripts/resetTestPayments.js --project live --confirm telemedicine-hfch`.
    Test call recordings are not touched: delete them in the app (two admins).
 3. **Live secret key**: `firebase functions:secrets:set PAYSTACK_SECRET_KEY --project live`
    (paste the LIVE secret key), then redeploy:

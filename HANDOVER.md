@@ -27,8 +27,8 @@ Secrets never live in the repo:
 
 | Secret | Where it lives | Set with |
 |---|---|---|
-| Paystack secret key | Firebase function secret `PAYSTACK_SECRET_KEY` | `firebase functions:secrets:set PAYSTACK_SECRET_KEY` |
-| Resend API key | Firebase function secret `RESEND_API_KEY` | `firebase functions:secrets:set RESEND_API_KEY` |
+| Paystack secret key | Firebase function secret `PAYSTACK_SECRET_KEY` | `firebase functions:secrets:set PAYSTACK_SECRET_KEY --project live` |
+| Resend API key | Firebase function secret `RESEND_API_KEY` | `firebase functions:secrets:set RESEND_API_KEY --project live` |
 | Cloudflare TURN | Function secrets `CLOUDFLARE_TURN_KEY_ID`, `CLOUDFLARE_TURN_API_TOKEN` | same command |
 | Website settings | `.env` locally, Vercel env vars live | see `.env.example` |
 | CI tokens | GitHub repo secrets `SNYK_TOKEN`, `GITGUARDIAN_API_KEY` | GitHub → Settings → Secrets |
@@ -101,13 +101,17 @@ writes. A separate test Firebase project is a worthwhile improvement
 | What | How | Notes |
 |---|---|---|
 | Website | `git push` to `main` | Vercel builds and publishes in ~1 minute. A broken `vercel.json` fails the whole deploy silently: check the commit's status on GitHub. |
-| Functions | `FUNCTIONS_DISCOVERY_TIMEOUT=60 firebase deploy --only functions` | The timeout variable avoids a load timeout on slow machines. A change that raises the minimum bill (e.g. `minInstances`) needs `--force`. |
-| Database / storage rules | `firebase deploy --only firestore:rules,storage` | Rules are live immediately. |
-| Indexes | `firebase deploy --only firestore:indexes` | Deploy new indexes **before** functions that need them and wait until they show READY (`gcloud firestore indexes composite list`), or the queries fail meanwhile. |
+| Functions | `FUNCTIONS_DISCOVERY_TIMEOUT=60 firebase deploy --only functions --project live` | The timeout variable avoids a load timeout on slow machines. A change that raises the minimum bill (e.g. `minInstances`) needs `--force`. |
+| Database / storage rules | `firebase deploy --only firestore:rules,storage --project live` | Rules are live immediately. |
+| Indexes | `firebase deploy --only firestore:indexes --project live` | Deploy new indexes **before** functions that need them and wait until they show READY (`gcloud firestore indexes composite list`), or the queries fail meanwhile. |
 
-Every command above goes to the **live** project unless you add
-`--project test` (`.firebaserc`: `live` = `telemedicine-hfch`,
-`test` = `telemedicine-hfch-test`). Be explicit: `--project live`.
+**The default is the TEST project.** Every Firebase command and owner
+script acts on `telemedicine-hfch-test` unless you add `--project live`
+(`.firebaserc` default + `firebase use test`; the scripts print the project
+first). A forgotten flag therefore lands in test, never in live.
+**Local development also uses the test project** (`.env` holds the test
+web config), and live's browser key no longer accepts `localhost`, so
+nothing run on a developer's computer can reach real patients' data.
 
 After deploying functions, watch Cloud Logging for errors for a few
 minutes; the *Telemedicine function errors* alert emails the owner too.
@@ -154,9 +158,8 @@ FUNCTIONS_DISCOVERY_TIMEOUT=60 firebase deploy --only functions --project test
   which can never become staff): create the user in Firebase console →
   Authentication → Add user (password: 10+ characters with upper, lower,
   number and symbol, or the console only says "unknown error"), then
-  `GCLOUD_PROJECT=telemedicine-hfch-test node scripts/staffAdmin.js
-  make-admin email "Name"` (every staffAdmin command honours
-  `GCLOUD_PROJECT`). Doctors: Add doctor in the test admin's Users tab.
+  `node scripts/staffAdmin.js make-admin email "Name"` (test by default;
+  add `--project live` for live). Doctors: Add doctor in the test admin's Users tab.
 - **Rules:**
   - Never put real patient data in the test project.
   - Live variables in Vercel are **Production only**; never tick Preview

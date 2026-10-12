@@ -1,7 +1,7 @@
 {
   "projects": {
-    "default": "telemedicine-hfch",
-    "live": "telemedicine-hfch",
-    "test": "telemedicine-hfch-test"
+    "default": "telemedicine-hfch-test",
+    "test": "telemedicine-hfch-test",
+    "live": "telemedicine-hfch"
   }
 }

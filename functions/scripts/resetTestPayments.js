@@ -11,10 +11,11 @@
 // Credentials: `gcloud auth application-default login` with an account that
 // has Firebase Admin on the project, then from functions/:
 //
-//   node scripts/resetTestPayments.js
+//   node scripts/resetTestPayments.js --project live
 //       Dry run: prints what would be deleted. Changes nothing.
-//   node scripts/resetTestPayments.js --confirm telemedicine-hfch
+//   node scripts/resetTestPayments.js --project live --confirm telemedicine-hfch
 //       Deletes it (the project ID must be typed to confirm).
+// Without --project live it acts on the TEST project.
 //
 // Deleted (test data only): bookings, consultations, consultationHistory,
 // confirmedPayments, bookingLog, paymentRefs, paymentIssues, refundRequests,
@@ -29,7 +30,9 @@
 const { initializeApp } = require("firebase-admin/app");
 const { getFirestore, FieldValue } = require("firebase-admin/firestore");
 
-const PROJECT_ID = process.env.GCLOUD_PROJECT || "telemedicine-hfch";
+// Test project unless `--project live` (scripts/project.js).
+const { chooseProject } = require("./project");
+const { projectId: PROJECT_ID, argv: ARGV } = chooseProject(process.argv.slice(2));
 initializeApp({ projectId: PROJECT_ID });
 const db = getFirestore();
 
@@ -47,7 +50,7 @@ const CLEAR = [
 ];
 
 async function main() {
-  const args = process.argv.slice(2);
+  const args = ARGV;
   const confirmed = args[0] === "--confirm" && args[1] === PROJECT_ID;
   if (args.length && !confirmed) {
     console.error(`To delete, run: node scripts/resetTestPayments.js --confirm ${PROJECT_ID}`);

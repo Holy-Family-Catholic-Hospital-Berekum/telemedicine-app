@@ -109,8 +109,9 @@ npm run test:functions # server tests on the emulators (Java 21)
 cd functions && npm test   # server unit tests (no setup)
 
 cd functions && npm install
-firebase deploy --only functions            # back end
-firebase deploy --only firestore,storage    # rules and indexes
+# Firebase commands go to the TEST project unless you add --project live
+firebase deploy --only functions --project live           # back end
+firebase deploy --only firestore,storage --project live   # rules and indexes
 ```
 
 The website deploys itself: every push to `main` on GitHub is built and
