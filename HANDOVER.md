@@ -71,12 +71,24 @@ writes. A separate test Firebase project is a worthwhile improvement
 2. `npm run lint` and `npm run build` must pass. The pre-commit hook runs
    a secret scan and lint on staged files. If TruffleHog blocks a commit
    but lists no finding, it's a known glitch: just commit again.
-3. Tests: `cd functions && npm test` (server unit tests: waiting rule,
-   refund amounts, age, reminders, metrics report; no setup needed) and
-   `npm run test:functions` / `npm run test:rules` (on the Firebase
-   emulators, need Java 21). Changing database or storage rules: add a
-   test in `tests/rules/rules.test.mjs`. GitHub runs all of them on every
-   push that touches the rules, functions or tests (*Automated tests*).
+3. Tests (GitHub runs all of them on every push to `main` or `test`):
+   - `cd functions && npm test`: server unit tests (waiting rule, refund
+     amounts, age, reminders, metrics report, scheduled jobs, email
+     services, error scrubbing). No setup.
+   - `npm run test:functions` / `npm run test:rules`: server and database
+     rules tests on the Firebase emulators (need Java 21). Changing rules:
+     add a test in `tests/rules/rules.test.mjs`.
+   - `npm run test:e2e`: the **robot** (Playwright, `e2e/`) uses the
+     website like a patient on a throwaway copy of the whole system:
+     sign-up, booking and payment, joining a video call, the
+     doctor-waiting and doctor-missing rules, a refund request. About 4
+     minutes; needs Java 21. Paystack's own payment window can't be
+     automated, so it is stood in for; check it by hand before go-live.
+     Staff steps call the real staff functions with a token only the
+     emulator accepts (staff need an authenticator). A run contacts no
+     outside service (email, Paystack and the video relay are switched off
+     in `functions/.env.demo-telemedicine`, emulator only).
+   - *Build* (GitHub) lints and builds the website on every push.
    Try risky changes on the **test environment** first (section 4).
 4. Keep [CLAUDE.md](CLAUDE.md) up to date when behaviour changes; it's the
    reference the next person (or an AI assistant) relies on.
@@ -101,7 +113,7 @@ writes. A separate test Firebase project is a worthwhile improvement
 | What | How | Notes |
 |---|---|---|
 | Website | `git push` to `main` | Vercel builds and publishes in ~1 minute. A broken `vercel.json` fails the whole deploy silently: check the commit's status on GitHub. |
-| Functions | `FUNCTIONS_DISCOVERY_TIMEOUT=60 firebase deploy --only functions --project live` | The timeout variable avoids a load timeout on slow machines. A change that raises the minimum bill (e.g. `minInstances`) needs `--force`. |
+| Functions | `npm run deploy:functions -- --project live` (test: without `--project`) | Deploys only the functions whose code changed since the last deploy to that project (git tag `functions-deployed/<project>`), and everything when `index.js`, `package*.json` or an env file changed. Commit first. `-- --dry-run` shows what would deploy; `-- --all` forces everything. The full command is `FUNCTIONS_DISCOVERY_TIMEOUT=60 firebase deploy --only functions --project live`; a change that raises the minimum bill (e.g. `minInstances`) needs `--force`. |
 | Database / storage rules | `firebase deploy --only firestore:rules,storage --project live` | Rules are live immediately. |
 | Indexes | `firebase deploy --only firestore:indexes --project live` | Deploy new indexes **before** functions that need them and wait until they show READY (`gcloud firestore indexes composite list`), or the queries fail meanwhile. |
 
@@ -197,18 +209,27 @@ exist or the CLI refuses to deploy anything.
   - Deleting a patient: `functions/lib/accountDeletion.js`.
   - Video calls: `components/video/` (`useWebRTCCall.js` header explains
     the signalling protocol).
-- **Scheduled jobs:** `noShow.js`, `reminders.js`, `maintenance.js`,
-  `reconcile.js`, `refundSync.js`, `recordings.js`.
+- **Background tasks:** written with `task()` (`functions/lib/task.js`) in
+  `noShow.js`, `reminders.js`, `maintenance.js`, `reconcile.js`,
+  `refundSync.js`, `recordings.js`, `email.js`; run by three scheduled jobs
+  in `functions/jobs.js` (every minute / every 15 minutes / daily 02:00).
+  A new task: give it one of the schedules jobs.js lists and add it to
+  `TASKS` in `index.js`.
+- **Email service:** `functions/lib/mailProvider.js` (Resend or Brevo,
+  setting `MAIL_PROVIDER`).
+- **Website errors:** `src/errorReporting.js` -> `functions/clientErrors.js`.
+- **End-to-end tests:** `e2e/` (start with `e2e/helpers.mjs`).
 - **Owner scripts** (`functions/scripts/`, run locally, never deployed):
   `staffAdmin.js` (make-admin, reset-mfa, issue-setup-code, sync-claims…),
   `resetTestPayments.js` (go-live only).
 
 ## 6. Known gaps (what I'd work on next)
 
-1. **Test coverage** is the core rules (waiting time, no-shows, doctor
-   couldn't make it, refunds, metrics) and the security rules. Payments,
-   scheduling and deletion are still covered only by the manual
-   [GO_LIVE_TEST_CHECKLIST.md](GO_LIVE_TEST_CHECKLIST.md).
+1. **Test coverage:** the robot covers the patient's main journeys; not
+   yet the admin and doctor screens themselves (their functions are
+   covered), no-show fee payment, rescheduling and patient deletion.
+   The manual [GO_LIVE_TEST_CHECKLIST.md](GO_LIVE_TEST_CHECKLIST.md)
+   covers the rest, and the real Paystack window.
 2. **Data retention** isn't automated (audit log, consultation history,
    recordings are kept until the hospital decides periods).
 3. **Folder layout** (`src/` and `components/` importing each other) works

@@ -124,9 +124,22 @@ notification channels; add more people there).
 - **Telemedicine monthly spend** (budget on the project's billing account, USD 50 a month): emails at $20 spent, $50 spent
   and when the month is forecast to reach $50. A budget only warns; it
   never stops the app. Change it in Billing → Budgets & alerts.
+- **Telemedicine website errors** (alert policy): an error in a visitor's
+  browser (src/errorReporting.js -> function `reportClientError`, logged
+  as `CLIENT_ERROR`; nothing personal: path only, emails/phone numbers/
+  booking references removed). At most one email an hour. To look: Logs
+  Explorer, `resource.labels.service_name="reportclienterror"`. Kind
+  `chunk` while online usually means a broken website deploy.
+- **Telemedicine website down** (uptime check *Telemedicine live website*
+  every 5 minutes from Europe, the USA and Asia; alert when 2 or more
+  fail). Free. When the website moves host, edit the check's host.
 - No function is kept always-on (no fixed cost). Instead the call screens
   wake `startVideoCall` shortly before a call (src/callWarmup.js), inside
   the free allowance.
+- Background tasks run from **three** Cloud Scheduler jobs (`jobsEveryMinute`,
+  `jobsEvery15Minutes`, `jobsDaily`; functions/jobs.js), inside Cloud
+  Scheduler's three free jobs. A failing task is logged as "Scheduled task
+  failed" (and alerted as a function error) without stopping the others.
 
 ## Staff inactivity
 
@@ -153,8 +166,13 @@ Nothing below is deleted automatically yet (hospital decision, October
 `auditLog` (the locked 365-day copy in Cloud Logging is separate),
 `consultationHistory`, and call `recordings` (deleted only by two admins).
 Recordings are the largest and most sensitive: roughly 110 MB per
-20-minute video call. Once periods are agreed, they can be enforced by a
-nightly job.
+20-minute video call (audio-only recording is about 11 times smaller).
+Since 13 Oct 2026 the storage buckets move recordings older than 30 days
+to **Archive** storage automatically (about 17 times cheaper; still
+playable at once, with a small fee per GB played; billed for at least 365
+days even if deleted earlier). Rule: `gcloud storage buckets describe
+gs://<project>.firebasestorage.app --format="value(lifecycle_config)"`.
+Once periods are agreed, deletion can be enforced by a nightly task.
 
 ## Service accounts
 

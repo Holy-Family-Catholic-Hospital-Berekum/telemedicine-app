@@ -106,7 +106,9 @@ npm run build          # production build into dist/
 npm run lint           # ESLint for the website and functions
 npm run test:rules     # rules tests on the Firebase emulators (Java 21)
 npm run test:functions # server tests on the emulators (Java 21)
+npm run test:e2e       # end-to-end robot tests on the emulators (Java 21)
 cd functions && npm test   # server unit tests (no setup)
+npm run deploy:functions   # deploy only changed functions (test; add -- --project live)
 
 cd functions && npm install
 # Firebase commands go to the TEST project unless you add --project live
