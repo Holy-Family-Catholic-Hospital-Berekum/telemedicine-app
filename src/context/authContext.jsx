@@ -21,12 +21,11 @@
 //    emails have accounts.
 //
 // 3. Client-side attempt throttling. This slows down casual brute
-//    forcing in the UI and is a UX nicety, not the real defense — per
-//    the architecture doc (6.2), the actual lockout-after-repeated-
-//    failures control belongs on the server (Firebase
-//    Identity Platform's account-lockout setting, or a Cloud Function
-//    that checks a failedAttempts counter). Wire that up server-side
-//    before launch; don't rely on this alone.
+//    forcing in the UI and is a UX nicety, not the real defense — the
+//    actual protection is on the server: Firebase Authentication throttles
+//    repeated failures itself, App Check is enforced on sign-in (only the
+//    real site can call it), the password policy is enforced, and staff
+//    also need their authenticator code.
 //
 //    IMPORTANT: this throttle counts signInWithEmailAndPassword
 //    failures and wrong-audience logins (which are deliberately

@@ -1,8 +1,8 @@
 // signUp.jsx
 //
-// Patient self-service sign-up only. Per the architecture doc (4.1),
-// admin and doctor accounts are created manually by the hospital, not
-// through a public form — so this page never offers a role choice.
+// Patient self-service sign-up only. Admin and doctor accounts are created
+// by the hospital (staffAdmin script, admin Users tab), never through a
+// public form, so this page never offers a role choice.
 //
 // After account creation we send a verification email and route to
 // /verify-email; per 6.2, a patient can't create a booking until that

@@ -1,16 +1,132 @@
-# React + Vite
+# Holy Family Catholic Hospital — Telemedicine
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+The online consultation service of Holy Family Catholic Hospital, Berekum
+(Ghana), live at **https://telemedicine.hfhberekum.org**.
 
-Currently, two official plugins are available:
+Patients book and pay (mobile money, through Paystack) for a General OPD or
+Surgical consultation, either by **video call** or **at the hospital**.
+Admins assign each booking a doctor and a time; doctors hold video
+consultations from the hospital's telemedicine room; everyone is emailed
+along the way. The hospital controls prices, no-show rules, call recording,
+site images and the legal text from an admin portal.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+> Developer taking over? Start with **[HANDOVER.md](HANDOVER.md)** (setup,
+> access, deploying), then **[SECURITY_SETUP.md](SECURITY_SETUP.md)** (how
+> the live system is run). **[CLAUDE.md](CLAUDE.md)** is the detailed
+> reference for every rule and gotcha.
 
-## React Compiler
+## Who uses it
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+| | Where | What they do |
+|---|---|---|
+| **Patients** | `/` , `/book`, `/dashboard` | Sign up (adults only; children are booked by a parent), book and pay, join video calls, reschedule, ask for refunds. Installable on a phone ("Holy Family"). |
+| **Doctors** | `/doctor` (staff sign-in) | See their schedule and the patient's clinical details, start video calls from a registered room computer, close consultations, report "I can't make it". |
+| **Admins** | `/admin` (staff sign-in) | Schedule bookings, manage users, prices, refunds, recordings, the audit log, metrics and the control panel. |
 
-## Expanding the ESLint configuration
+Staff sign in on a hidden page (its address is set by `VITE_STAFF_LOGIN_PATH`,
+never written in the code) with a password **and** an authenticator app.
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+## How it fits together
+
+```
+ Patient phone / staff computer
+        │  (website, installable app)
+        ▼
+ Vercel ── hosts the React website (static files only)
+        │
+        ▼
+ Firebase (Google Cloud, Europe)
+   • Authentication  – accounts, staff authenticator codes
+   • Firestore       – the database (bookings, consultations, history…)
+   • Cloud Functions – every change happens here, never in the browser
+   • Storage         – call recordings, doctor photos
+   • App Check       – only the real website may call the above
+        │
+        ├── Paystack ── mobile money payments and refunds
+        ├── Resend ──── appointment emails (appointments@mail.hfhberekum.org)
+        └── Cloudflare ─ relays video calls when a direct connection fails
+```
+
+Video calls are peer-to-peer (WebRTC) between the patient and the doctor's
+room computer; Firebase only carries the connection set-up.
+
+**The browser is never trusted.** Bookings, payments, consultations,
+refunds, recordings and the audit log are written only by Cloud Functions,
+which check the user's role, validate input and rate-limit. Database rules
+let the browser read only what each person may see.
+
+## Stack
+
+| Part | Technology |
+|---|---|
+| Website | React 19, Vite 8, React Router 7, Tailwind CSS v4 (plain JavaScript, no TypeScript) |
+| Installable app / offline | vite-plugin-pwa (service worker), self-hosted fonts |
+| Back end | Firebase: Authentication (Identity Platform + TOTP), Firestore (`eur3`), Cloud Functions v2 (Node 24, `europe-west1`), Storage, App Check (reCAPTCHA Enterprise) |
+| Payments | Paystack (mobile money), webhook + daily reconciliation |
+| Email | Resend (verified domain `mail.hfhberekum.org`) |
+| Video | WebRTC; Cloudflare TURN relay |
+| Hosting | Vercel (website), Firebase (back end) |
+| Quality / security | ESLint (+ security plugin), Husky pre-commit (TruffleHog secret scan, lint), GitHub Actions (TruffleHog, ESLint, Semgrep, Snyk, GitGuardian, rules tests) |
+
+## Folders
+
+```
+src/                 App shell: routes (App.jsx), Firebase setup, auth,
+                     shared helpers (dates, consent text, site settings),
+                     sign-in / sign-up pages.
+components/
+  patient/           Home page, booking page, patient dashboard.
+  doctor/            Doctor portal.
+  admin/             Admin portal (one file per tab).
+  video/             Video calls (WebRTC, call screen, recording).
+  shared/            Header, footer, pagination, offline/slow banners…
+functions/           Cloud Functions (the back end).
+  index.js           The list of every deployed function.
+  lib/               Shared rules: core.js (auth checks, validation,
+                     audit, rate limits), consultationLifecycle.js
+                     (no-shows, closing), emails, Paystack, deletion.
+  scripts/           Owner-only scripts run on a laptop, never deployed
+                     (making admins, resetting authenticators, go-live).
+tests/rules/         Database/storage rules tests (emulators).
+firestore.rules      Who may read what (database).
+storage.rules        Who may read what (files).
+vercel.json          Website headers (security policy) and redirects.
+```
+
+Why both `src/` and `components/`: the project started as separate pieces
+that were later joined; they import from each other with relative paths.
+It works fine; moving everything into one folder is optional tidying.
+
+## Commands
+
+```bash
+npm install            # once
+npm run dev            # local website at http://localhost:5173
+npm run build          # production build into dist/
+npm run lint           # ESLint for the website and functions
+npm run test:rules     # rules tests on the Firebase emulators (Java 21)
+
+cd functions && npm install
+firebase deploy --only functions            # back end
+firebase deploy --only firestore,storage    # rules and indexes
+```
+
+The website deploys itself: every push to `main` on GitHub is built and
+published by Vercel. See [HANDOVER.md](HANDOVER.md) for the details and the
+deployment quirks.
+
+## Documentation
+
+| File | For | What's in it |
+|---|---|---|
+| [HANDOVER.md](HANDOVER.md) | A developer taking over | Access to hand over, first-time setup, deploying, where everything lives |
+| [SECURITY_SETUP.md](SECURITY_SETUP.md) | Whoever runs the live system | Staff accounts, lost phones, restores, alerts, budget, payments go-live |
+| [GO_LIVE_TEST_CHECKLIST.md](GO_LIVE_TEST_CHECKLIST.md) | Testers | The full manual test pass before launch and after big changes |
+| [CLAUDE.md](CLAUDE.md) | Developers (and AI assistants) | Detailed reference: every rule, collection and gotcha |
+| `.env.example` | Developers | The website's settings, without values |
+
+## Ownership
+
+Copyright © 2026 Holy Family Catholic Hospital, Berekum. All rights
+reserved; see [LICENSE](LICENSE). The source is published for transparency
+only.

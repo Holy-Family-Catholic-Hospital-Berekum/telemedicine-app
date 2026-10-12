@@ -119,8 +119,7 @@ notification channels; add more people there).
   logs an error (failed email, payment check, scheduled job, crash). At
   most one email an hour; it closes itself after a day. To look: Logs
   Explorer, severity ERROR, around the alert time.
-- **Telemedicine monthly spend** (budget on billing account
-  016AE0-40E755-785DFD, USD 50 a month): emails at $20 spent, $50 spent
+- **Telemedicine monthly spend** (budget on the project's billing account, USD 50 a month): emails at $20 spent, $50 spent
   and when the month is forecast to reach $50. A budget only warns; it
   never stops the app. Change it in Billing → Budgets & alerts.
 - No function is kept always-on (no fixed cost). Instead the call screens

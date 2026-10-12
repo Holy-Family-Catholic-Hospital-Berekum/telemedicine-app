@@ -11,8 +11,8 @@
 // IMPORTANT: these are UX guards, not your security boundary. A patient
 // blocked here from /admin could still, in principle, hand-craft a
 // request straight to Firestore — what actually stops that is your
-// Firestore Security Rules checking adminUsers server-side (6.1 in the
-// architecture doc). Keep this file and your Security Rules in sync,
+// Firestore Security Rules checking the role server-side. Keep this file
+// and your Security Rules in sync,
 // and treat the rules as the source of truth.
 //
 // Example wiring in your router:
