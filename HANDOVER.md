@@ -71,9 +71,13 @@ writes. A separate test Firebase project is a worthwhile improvement
 2. `npm run lint` and `npm run build` must pass. The pre-commit hook runs
    a secret scan and lint on staged files. If TruffleHog blocks a commit
    but lists no finding, it's a known glitch: just commit again.
-3. Changing database or storage rules: add a test in
-   `tests/rules/rules.test.mjs`; GitHub runs them on every push that
-   touches the rules (*Security rules tests* workflow).
+3. Tests: `cd functions && npm test` (server unit tests: waiting rule,
+   refund amounts, age, reminders, metrics report; no setup needed) and
+   `npm run test:functions` / `npm run test:rules` (on the Firebase
+   emulators, need Java 21). Changing database or storage rules: add a
+   test in `tests/rules/rules.test.mjs`. GitHub runs all of them on every
+   push that touches the rules, functions or tests (*Automated tests*).
+   Try risky changes on the **test environment** first (section 4).
 4. Keep [CLAUDE.md](CLAUDE.md) up to date when behaviour changes; it's the
    reference the next person (or an AI assistant) relies on.
 5. Patient-facing text: plain words for lay readers, at least 14 px.
@@ -101,8 +105,47 @@ writes. A separate test Firebase project is a worthwhile improvement
 | Database / storage rules | `firebase deploy --only firestore:rules,storage` | Rules are live immediately. |
 | Indexes | `firebase deploy --only firestore:indexes` | Deploy new indexes **before** functions that need them and wait until they show READY (`gcloud firestore indexes composite list`), or the queries fail meanwhile. |
 
+Every command above goes to the **live** project unless you add
+`--project test` (`.firebaserc`: `live` = `telemedicine-hfch`,
+`test` = `telemedicine-hfch-test`). Be explicit: `--project live`.
+
 After deploying functions, watch Cloud Logging for errors for a few
 minutes; the *Telemedicine function errors* alert emails the owner too.
+
+### Test environment
+
+A second Firebase project, **`telemedicine-hfch-test`** ("Telemedicine
+TEST"), set up like live (eur3 database, Identity Platform with
+authenticator apps and the password policy, Storage, the
+`functions-runtime` account with the same roles), with its own empty
+database and its own accounts. Use it to try a change before live:
+
+```bash
+firebase deploy --only firestore,storage --project test
+FUNCTIONS_DISCOVERY_TIMEOUT=60 firebase deploy --only functions --project test
+```
+
+- **Free:** `functions/.env.telemedicine-hfch-test` (committed, not secret)
+  sets `SCHEDULED_JOBS=off`, so none of the scheduled jobs (automatic
+  no-shows, reminders, nightly Paystack check, clean-ups) are deployed
+  there; their logic is covered by the automated tests. Usage stays in the
+  free tier. It also sets `ENFORCE_APP_CHECK=false` (the test website has
+  no reCAPTCHA key) and `SITE_URL` (links in its emails).
+- **Website:** the Vercel *Preview* deployment of the `test` branch, with
+  Preview environment variables pointing at the test project (its web app
+  config: `firebase apps:sdkconfig WEB --project test`), the Paystack
+  **test** public key, and no `VITE_RECAPTCHA_ENTERPRISE_SITE_KEY`.
+- **Secrets:** set in the test project like live
+  (`firebase functions:secrets:set NAME --project test`). Paystack must
+  always be a **test** key (`sk_test_…`) there.
+- **Accounts:** sign up as a patient on the test site; make a test admin
+  with `GCLOUD_PROJECT=telemedicine-hfch-test node scripts/staffAdmin.js
+  make-admin …` (all staffAdmin commands honour `GCLOUD_PROJECT`).
+- Paystack sends webhooks to one URL per mode, and until go-live the test
+  keys point at live's `paystackWebhook`. Test-project payments are
+  confirmed by the verify-by-reference check when the patient returns.
+  Their references start `HFT-` (`PAYMENT_REF_PREFIX`), live's `HFH-`, so
+  live ignores test payments instead of refunding them as strays.
 
 Emails and reminders are only deployed when `functions/lib/mailConfig.js`
 has a real sender address (it does now), and every function secret must
@@ -135,19 +178,15 @@ exist or the CLI refuses to deploy anything.
 
 ## 6. Known gaps (what I'd work on next)
 
-1. **No automated tests for the server logic.** The waiting rule,
-   no-show/refund amounts, age checks and deletion are only covered by the
-   manual [GO_LIVE_TEST_CHECKLIST.md](GO_LIVE_TEST_CHECKLIST.md). Unit tests
-   for `consultationLifecycle.js` (`waitDeadline`, `rescheduleCountsAsNoShow`)
-   and the money maths would be the most valuable addition.
-2. **No separate test environment.** Development uses the live project.
-   A second Firebase project (`telemedicine-hfch-test`) with its own
-   Paystack test keys would make changes much safer.
-3. **Data retention** isn't automated (audit log, consultation history,
+1. **Test coverage** is the core rules (waiting time, no-shows, doctor
+   couldn't make it, refunds, metrics) and the security rules. Payments,
+   scheduling and deletion are still covered only by the manual
+   [GO_LIVE_TEST_CHECKLIST.md](GO_LIVE_TEST_CHECKLIST.md).
+2. **Data retention** isn't automated (audit log, consultation history,
    recordings are kept until the hospital decides periods).
-4. **Folder layout** (`src/` and `components/` importing each other) works
+3. **Folder layout** (`src/` and `components/` importing each other) works
    but could be unified.
-5. **Placeholders** to replace at launch: hospital phone and WhatsApp
+4. **Placeholders** to replace at launch: hospital phone and WhatsApp
    number in `components/shared/contact.js` and `functions/lib/mailConfig.js`.
 
 ## 7. Who decided what

@@ -72,12 +72,8 @@ exports.callHeartbeat = consultations.callHeartbeat;
 
 // No-shows: automatic marking after the waiting time, paid reschedule,
 // closing the ones left alone (noShow.js)
-exports.autoMarkNoShows = noShow.autoMarkNoShows;
-exports.closeExpiredNoShows = noShow.closeExpiredNoShows;
 exports.startNoShowReschedule = noShow.startNoShowReschedule;
 exports.getNoShowFeeStatus = noShow.getNoShowFeeStatus;
-exports.reconcilePaystack = require("./reconcile").reconcilePaystack;
-exports.syncPaystackRefunds = refundSync.syncPaystackRefunds;
 exports.reportCaptureAttempt = consultations.reportCaptureAttempt;
 
 // Telemedicine room computers (doctors start calls only from these)
@@ -93,7 +89,6 @@ exports.decideRecordingAccess = recordings.decideRecordingAccess;
 exports.getRecordingUrl = recordings.getRecordingUrl;
 exports.requestRecordingDeletion = recordings.requestRecordingDeletion;
 exports.decideDeletionRequest = recordings.decideDeletionRequest;
-exports.recoverStaleRecordings = recordings.recoverStaleRecordings;
 
 // Site content (admin Control Panel)
 exports.updateConsultationPrices = siteSettings.updateConsultationPrices;
@@ -103,15 +98,33 @@ exports.updateInPersonPayment = siteSettings.updateInPersonPayment;
 exports.updateHospitalServices = siteSettings.updateHospitalServices;
 exports.updateDoctorSelection = siteSettings.updateDoctorSelection;
 exports.updateLegalDocument = legalDocs.updateLegalDocument;
+// Admin metrics report (Metrics & reports tab: CSV / PDF export)
+exports.exportMetrics = require("./reports").exportMetrics;
 
 // Tamper-proof copy of the audit log (Cloud Logging -> locked bucket)
 exports.mirrorAuditLog = auditMirror.mirrorAuditLog;
 
-// Scheduled housekeeping
-exports.cleanupExpiredBookings = maintenance.cleanupExpiredBookings;
-exports.releaseSlotHolds = maintenance.releaseSlotHolds;
-exports.cleanupSignalling = maintenance.cleanupSignalling;
-exports.cleanupRateLimits = maintenance.cleanupRateLimits;
+// Scheduled jobs. Left out where SCHEDULED_JOBS=off: the test project
+// (functions/.env.telemedicine-hfch-test), so it costs nothing (each
+// Cloud Scheduler job beyond the free three costs a little). Their logic is
+// covered by the automated tests (functions/test/).
+const SCHEDULED = process.env.SCHEDULED_JOBS !== "off";
+if (SCHEDULED) {
+  // No-shows and "doctor didn't join" after the waiting time; closing held
+  // no-shows (noShow.js)
+  exports.autoMarkNoShows = noShow.autoMarkNoShows;
+  exports.closeExpiredNoShows = noShow.closeExpiredNoShows;
+  // Payments: nightly reconciliation, following refunds
+  exports.reconcilePaystack = require("./reconcile").reconcilePaystack;
+  exports.syncPaystackRefunds = refundSync.syncPaystackRefunds;
+  // Recordings left unfinished
+  exports.recoverStaleRecordings = recordings.recoverStaleRecordings;
+  // Housekeeping
+  exports.cleanupExpiredBookings = maintenance.cleanupExpiredBookings;
+  exports.releaseSlotHolds = maintenance.releaseSlotHolds;
+  exports.cleanupSignalling = maintenance.cleanupSignalling;
+  exports.cleanupRateLimits = maintenance.cleanupRateLimits;
+}
 
 // Appointment emails and reminders to patients and doctors. Sending needs
 // the RESEND_API_KEY secret, so these are only deployed once
@@ -121,6 +134,8 @@ if (require("./lib/mailConfig").EMAIL_CONFIGURED) {
   const reminders = require("./reminders");
   exports.sendQueuedEmail = email.sendQueuedEmail;
   exports.notifyAdminsNewBooking = email.notifyAdminsNewBooking;
-  exports.retryQueuedEmails = email.retryQueuedEmails;
-  exports.sendAppointmentReminders = reminders.sendAppointmentReminders;
+  if (SCHEDULED) {
+    exports.retryQueuedEmails = email.retryQueuedEmails;
+    exports.sendAppointmentReminders = reminders.sendAppointmentReminders;
+  }
 }

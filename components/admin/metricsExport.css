@@ -1,0 +1,139 @@
+/* "Export a report" (metricsExport.jsx) and its printable PDF layout. */
+
+.mx-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 22px;
+}
+
+.mx-kinds,
+.mx-period,
+.mx-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.mx-result {
+  border-top: 1px solid var(--color-border);
+  padding: 16px 22px 22px;
+}
+
+.mx-result-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.mx-preview {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 18px;
+}
+
+.mx-block h3 {
+  margin: 0 0 8px;
+  font-size: 14px;
+}
+
+.mx-scroll {
+  overflow-x: auto;
+}
+
+.mx-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+
+.mx-table th,
+.mx-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--color-border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.mx-table th {
+  font-weight: 600;
+  background: #f6f8fa;
+}
+
+.mx-table td:not(:first-child),
+.mx-table th:not(:first-child) {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.mx-none {
+  color: var(--color-ink-soft);
+  text-align: left !important;
+}
+
+/* ------------------------------ PDF (print) ------------------------------ */
+
+.mx-print {
+  display: none;
+}
+
+@media print {
+  body.mx-printing > *:not(.mx-print) {
+    display: none !important;
+  }
+
+  body.mx-printing {
+    background: #fff !important;
+  }
+
+  body.mx-printing .mx-print {
+    display: block;
+    color: #000;
+    font-family: Inter, system-ui, sans-serif;
+    font-size: 11px;
+  }
+
+  .mx-print h1 {
+    font-size: 18px;
+    margin: 0 0 4px;
+  }
+
+  .mx-print header p,
+  .mx-print footer {
+    margin: 0 0 14px;
+    color: #444;
+  }
+
+  .mx-print footer {
+    margin-top: 16px;
+    font-size: 10px;
+  }
+
+  .mx-print h2 {
+    font-size: 13px;
+    margin: 16px 0 6px;
+    break-after: avoid;
+  }
+
+  .mx-print .mx-table {
+    font-size: 10.5px;
+  }
+
+  .mx-print .mx-table th {
+    background: #eee;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .mx-print .mx-table tr {
+    break-inside: avoid;
+  }
+
+  @page {
+    margin: 14mm;
+  }
+}

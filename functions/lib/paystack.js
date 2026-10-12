@@ -85,4 +85,25 @@ async function fetchRefund(id) {
   return body?.data || null;
 }
 
-module.exports = { PAYSTACK_SECRET_KEY, PAYSTACK_API, secretKey, refundOutcome, createRefund, fetchRefund };
+// Payment references: <prefix>-<6 code chars>-<bookingId>. Live uses HFH;
+// the test project HFT (PAYMENT_REF_PREFIX in
+// functions/.env.telemedicine-hfch-test), so while both share Paystack's
+// test account neither treats the other's payments as strays to refund.
+// Anything that doesn't match is never used as a document ID.
+const { randomCode } = require("./core");
+
+const REFERENCE_PREFIX = process.env.PAYMENT_REF_PREFIX === "HFT" ? "HFT" : "HFH";
+const REFERENCE_RE = new RegExp(`^${REFERENCE_PREFIX}-[2-9A-Z]{6}-[A-Za-z0-9_-]{1,128}$`);
+const isOurReference = (ref) => typeof ref === "string" && REFERENCE_RE.test(ref);
+const newReference = (bookingId) => `${REFERENCE_PREFIX}-${randomCode(6)}-${bookingId}`;
+
+module.exports = {
+  PAYSTACK_SECRET_KEY,
+  PAYSTACK_API,
+  secretKey,
+  refundOutcome,
+  createRefund,
+  fetchRefund,
+  isOurReference,
+  newReference,
+};

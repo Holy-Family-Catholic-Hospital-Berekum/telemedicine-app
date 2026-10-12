@@ -1,5 +1,6 @@
 import { BarChart, Donut } from "./miniCharts.jsx";
 import { IconShield } from "./icons.jsx";
+import MetricsExport from "./metricsExport.jsx";
 
 // metrics collection (4.6) — date, type, mode, outcome, doctorOrDept only.
 // No patient name, phone, email or consultation ID is ever stored here.
@@ -27,6 +28,8 @@ export default function MetricsPanel({
           times, type, mode, outcome and amount.
         </p>
       </div>
+
+      <MetricsExport />
 
       <div className="metrics-grid">
         <section className="admin-panel">

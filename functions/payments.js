@@ -51,7 +51,6 @@ const {
   docId,
   patientAge,
   phoneE164,
-  randomCode,
   sha256,
   audit,
   rateLimit,
@@ -65,13 +64,17 @@ const {
   CURRENT_GUARDIAN_CONSENT,
 } = require("./lib/consentText");
 
-const { PAYSTACK_SECRET_KEY, PAYSTACK_API, secretKey, createRefund } = require("./lib/paystack");
+const {
+  PAYSTACK_SECRET_KEY,
+  PAYSTACK_API,
+  secretKey,
+  createRefund,
+  isOurReference,
+  newReference,
+} = require("./lib/paystack");
 const CURRENCY = "GHS";
 
-// References are minted by initializePayment: HFH-<6 code chars>-<bookingId>.
-// Anything else is never used as a document ID.
-const REFERENCE_RE = /^HFH-[2-9A-Z]{6}-[A-Za-z0-9_-]{1,128}$/;
-const isOurReference = (ref) => typeof ref === "string" && REFERENCE_RE.test(ref);
+// References (HFH-<6 code chars>-<bookingId>) and isOurReference: lib/paystack.js.
 
 const MAX_OPEN_DRAFTS = 3;
 const SLOT_HOLD_MINUTES = 30;
@@ -832,7 +835,7 @@ exports.initializePayment = onCall({ secrets: [PAYSTACK_SECRET_KEY] }, async (re
     );
   }
 
-  const reference = `HFH-${randomCode(6)}-${bookingId}`;
+  const reference = newReference(bookingId);
   const batch = db.batch();
   batch.update(ref, {
     txRefs: FieldValue.arrayUnion(reference),

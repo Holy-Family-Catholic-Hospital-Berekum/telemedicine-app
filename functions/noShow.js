@@ -41,12 +41,11 @@ const {
   requestMeta,
   str,
   docId,
-  randomCode,
   toDate,
   audit,
   rateLimit,
 } = require("./lib/core");
-const { PAYSTACK_SECRET_KEY, secretKey } = require("./lib/paystack");
+const { PAYSTACK_SECRET_KEY, secretKey, newReference } = require("./lib/paystack");
 const { queueEmail } = require("./lib/mailQueue");
 const {
   markNoShow,
@@ -371,7 +370,7 @@ async function beginNoShowReschedule({ caller, bookingId, preferredTime = null, 
     throw new HttpsError("resource-exhausted", "Too many payment attempts. Please contact the hospital.");
   }
 
-  const reference = `HFH-${randomCode(6)}-${bookingId}`;
+  const reference = newReference(bookingId);
   const batch = db.batch();
   batch.update(bookingRef, { feeTxRefs: FieldValue.arrayUnion(reference) });
   batch.set(db.collection("paymentRefs").doc(reference), {

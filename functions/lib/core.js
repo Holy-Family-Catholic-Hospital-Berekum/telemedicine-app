@@ -39,7 +39,14 @@ const REGION = "europe-west1";
 // Storage, Auth admin, secrets, logging, invoking its own scheduled jobs
 // and triggers, and signing its own URLs), not the default compute account
 // with project-wide Editor. Roles: SECURITY_SETUP.md, "Service accounts".
-const RUNTIME_SERVICE_ACCOUNT = "functions-runtime@telemedicine-hfch.iam.gserviceaccount.com";
+// The project being deployed to / running in: the live one
+// (telemedicine-hfch) or the test one (telemedicine-hfch-test; see
+// HANDOVER.md "Test environment"). The Firebase CLI sets GCLOUD_PROJECT.
+const PROJECT_ID =
+  process.env.GCLOUD_PROJECT ||
+  (process.env.FIREBASE_CONFIG ? JSON.parse(process.env.FIREBASE_CONFIG).projectId : null) ||
+  "telemedicine-hfch";
+const RUNTIME_SERVICE_ACCOUNT = `functions-runtime@${PROJECT_ID}.iam.gserviceaccount.com`;
 setGlobalOptions({ region: REGION, maxInstances: 10, serviceAccount: RUNTIME_SERVICE_ACCOUNT });
 
 const db = getFirestore();
@@ -414,6 +421,7 @@ module.exports = {
   Timestamp,
   serverTime,
   REGION,
+  PROJECT_ID,
   RUNTIME_SERVICE_ACCOUNT,
   STAFF_IDLE_LIMIT_MINUTES,
   assertStaffNotIdle,

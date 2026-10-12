@@ -16,7 +16,14 @@
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const logger = require("firebase-functions/logger");
 const { db, serverTime, audit } = require("./lib/core");
-const { PAYSTACK_SECRET_KEY, PAYSTACK_API, secretKey, fetchRefund, refundOutcome } = require("./lib/paystack");
+const {
+  PAYSTACK_SECRET_KEY,
+  PAYSTACK_API,
+  secretKey,
+  fetchRefund,
+  refundOutcome,
+  isOurReference,
+} = require("./lib/paystack");
 
 const KINDS = {
   paymentIssues: {
@@ -142,7 +149,7 @@ async function handleRefundEvent(data) {
       const s = await db.collection(collection).where("paystackRefundId", "==", refundId).limit(5).get();
       matches.push(...s.docs);
     }
-    if (!matches.length && typeof reference === "string" && /^HFH-[2-9A-Z]{6}-[A-Za-z0-9_-]{1,128}$/.test(reference)) {
+    if (!matches.length && isOurReference(reference)) {
       const field = collection === "paymentIssues" ? "reference" : "paystackReference";
       const s = await db.collection(collection).where(field, "==", reference).limit(5).get();
       matches.push(...s.docs);

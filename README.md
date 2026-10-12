@@ -105,6 +105,8 @@ npm run dev            # local website at http://localhost:5173
 npm run build          # production build into dist/
 npm run lint           # ESLint for the website and functions
 npm run test:rules     # rules tests on the Firebase emulators (Java 21)
+npm run test:functions # server tests on the emulators (Java 21)
+cd functions && npm test   # server unit tests (no setup)
 
 cd functions && npm install
 firebase deploy --only functions            # back end

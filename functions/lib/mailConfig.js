@@ -20,7 +20,8 @@ const settings = {
   HOSPITAL_NAME: "Holy Family Catholic Hospital",
   HOSPITAL_TOWN: "Berekum, Ghana",
   HOSPITAL_PHONE: "024 000 0000",
-  SITE_URL: "https://telemedicine.hfhberekum.org",
+  // The test project sets its own (functions/.env.telemedicine-hfch-test).
+  SITE_URL: process.env.SITE_URL || "https://telemedicine.hfhberekum.org",
 };
 
 // True once FROM uses a real (verified) domain. Until then the email

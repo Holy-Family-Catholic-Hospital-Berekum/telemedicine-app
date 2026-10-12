@@ -16,8 +16,9 @@
 
 module.exports = {
   // On since October 2026: a week of live traffic showed every callable
-  // request carrying a valid App Check token.
-  ENFORCE_APP_CHECK: true,
+  // request carrying a valid App Check token. The TEST project turns it off
+  // (functions/.env.telemedicine-hfch-test), since it has no reCAPTCHA key.
+  ENFORCE_APP_CHECK: process.env.ENFORCE_APP_CHECK !== "false",
   STAFF_SESSION_MAX_HOURS: 12,
   SETUP_CODE_HOURS: 72,
   SETUP_CODE_MAX_ATTEMPTS: 5,
