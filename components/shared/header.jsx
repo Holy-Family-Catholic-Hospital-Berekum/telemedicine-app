@@ -1,8 +1,7 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { onAuthStateChanged, signOut } from "firebase/auth";
 import logo from "../../src/assets/logo.webp";
-import { auth } from "../../src/firebase";
+import { useAuth } from "../../src/context/authContext.jsx";
 import { HOSPITAL_PHONE_DISPLAY, HOSPITAL_PHONE_TEL } from "./contact";
 
 const phoneIconPath = (
@@ -55,8 +54,6 @@ export default function Header({
   const isDashboard = pathname === "/dashboard";
   const isBooking = pathname === "/book";
 
-  const [user, setUser] = useState(null);
-  const [authReady, setAuthReady] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [menuPath, setMenuPath] = useState(pathname);
 
@@ -67,26 +64,15 @@ export default function Header({
     setMobileMenuOpen(false);
   }
 
-  /* ...auth effect stays as is... */
-
-  /*
-   * Read the real Firebase authentication state. The header updates
-   * automatically when the user signs in or signs out anywhere in the
-   * application.
-   */
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser);
-      setAuthReady(true);
-    });
-    return unsubscribe;
-  }, []);
-
-  const isLoggedIn = authReady && !!user;
+  // Signed-in state from the app's single auth source (authContext). Until
+  // it's known (Firebase loads just after the page appears) the header
+  // shows the signed-out buttons.
+  const { user, initializing, signOutUser } = useAuth();
+  const isLoggedIn = !initializing && !!user;
 
   async function handleSignOut() {
     try {
-      await signOut(auth);
+      await signOutUser();
       setMobileMenuOpen(false);
     } catch (error) {
       console.error("Sign out failed:", error);

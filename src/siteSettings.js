@@ -29,8 +29,6 @@
  */
 
 import { useSyncExternalStore } from "react";
-import { doc, getFirestore, onSnapshot } from "firebase/firestore";
-import { app } from "./firebase";
 
 import heroDefault from "./assets/hero-consult.webp";
 import authDefault from "./assets/auth-bg.webp";
@@ -82,7 +80,6 @@ export const DEFAULT_SERVICES = [
 export const DEFAULT_NO_SHOW = { waitMinutes: 5, forfeitPercent: 20, rescheduleFee: 50 };
 const inRange = (n, min, max) => typeof n === "number" && Number.isFinite(n) && n >= min && n <= max;
 
-export const settingsRef = doc(getFirestore(app), "siteSettings", "public");
 
 const CACHE_KEY = "hfh.siteSettings.v1";
 const READY_TIMEOUT_MS = 2500;
@@ -165,15 +162,26 @@ function publish(next) {
 
 function start() {
   if (unsubscribe) return;
-  unsubscribe = onSnapshot(
-    settingsRef,
-    (snap) => {
-      const data = snap.exists() ? snap.data() : null;
-      writeCache(data);
-      publish({ settings: normaliseSettings(data), ready: true });
-    },
-    () => publish({ ...state, ready: true }), // offline or denied: show defaults
-  );
+  // Firebase is loaded on demand so the page shows without waiting for it;
+  // the bundled defaults (or last visit's copy) are shown meanwhile.
+  let stopped = false;
+  unsubscribe = () => {
+    stopped = true;
+  };
+  Promise.all([import("./firebase"), import("firebase/firestore")])
+    .then(([{ db }, { doc, onSnapshot }]) => {
+      if (stopped) return;
+      unsubscribe = onSnapshot(
+        doc(db, "siteSettings", "public"),
+        (snap) => {
+          const data = snap.exists() ? snap.data() : null;
+          writeCache(data);
+          publish({ settings: normaliseSettings(data), ready: true });
+        },
+        () => publish({ ...state, ready: true }), // offline or denied: show defaults
+      );
+    })
+    .catch(() => publish({ ...state, ready: true })); // couldn't load: show defaults
   if (!state.ready) {
     readyTimer = setTimeout(() => {
       if (!state.ready) publish({ ...state, ready: true });

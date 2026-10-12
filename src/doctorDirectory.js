@@ -1,7 +1,10 @@
 // src/doctorDirectory.js
 //
-// Live list of doctors shown on the home page and in the booking picker,
-// read from the public `doctorProfiles` collection (isListed == true).
+// List of doctors shown on the home page and in the booking picker, read
+// from the public `doctorProfiles` collection (isListed == true). Read once
+// (not live: lighter on mobile data), and again when the visitor comes back
+// to the page after a minute or more. Firebase is loaded on demand, so the
+// page shows first.
 // Admins control listing and consultation types; each doctor edits their
 // own photo and specialties from the doctor portal. Bio, languages,
 // qualifications and years of experience are not shown anywhere (Ghana's
@@ -12,8 +15,8 @@
 //     initials, isAvailable, availability }
 
 import { useEffect, useState } from "react";
-import { collection, onSnapshot, query, where } from "firebase/firestore";
-import { db } from "./firebase";
+
+const REFRESH_AFTER_MS = 60 * 1000;
 
 function initialsOf(name) {
   return String(name || "")
@@ -45,22 +48,37 @@ function toDoctor(id, data) {
   };
 }
 
+async function fetchListedDoctors() {
+  const [{ db }, { collection, getDocs, query, where }] = await Promise.all([
+    import("./firebase"),
+    import("firebase/firestore"),
+  ]);
+  const snap = await getDocs(query(collection(db, "doctorProfiles"), where("isListed", "==", true)));
+  return snap.docs.map((d) => toDoctor(d.id, d.data())).sort((a, b) => a.name.localeCompare(b.name));
+}
+
 /** { doctors, loading, error } — doctors sorted by name. */
 export function useListedDoctors() {
   const [state, setState] = useState({ doctors: [], loading: true, error: null });
 
   useEffect(() => {
-    const q = query(collection(db, "doctorProfiles"), where("isListed", "==", true));
-    return onSnapshot(
-      q,
-      (snap) => {
-        const doctors = snap.docs
-          .map((d) => toDoctor(d.id, d.data()))
-          .sort((a, b) => a.name.localeCompare(b.name));
-        setState({ doctors, loading: false, error: null });
-      },
-      (error) => setState({ doctors: [], loading: false, error }),
-    );
+    let active = true;
+    let lastLoaded = 0;
+    const load = () => {
+      lastLoaded = Date.now();
+      fetchListedDoctors()
+        .then((doctors) => active && setState({ doctors, loading: false, error: null }))
+        .catch((error) => active && setState((s) => ({ ...s, loading: false, error })));
+    };
+    const onVisible = () => {
+      if (document.visibilityState === "visible" && Date.now() - lastLoaded > REFRESH_AFTER_MS) load();
+    };
+    load();
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      active = false;
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, []);
 
   return state;

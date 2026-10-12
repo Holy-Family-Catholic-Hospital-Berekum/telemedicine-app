@@ -13,6 +13,7 @@ import {
   orderBy,
   getDocs as getDocsUntracked,
   limit,
+  Timestamp,
 } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
 import { track, tracked } from "../../../src/networkStatus";
@@ -107,6 +108,8 @@ export async function fetchAvailableSlots() {
     query(
       collection(db, "availableSlots"),
       where("status", "==", "open"),
+      // Only future times: past open slots aren't read (or paid for).
+      where("startAt", ">", Timestamp.now()),
       orderBy("startAt", "asc"),
     ),
   );

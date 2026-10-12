@@ -100,35 +100,9 @@ import {
   useState,
   useCallback,
 } from "react";
-import {
-  onAuthStateChanged,
-  createUserWithEmailAndPassword,
-  signInWithEmailAndPassword,
-  signOut,
-  sendEmailVerification,
-  sendPasswordResetEmail,
-  updateProfile,
-  setPersistence,
-  browserLocalPersistence,
-  browserSessionPersistence,
-  EmailAuthProvider,
-  reauthenticateWithCredential,
-  verifyBeforeUpdateEmail,
-  getMultiFactorResolver,
-  multiFactor,
-  TotpMultiFactorGenerator,
-} from "firebase/auth";
-import { doc, getDoc } from "firebase/firestore";
-import { httpsCallable } from "firebase/functions";
-import { auth, db, functions } from "../firebase";
 import { CURRENT_AGE_DECLARATION } from "../consentText.js";
+import { loadAuthSdk } from "../authSdkLoader.js";
 
-const callRegisterPatient = httpsCallable(functions, "registerPatient");
-const callUpdatePatientProfile = httpsCallable(functions, "updatePatientProfile");
-const callSyncAccountEmail = httpsCallable(functions, "syncAccountEmail");
-const callUpdateStaffProfile = httpsCallable(functions, "updateStaffProfile");
-const callConfirmStaffSession = httpsCallable(functions, "confirmStaffSession");
-const callStaffActivity = httpsCallable(functions, "staffActivity");
 // Staff: tell the server the session is in use at most this often while
 // someone is active (the server refuses accounts idle for 35 minutes:
 // functions/lib/core.js). Well inside Firebase's free allowance.
@@ -234,7 +208,9 @@ export function AuthProvider({ children }) {
           idleTimer.current = setTimeout(fire, minutes * 60 * 1000);
           return;
         }
-        signOut(auth).catch(() => {});
+        loadAuthSdk()
+          .then(({ signOut, auth }) => signOut(auth))
+          .catch(() => {});
       };
       idleTimer.current = setTimeout(fire, minutes * 60 * 1000);
     },
@@ -250,6 +226,7 @@ export function AuthProvider({ children }) {
   //   audience "patient" -> patient only
   //   audience undefined -> any role (page refresh / listener)
   const loadProfile = useCallback(async (fbUser, audience) => {
+    const { doc, getDoc, db } = await loadAuthSdk();
     const role = await roleClaim(fbUser);
     if (!role) return null;
     const isStaff = STAFF_ROLES.includes(role);
@@ -281,7 +258,12 @@ export function AuthProvider({ children }) {
   }, []);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
+    let unsubscribe = () => {};
+    let cancelled = false;
+    loadAuthSdk()
+      .then(({ onAuthStateChanged, auth, signOut, callConfirmStaffSession }) => {
+        if (cancelled) return;
+        unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
       if (!fbUser) {
         setFirebaseUser(null);
         setEmailVerifiedFlag(false);
@@ -338,8 +320,19 @@ export function AuthProvider({ children }) {
       } finally {
         setInitializing(false);
       }
-    });
-    return unsubscribe;
+        });
+      })
+      .catch(() => {
+        // Firebase couldn't load (offline, nothing cached): public pages
+        // still work; protected ones say "you're offline".
+        if (cancelled) return;
+        setConnectionProblem(true);
+        setInitializing(false);
+      });
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
   }, [loadProfile, scheduleIdleLogout, clearIdleTimer]);
 
   // Reset the idle timer on real user activity. Staff also tell the server
@@ -353,9 +346,13 @@ export function AuthProvider({ children }) {
       const now = Date.now();
       if (now - lastPing < STAFF_ACTIVITY_EVERY_MS) return;
       lastPing = now;
-      callStaffActivity({}).catch((err) => {
-        if (err?.details?.reason === "idle") signOut(auth).catch(() => {});
-      });
+      loadAuthSdk()
+        .then(({ callStaffActivity, signOut, auth }) =>
+          callStaffActivity({}).catch((err) => {
+            if (err?.details?.reason === "idle") signOut(auth).catch(() => {});
+          }),
+        )
+        .catch(() => {});
     };
     const reset = () => {
       scheduleIdleLogout(profile.role);
@@ -375,6 +372,7 @@ export function AuthProvider({ children }) {
   // half-made Auth account is deleted so the email can be used again.
   const signUpPatient = useCallback(
     async ({ name, phone, email, password, acceptedTerms, confirmedAdult }) => {
+      const { createUserWithEmailAndPassword, signOut, sendEmailVerification, updateProfile, auth, callRegisterPatient } = await loadAuthSdk();
       signingInRef.current = true;
       try {
         let cred;
@@ -444,6 +442,7 @@ export function AuthProvider({ children }) {
   // back until it's done.
   const staffSecondStep = useCallback(
     async (fbUser, p) => {
+      const { signOut, auth, callConfirmStaffSession } = await loadAuthSdk();
       let status;
       try {
         const { data } = await callConfirmStaffSession({});
@@ -482,6 +481,7 @@ export function AuthProvider({ children }) {
       password,
       { rememberMe = false, audience = "patient" } = {},
     ) => {
+      const { signInWithEmailAndPassword, signOut, setPersistence, browserLocalPersistence, browserSessionPersistence, getMultiFactorResolver, TotpMultiFactorGenerator, auth } = await loadAuthSdk();
       const key = email.trim().toLowerCase();
       const attempt = attemptStore.get(key);
       if (attempt?.cooldownUntil && Date.now() < attempt.cooldownUntil) {
@@ -571,6 +571,7 @@ export function AuthProvider({ children }) {
   // Admin: the 6-digit code from the authenticator app.
   const completeTotpSignIn = useCallback(
     async ({ resolver, hintUid, code }) => {
+      const { signOut, TotpMultiFactorGenerator, auth } = await loadAuthSdk();
       signingInRef.current = true;
       try {
         let cred;
@@ -597,6 +598,7 @@ export function AuthProvider({ children }) {
   // Admin without an authenticator: make one. Returns what the setup
   // screen shows (QR code URL and the key to type in by hand).
   const startTotpEnrollment = useCallback(async () => {
+    const { multiFactor, TotpMultiFactorGenerator, auth } = await loadAuthSdk();
     const u = auth.currentUser;
     if (!u || pendingStaffRef.current?.uid !== u.uid) {
       throw new Error("Please sign in again.");
@@ -625,6 +627,7 @@ export function AuthProvider({ children }) {
   // Confirms the first code from the new authenticator, then signs out:
   // the admin signs in again using it.
   const finishTotpEnrollment = useCallback(async ({ secret, code }) => {
+    const { signOut, multiFactor, TotpMultiFactorGenerator, auth } = await loadAuthSdk();
     const u = auth.currentUser;
     if (!u) throw new Error("Please sign in again.");
     try {
@@ -641,6 +644,7 @@ export function AuthProvider({ children }) {
   // IT (admins) or an admin (doctors) pins it to the account.
   const submitSetupCode = useCallback(
     async (setupCode) => {
+      const { signOut, auth, callConfirmStaffSession } = await loadAuthSdk();
       const pending = pendingStaffRef.current;
       const u = auth.currentUser;
       if (!pending || !u || u.uid !== pending.uid) throw new Error("Please sign in again.");
@@ -683,11 +687,13 @@ export function AuthProvider({ children }) {
 
   // Back out of a half-finished staff sign-in.
   const cancelStaffSignIn = useCallback(async () => {
+    const { signOut, auth } = await loadAuthSdk();
     pendingStaffRef.current = null;
     await signOut(auth).catch(() => {});
   }, []);
 
   const signOutUser = useCallback(async () => {
+    const { signOut, auth } = await loadAuthSdk();
     clearIdleTimer();
     try {
       await signOut(auth);
@@ -702,6 +708,7 @@ export function AuthProvider({ children }) {
   }, [clearIdleTimer]);
 
   const resetPassword = useCallback(async (email) => {
+    const { sendPasswordResetEmail, auth } = await loadAuthSdk();
     try {
       await sendPasswordResetEmail(auth, email.trim());
     } catch (err) {
@@ -714,6 +721,7 @@ export function AuthProvider({ children }) {
   }, []);
 
   const resendVerificationEmail = useCallback(async () => {
+    const { sendEmailVerification, auth } = await loadAuthSdk();
     if (!auth.currentUser) return;
     await sendEmailVerification(auth.currentUser);
   }, []);
@@ -723,6 +731,7 @@ export function AuthProvider({ children }) {
   // with the fresh value. See note 6 above — this is the piece a plain
   // page reload was standing in for, incorrectly.
   const refreshEmailVerified = useCallback(async () => {
+    const { auth } = await loadAuthSdk();
     if (!auth.currentUser) return false;
     await auth.currentUser.reload();
     const verified = auth.currentUser.emailVerified;
@@ -739,6 +748,7 @@ export function AuthProvider({ children }) {
   // ---- Patient settings (dashboard Settings tab) ----
 
   const updatePatientName = useCallback(async (name) => {
+    const { callUpdatePatientProfile } = await loadAuthSdk();
     const { data } = await callUpdatePatientProfile({ name: name.trim() });
     setProfile((p) => (p ? { ...p, name: data.name } : p));
     return data.name;
@@ -746,6 +756,7 @@ export function AuthProvider({ children }) {
 
   // Staff: name (and a doctor's department). Returns the saved values.
   const updateStaffProfile = useCallback(async ({ name, department }) => {
+    const { callUpdateStaffProfile } = await loadAuthSdk();
     const { data } = await callUpdateStaffProfile({
       name: name.trim(),
       ...(department !== undefined ? { department: department.trim() } : {}),
@@ -761,6 +772,7 @@ export function AuthProvider({ children }) {
   // user clicks the link Firebase sends to the NEW address; the old
   // address gets a notice with a way to undo it.
   const requestEmailChange = useCallback(async ({ newEmail, currentPw, totpCode }) => {
+    const { EmailAuthProvider, reauthenticateWithCredential, verifyBeforeUpdateEmail, getMultiFactorResolver, TotpMultiFactorGenerator, auth } = await loadAuthSdk();
     const u = auth.currentUser;
     if (!u?.email) throw new Error("Please sign in again and retry.");
     try {
@@ -819,7 +831,8 @@ export function AuthProvider({ children }) {
     if (!u || !profile?.role || !u.email || !u.emailVerified) return;
     if (u.email.toLowerCase() === (profile.email || "").toLowerCase()) return;
     let cancelled = false;
-    callSyncAccountEmail()
+    loadAuthSdk()
+      .then(({ callSyncAccountEmail }) => callSyncAccountEmail())
       .then(({ data }) => {
         if (!cancelled && data?.email) setProfile((p) => (p ? { ...p, email: data.email } : p));
       })

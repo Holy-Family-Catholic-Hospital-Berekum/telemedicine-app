@@ -14,7 +14,6 @@ import { DoctorCardSummary } from "./doctorProfileDetails";
 import EmergencyNotice from "./emergencyNotice";
 import heroDefault from "../../src/assets/hero-consult.webp";
 import { useSiteSettings } from "../../src/siteSettings";
-import { fetchAvailableSlots } from "./dashboard/patientFirestoreService";
 import { TYPE_LABELS, MODE_LABELS, formatDateTime } from "../../src/constants";
 import { usePageMeta } from "../../src/seo.js";
 /**
@@ -506,13 +505,26 @@ function OpenSlots() {
   const [slots, setSlots] = useState([]);
   const [showAll, setShowAll] = useState(false);
 
+  // Loaded once (Firebase on demand, after the page shows), and again when
+  // the visitor comes back to the page after a minute or more.
   useEffect(() => {
     let active = true;
-    fetchAvailableSlots()
-      .then((data) => active && setSlots(data ?? []))
-      .catch(() => {}); // the section just stays hidden
+    let lastLoaded = 0;
+    const load = () => {
+      lastLoaded = Date.now();
+      import("./dashboard/patientFirestoreService")
+        .then((m) => m.fetchAvailableSlots())
+        .then((data) => active && setSlots(data ?? []))
+        .catch(() => {}); // the section just stays hidden
+    };
+    const onVisible = () => {
+      if (document.visibilityState === "visible" && Date.now() - lastLoaded > 60 * 1000) load();
+    };
+    load();
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
       active = false;
+      document.removeEventListener("visibilitychange", onVisible);
     };
   }, []);
 
@@ -939,7 +951,7 @@ function HeroSection({ heroImage }) {
             src={heroImage}
             alt="A doctor at Holy Family Catholic Hospital speaking warmly with a patient"
             className="hero-breathe h-full w-full object-cover object-[72%_22%] lg:object-[64%_center]"
-            fetchpriority="high"
+            fetchPriority="high"
           />
         </div>
 

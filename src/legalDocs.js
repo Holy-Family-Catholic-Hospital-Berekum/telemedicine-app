@@ -6,8 +6,6 @@
 // so the public pages never come up empty.
 
 import { useEffect, useMemo, useState } from "react";
-import { doc, onSnapshot } from "firebase/firestore";
-import { db } from "./firebase";
 import { DEFAULT_LEGAL } from "../components/admin/legalDefaults";
 
 export const LEGAL_LIMITS = {
@@ -60,15 +58,25 @@ export function useLegalDoc(id) {
   // Which doc the stored data belongs to; loading until it matches `id`.
   const [snap, setSnap] = useState({ id: null, data: null });
 
-  useEffect(
-    () =>
-      onSnapshot(
-        doc(db, "legalDocs", id),
-        (s) => setSnap({ id, data: s.exists() ? s.data() : null }),
-        () => setSnap({ id, data: null }),
-      ),
-    [id],
-  );
+  // Firebase is loaded on demand; the built-in text shows meanwhile.
+  useEffect(() => {
+    let stop = () => {};
+    let cancelled = false;
+    Promise.all([import("./firebase"), import("firebase/firestore")])
+      .then(([{ db }, { doc, onSnapshot }]) => {
+        if (cancelled) return;
+        stop = onSnapshot(
+          doc(db, "legalDocs", id),
+          (s) => setSnap({ id, data: s.exists() ? s.data() : null }),
+          () => setSnap({ id, data: null }),
+        );
+      })
+      .catch(() => !cancelled && setSnap({ id, data: null }));
+    return () => {
+      cancelled = true;
+      stop();
+    };
+  }, [id]);
 
   const loaded = snap.id === id;
   const raw = loaded ? snap.data : undefined;

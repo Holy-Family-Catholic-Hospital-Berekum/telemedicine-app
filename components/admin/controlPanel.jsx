@@ -23,14 +23,13 @@
 // pages quick on mobile data and keeps Storage usage negligible.
 
 import { useEffect, useRef, useState } from "react";
-import { onSnapshot } from "firebase/firestore";
+import { doc, onSnapshot } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
 import { ref as storageRef, uploadBytesResumable } from "firebase/storage";
 
-import { functions } from "../../src/firebase";
+import { db, functions } from "../../src/firebase";
 import { storage } from "../../src/firebaseStorage";
 import {
-  settingsRef,
   DEFAULT_IMAGES,
   DEFAULT_PRICES,
   DEFAULT_SERVICES,
@@ -189,7 +188,7 @@ function useRawSettings() {
   useEffect(
     () =>
       onSnapshot(
-        settingsRef,
+        doc(db, "siteSettings", "public"),
         (snap) => setRaw(snap.exists() ? snap.data() : null),
         (err) => setError(err),
       ),
