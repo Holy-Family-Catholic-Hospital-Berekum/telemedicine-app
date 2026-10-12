@@ -4,6 +4,14 @@
 // changed. Checks the caller is an admin, validates the text, archives the
 // previous version and writes an audit entry, all in one transaction.
 //
+// Versions (hospital decision): before the service goes live, every save
+// stays VERSION 1; the wording it replaces is still kept, as a pre-launch
+// draft (legalDocs/{id}/versions/draft-<time>). From the launch date
+// (systemSettings/features.launchedAt, set by scripts/resetTestPayments.js
+// on go-live day) each save is a new version (2, 3, ...) and the previous
+// one is kept as versions/{number}. Nothing is ever deleted; admins see the
+// history in Control panel -> Legal documents.
+//
 // index.js re-exports updateLegalDocument.
 
 const { HttpsError } = require("firebase-functions/v2/https");
@@ -70,16 +78,21 @@ exports.updateLegalDocument = onCall(async (request) => {
   const { docId, ...clean } = validate(request.data);
 
   const ref = db.collection("legalDocs").doc(docId);
+  const featuresRef = db.collection("systemSettings").doc("features");
   const version = await db.runTransaction(async (tx) => {
     // deepcode ignore Sqli: Firestore document ID, not SQL; docId must be an own key of DOC_LABELS (terms | privacy).
-    const snap = await tx.get(ref);
+    const [snap, features] = await Promise.all([tx.get(ref), tx.get(featuresRef)]);
+    const launched = Boolean(features.exists && features.data().launchedAt);
     const previous = snap.exists ? snap.data().version || 0 : 0;
-    const next = previous + 1;
+    // Before launch everything is version 1.
+    const next = launched ? previous + 1 : 1;
 
     // Keep what was live before, so any past wording can be recovered.
     if (snap.exists) {
-      tx.set(ref.collection("versions").doc(String(previous)), {
+      const archiveId = launched ? String(previous) : `draft-${Date.now()}`;
+      tx.set(ref.collection("versions").doc(archiveId), {
         ...snap.data(),
+        preLaunch: !launched,
         archivedAt: FieldValue.serverTimestamp(),
       });
     }
@@ -92,7 +105,7 @@ exports.updateLegalDocument = onCall(async (request) => {
     });
 
     tx.set(db.collection("auditLog").doc(), {
-      action: "Changed legal text",
+      action: launched ? `Changed legal text (version ${next})` : "Changed legal text (pre-launch, stays version 1)",
       code: "legal.updated",
       category: "compliance",
       actorRole: "admin",

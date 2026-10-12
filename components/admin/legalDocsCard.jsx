@@ -7,8 +7,10 @@
 
 import { useRef, useState } from "react";
 import { httpsCallable } from "firebase/functions";
+import { collection, getDocs, limit, orderBy, query } from "firebase/firestore";
 
-import { functions } from "../../src/firebase";
+import { db, functions } from "../../src/firebase";
+import { formatDateTime } from "../../src/constants";
 import { useLegalDoc, LEGAL_LIMITS } from "../../src/legalDocs";
 import { DEFAULT_LEGAL } from "./legalDefaults";
 import ConfirmDialog from "./confirmDialog.jsx";
@@ -348,6 +350,87 @@ function LegalEditor({ meta, onAudit }) {
   );
 }
 
+/**
+ * Earlier wording, kept for reference (functions/legalDocs.js archives the
+ * text that was live before every save; nothing is deleted). Admins can
+ * read it (firestore.rules legalDocs/{id}/versions); loaded on demand.
+ */
+function VersionHistory({ docId }) {
+  const [open, setOpen] = useState(false);
+  const [items, setItems] = useState(null);
+  const [error, setError] = useState(null);
+  const [shown, setShown] = useState(null); // id of the version being read
+
+  async function load() {
+    setOpen(true);
+    if (items) return;
+    try {
+      const snap = await getDocs(
+        query(collection(db, "legalDocs", docId, "versions"), orderBy("archivedAt", "desc"), limit(50)),
+      );
+      setItems(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+    } catch {
+      setError("Couldn't load the previous versions.");
+    }
+  }
+
+  return (
+    <div className="cp-history">
+      {!open ? (
+        <button type="button" className="btn btn-outline" onClick={load}>
+          Show previous versions
+        </button>
+      ) : (
+        <>
+          <h3 className="cp-history-title">Previous versions</h3>
+          {error && <p className="cp-note cp-note-error">{error}</p>}
+          {!items && !error && <p className="cp-loading">Loading…</p>}
+          {items?.length === 0 && (
+            <p className="cp-note">No earlier versions yet: the text has only been published once (or not yet).</p>
+          )}
+          {items?.length > 0 && (
+            <ul className="cp-history-list">
+              {items.map((v) => (
+                <li key={v.id}>
+                  <div className="cp-history-row">
+                    <span>
+                      <strong>{v.preLaunch ? "Pre-launch draft (version 1)" : `Version ${v.version}`}</strong>
+                      {" · "}published {formatDateTime(v.updatedAt?.toDate?.())}, replaced{" "}
+                      {formatDateTime(v.archivedAt?.toDate?.())}
+                    </span>
+                    <button
+                      type="button"
+                      className="btn btn-outline"
+                      onClick={() => setShown(shown === v.id ? null : v.id)}
+                    >
+                      {shown === v.id ? "Hide" : "Read"}
+                    </button>
+                  </div>
+                  {shown === v.id && (
+                    <div className="cp-history-text">
+                      <p>{v.intro}</p>
+                      {(v.sections || []).map((sec) => (
+                        <div key={sec.id}>
+                          <h4>{sec.title}</h4>
+                          <p style={{ whiteSpace: "pre-wrap" }}>{sec.body}</p>
+                        </div>
+                      ))}
+                      <p className="cp-note">Contact: {v.contactEmail}</p>
+                    </div>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+          <button type="button" className="btn btn-outline" onClick={() => setOpen(false)}>
+            Hide previous versions
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
 export default function LegalDocsCard({ onAudit }) {
   const [active, setActive] = useState("terms");
 
@@ -381,6 +464,7 @@ export default function LegalDocsCard({ onAudit }) {
       {DOCS.map((d) => (
         <div key={d.id} hidden={active !== d.id}>
           <LegalEditor meta={d} onAudit={onAudit} />
+          <VersionHistory docId={d.id} />
         </div>
       ))}
     </section>

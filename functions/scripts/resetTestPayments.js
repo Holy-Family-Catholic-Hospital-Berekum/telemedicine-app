@@ -20,6 +20,8 @@
 // confirmedPayments, bookingLog, paymentRefs, paymentIssues, refundRequests,
 // calls (with their signalling sub-collections), the mail outbox, and time
 // slots that were held or booked (open slots are kept).
+// Also records the launch date (systemSettings/features.launchedAt): from
+// then on, saving the terms or privacy policy creates a new version.
 // NOT touched: accounts (users, adminUsers), doctorProfiles, consents and
 // the audit log (legal records), recordings (deleting those still needs two
 // admins in the app), site settings, legal text.
@@ -83,6 +85,16 @@ async function main() {
     details: counts,
     timestamp: FieldValue.serverTimestamp(),
   });
+
+  // Go-live: from now on each save of the terms or privacy policy is a new
+  // version (before this, saves stay version 1; functions/legalDocs.js).
+  // Kept if it's already set (running the script again doesn't move it).
+  const featuresRef = db.collection("systemSettings").doc("features");
+  const features = await featuresRef.get();
+  if (!features.exists || !features.data().launchedAt) {
+    await featuresRef.set({ launchedAt: FieldValue.serverTimestamp() }, { merge: true });
+    console.log("  recorded the launch date (legal versions now count from 2)");
+  }
   console.log("\nDone. Next: switch to the live Paystack keys (SECURITY_SETUP.md, go-live).");
 }
 

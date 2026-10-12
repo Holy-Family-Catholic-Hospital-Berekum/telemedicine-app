@@ -16,6 +16,7 @@ const {
   HOSPITAL_PHONE,
   SITE_URL,
 } = require("./mailConfig");
+const { noShowSplit } = require("./money");
 
 const TYPE_LABELS = { OPD: "General OPD", SURGICAL: "Surgical" };
 
@@ -177,7 +178,7 @@ function patientContent(kind, data, when) {
     case "patient_no_show": {
       const until = data.holdUntil ? formatWhen(new Date(data.holdUntil)).replace(/ at .*$/, "") : null;
       const paid = Number(data.amountPaid || 0);
-      const back = ns ? Math.round(paid * (1 - (ns.forfeitPercent || 0) / 100) * 100) / 100 : paid;
+      const back = ns ? noShowSplit(paid, ns.forfeitPercent).refund : paid;
       return {
         subject: "You missed your consultation: book a new time or ask for a refund",
         intro: data.byPatient

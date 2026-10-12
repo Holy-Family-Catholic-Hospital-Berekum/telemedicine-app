@@ -1,9 +1,12 @@
-name: Security rules tests
+name: Automated tests
 
-# Runs tests/rules/rules.test.mjs against the Firestore and Storage
-# emulators whenever the rules (or their tests) change, so a rule change
-# that locks out staff or opens data to the wrong person fails here, before
-# it's deployed. Uses a demo project: nothing touches the live database.
+# Database/storage rules tests and the server (Cloud Functions) tests, run
+# against the Firebase emulators with a demo project: nothing touches the
+# live database. Runs when the rules, the functions or the tests change.
+#   - tests/rules/            who may read/write what (firestore/storage rules)
+#   - functions/test/unit/    waiting rule, refund amounts, age, reminders
+#   - functions/test/emulator no-shows, doctor couldn't make it, closing,
+#                             refunds, against a real (emulated) database
 on:
   push:
     branches: [main]
@@ -12,6 +15,7 @@ on:
       - "storage.rules"
       - "firebase.json"
       - "tests/rules/**"
+      - "functions/**"
       - ".github/workflows/rules-tests.yml"
   pull_request:
     branches: [main]
@@ -20,6 +24,7 @@ on:
       - "storage.rules"
       - "firebase.json"
       - "tests/rules/**"
+      - "functions/**"
   workflow_dispatch:
 
 permissions:
@@ -30,9 +35,11 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  rules-tests:
+  tests:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
+    env:
+      GCLOUD_PROJECT: demo-telemedicine
     steps:
       - name: Checkout Code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -49,15 +56,29 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 22
+          node-version: 24
           cache: "npm"
+          cache-dependency-path: |
+            package-lock.json
+            functions/package-lock.json
 
       - name: Install dependencies
-        run: npm ci
+        run: |
+          npm ci
+          npm ci --prefix functions
+
+      - name: Server unit tests
+        run: npm test --prefix functions
 
       # Same Firebase CLI version the project deploys with.
-      - name: Run rules tests on the emulators
+      - name: Rules tests (emulators)
         run: >
           npx --yes firebase-tools@15.31.0 emulators:exec
           --only firestore,storage --project demo-telemedicine
           "node --test tests/rules/rules.test.mjs"
+
+      - name: Server tests against the database (emulator)
+        run: >
+          npx --yes firebase-tools@15.31.0 emulators:exec
+          --only firestore --project demo-telemedicine
+          "cd functions && node --test test/emulator/*.test.js"

@@ -61,6 +61,7 @@ const {
 } = require("./core");
 const { queueEmail, emailAdmins } = require("./mailQueue");
 const { loadNoShowPolicy } = require("../siteSettings");
+const { noShowSplit } = require("./money");
 
 const NO_SHOW_HOLD_DAYS = 14;
 // A side counts as in the room for this long after its last check-in
@@ -314,8 +315,7 @@ async function closeConsultation({ consultationId, outcome, actor, meta = null, 
     let refundOwed = 0;
     if (outcome === "no_show") {
       const percent = booking.noShowTerms?.forfeitPercent ?? policy.forfeitPercent;
-      forfeitAmount = Math.round(amountPaid * (percent / 100) * 100) / 100;
-      refundOwed = Math.round((amountPaid - forfeitAmount) * 100) / 100;
+      ({ kept: forfeitAmount, refund: refundOwed } = noShowSplit(amountPaid, percent));
     }
 
     // What survives: no date of birth, sex, location or phone.

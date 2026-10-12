@@ -46,7 +46,7 @@ const { closeConsultation } = require("./lib/consultationLifecycle");
 
 /** YYYY-MM-DD in hospital time. Ghana is UTC+0 all year. */
 const hospitalDay = (date) => date.toISOString().slice(0, 10);
-const round2 = (n) => Math.round(n * 100) / 100;
+const { round2, noShowSplit } = require("./lib/money");
 
 const NOT_ELIGIBLE =
   "You were in the call with your doctor, so this consultation can't be " +
@@ -91,7 +91,7 @@ exports.requestRefund = onCall(async (request) => {
     if (rec.status === "no_show") {
       const percent = Number(rec.noShowTerms?.forfeitPercent ?? 0);
       outcome = "no_show";
-      suggestedRefund = round2(amountPaid * (1 - percent / 100));
+      suggestedRefund = noShowSplit(amountPaid, percent).refund;
     } else if (rec.doctorUnavailable) {
       // The doctor couldn't make it: in full, straight away, even if the
       // patient had joined the call and waited.
