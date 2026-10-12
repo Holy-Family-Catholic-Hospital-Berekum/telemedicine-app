@@ -435,6 +435,8 @@ function applyArrival({
     c,
     forRole: other,
     at,
+    now,
+    updates,
     booking,
     doctor,
     consultationId,
@@ -442,12 +444,18 @@ function applyArrival({
   });
 }
 
-/** "The other side is waiting for you: join before HH:MM." */
+/**
+ * "The other side is waiting for you: join before HH:MM." It also counts as
+ * that side's "you haven't joined" reminder (reminders.js patientLate /
+ * doctorLate), so nobody gets both for the same appointment.
+ */
 function queueWaitingEmail({
   tx,
   c,
   forRole,
   at,
+  now,
+  updates,
   booking,
   doctor,
   consultationId,
@@ -458,7 +466,9 @@ function queueWaitingEmail({
     mode: c.mode,
     scheduledAt: toDate(c.scheduledTime).getTime(),
   };
+  const lateKey = `reminders.${forRole}Late`;
   if (forRole === "patient" && booking?.email) {
+    updates[lateKey] = Timestamp.fromMillis(now);
     queueEmail(tx, {
       bookingId: c.bookingId,
       to: booking.email,
@@ -478,6 +488,7 @@ function queueWaitingEmail({
     doctor?.email &&
     doctor.status === "active"
   ) {
+    updates[lateKey] = Timestamp.fromMillis(now);
     queueEmail(tx, {
       to: doctor.email,
       kind: "doctor_not_joined",
@@ -582,6 +593,8 @@ exports.callHeartbeat = onCall(async (request) => {
           c,
           forRole: me,
           at,
+          now,
+          updates,
           booking,
           doctor,
           consultationId,

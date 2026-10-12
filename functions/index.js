@@ -127,7 +127,7 @@ const TASKS = [
 ];
 
 // Appointment emails and reminders to patients and doctors. Sending needs
-// the RESEND_API_KEY secret, so these are only deployed once
+// the mail provider's API key (lib/mailProvider.js), so these are only deployed once
 // lib/mailConfig.js FROM uses the hospital's verified domain.
 if (require("./lib/mailConfig").EMAIL_CONFIGURED) {
   const email = require("./email");

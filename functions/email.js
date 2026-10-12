@@ -8,26 +8,25 @@
 //                      hospital) emails the active admins so it gets a
 //                      doctor and a time
 //
-// Sent through Resend (https://resend.com) from the hospital's own verified
-// domain (lib/mailConfig.js). Secret, never committed:
-//   firebase functions:secrets:set RESEND_API_KEY
+// Sent through the email service chosen in lib/mailProvider.js (Resend or
+// Brevo, setting MAIL_PROVIDER) from the hospital's own verified domain
+// (lib/mailConfig.js). Its API key is a function secret, never committed.
 //
-// Each mail document is claimed in a transaction before sending and the
-// document id is sent as Resend's Idempotency-Key, so a retry can never
-// deliver the same email twice. The booking gets lastEmail.status so admins
+// Each mail document is claimed in a transaction before sending (and with
+// Resend its id is the Idempotency-Key), so a retry doesn't deliver the
+// same email twice. The booking gets lastEmail.status so admins
 // can see whether the patient was told (and phone them if not).
 
 const { onDocumentCreated } = require("firebase-functions/v2/firestore");
 // Run by jobs.js (one of three scheduled jobs), not deployed on its own.
 const { task } = require("./lib/task");
-const { defineSecret } = require("firebase-functions/params");
 const logger = require("firebase-functions/logger");
 const { db, Timestamp, serverTime, audit } = require("./lib/core");
 const { FROM, REPLY_TO, EMAIL_CONFIGURED } = require("./lib/mailConfig");
 const { renderEmail } = require("./lib/emailTemplates");
 const { emailAdmins } = require("./lib/mailQueue");
 
-const RESEND_API_KEY = defineSecret("RESEND_API_KEY");
+const { MAIL_SECRET, send } = require("./lib/mailProvider");
 const MAX_ATTEMPTS = 6;
 const STUCK_SENDING_MINUTES = 10;
 
@@ -74,38 +73,17 @@ async function deliver(ref) {
   }
 
   const { subject, text, html } = renderEmail(m.kind, m.data || {});
-  let res;
-  try {
-    res = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${RESEND_API_KEY.value().trim()}`,
-        "Content-Type": "application/json",
-        "Idempotency-Key": ref.id,
-      },
-      body: JSON.stringify({
-        from: FROM,
-        to: [m.to],
-        ...(REPLY_TO ? { reply_to: REPLY_TO } : {}),
-        subject,
-        text,
-        html,
-      }),
-    });
-  } catch (err) {
-    res = { ok: false, status: 0, json: async () => ({ message: err.message }) };
-  }
-  const body = await res.json().catch(() => ({}));
+  const res = await send({ id: ref.id, kind: m.kind, from: FROM, to: m.to, replyTo: REPLY_TO, subject, text, html });
 
   if (res.ok) {
-    await ref.update({ status: "sent", providerId: body.id || null, sentAt: serverTime() });
+    await ref.update({ status: "sent", providerId: res.providerId, sentAt: serverTime() });
     await setBookingEmailStatus(m.bookingId, "sent", m.kind);
     return;
   }
 
   const temporary = res.status === 0 || res.status === 429 || res.status >= 500;
   const giveUp = !temporary || m.attempts >= MAX_ATTEMPTS;
-  const lastError = `${res.status} ${String(body.message || body.name || "").slice(0, 200)}`;
+  const lastError = `${res.status} ${String(res.error || "").slice(0, 200)}`;
   await ref.update({ status: giveUp ? "failed" : "retry", lastError, updatedAt: serverTime() });
   if (giveUp) {
     await setBookingEmailStatus(m.bookingId, "failed", m.kind);
@@ -151,14 +129,14 @@ exports.notifyAdminsNewBooking = onDocumentCreated(
 );
 
 exports.sendQueuedEmail = onDocumentCreated(
-  { document: "mail/{mailId}", secrets: [RESEND_API_KEY] },
+  { document: "mail/{mailId}", secrets: [MAIL_SECRET] },
   async (event) => {
     if (event.data) await deliver(event.data.ref);
   },
 );
 
 exports.retryQueuedEmails = task("retryQueuedEmails", 
-  { schedule: "every 15 minutes", secrets: [RESEND_API_KEY], timeoutSeconds: 300 },
+  { schedule: "every 15 minutes", secrets: [MAIL_SECRET], timeoutSeconds: 300 },
   async () => {
     const pending = await db
       .collection("mail")
