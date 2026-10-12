@@ -1096,7 +1096,7 @@ function HeroSection({ heroImage }) {
           </div>
 
           <h1
-            className="hero-rise mt-5 font-display text-[clamp(38px,9.4vw,74px)] font-medium leading-[1.03] tracking-[-0.045em] text-[var(--ink2)] sm:mt-6"
+            className="hero-rise mt-5 font-display text-[clamp(38px,9.4vw,74px)] font-medium leading-[1.03] tracking-[-0.045em] text-[var(--ink2)] sm:mt-6 lg:text-[clamp(44px,4.4vw,66px)]"
             style={{ animationDelay: "0.15s" }}
           >
             Quality healthcare{" "}

@@ -129,23 +129,47 @@ FUNCTIONS_DISCOVERY_TIMEOUT=60 firebase deploy --only functions --project test
   sets `SCHEDULED_JOBS=off`, so none of the scheduled jobs (automatic
   no-shows, reminders, nightly Paystack check, clean-ups) are deployed
   there; their logic is covered by the automated tests. Usage stays in the
-  free tier. It also sets `ENFORCE_APP_CHECK=false` (the test website has
-  no reCAPTCHA key) and `SITE_URL` (links in its emails).
-- **Website:** the Vercel *Preview* deployment of the `test` branch, with
-  Preview environment variables pointing at the test project (its web app
-  config: `firebase apps:sdkconfig WEB --project test`), the Paystack
-  **test** public key, and no `VITE_RECAPTCHA_ENTERPRISE_SITE_KEY`.
-- **Secrets:** set in the test project like live
-  (`firebase functions:secrets:set NAME --project test`). Paystack must
-  always be a **test** key (`sk_test_…`) there.
-- **Accounts:** sign up as a patient on the test site; make a test admin
-  with `GCLOUD_PROJECT=telemedicine-hfch-test node scripts/staffAdmin.js
-  make-admin …` (all staffAdmin commands honour `GCLOUD_PROJECT`).
+  free tier, and the USD 50 budget alert covers both projects. It also sets
+  `SITE_URL` (links in its emails) and `PAYMENT_REF_PREFIX=HFT` (below).
+- **Website:** https://telemedicine-hfch-git-test-tesla-juniors-projects.vercel.app,
+  the Vercel *Preview* build of the `test` branch. To try a change, push it
+  to `test` (`git push origin main:test`, or a feature branch merged into
+  `test`) and deploy the functions with `--project test`. Its variables in
+  Vercel are set for **Preview, branch `test` only**: the test project's web
+  config (`firebase apps:sdkconfig WEB --project test`), the Paystack
+  **test** public key, its own staff path, and its own reCAPTCHA site key.
+  The site is behind Vercel Authentication (only team members can open it).
+- **Same security as live:** App Check is enforced on the test database,
+  storage, sign-in and functions (own reCAPTCHA Enterprise key); the
+  browser key only works from the test site, `localhost:5173` and
+  `telemedicine-hfch-test.firebaseapp.com`; authenticator apps and the
+  password policy as on live.
+- **Secrets:** the test project has its **own** Resend and Cloudflare TURN
+  keys (named `telemedicine-test` at the providers), so a leak there never
+  exposes live's keys; Paystack is always a **test** key (`sk_test_…`).
+  Set with `firebase functions:secrets:set NAME --project test` (on
+  Windows PowerShell: `firebase.cmd`), then redeploy the functions.
+- **Accounts:** patients sign up on the test site. **Staff accounts are
+  never created through the public sign-up page** (that makes a patient,
+  which can never become staff): create the user in Firebase console →
+  Authentication → Add user (password: 10+ characters with upper, lower,
+  number and symbol, or the console only says "unknown error"), then
+  `GCLOUD_PROJECT=telemedicine-hfch-test node scripts/staffAdmin.js
+  make-admin email "Name"` (every staffAdmin command honours
+  `GCLOUD_PROJECT`). Doctors: Add doctor in the test admin's Users tab.
+- **Rules:**
+  - Never put real patient data in the test project.
+  - Live variables in Vercel are **Production only**; never tick Preview
+    on them (every preview would then use the live database).
+  - Never give the test project a live (`sk_live_`) key, or live's own
+    Resend or Cloudflare keys.
 - Paystack sends webhooks to one URL per mode, and until go-live the test
   keys point at live's `paystackWebhook`. Test-project payments are
   confirmed by the verify-by-reference check when the patient returns.
   Their references start `HFT-` (`PAYMENT_REF_PREFIX`), live's `HFH-`, so
-  live ignores test payments instead of refunding them as strays.
+  live ignores test payments instead of refunding them as strays. **At
+  go-live**, set Paystack's *test* webhook URL to the test project's
+  `paystackWebhook` (Paystack → Settings → API Keys & Webhooks).
 
 Emails and reminders are only deployed when `functions/lib/mailConfig.js`
 has a real sender address (it does now), and every function secret must

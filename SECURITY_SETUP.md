@@ -217,15 +217,20 @@ Everything paid before go-live is Paystack TEST money. Do these in order.
    `node scripts/resetTestPayments.js` (dry run, shows counts), then
    `node scripts/resetTestPayments.js --confirm telemedicine-hfch`.
    Test call recordings are not touched: delete them in the app (two admins).
-3. **Live secret key**: `firebase functions:secrets:set PAYSTACK_SECRET_KEY`
+3. **Live secret key**: `firebase functions:secrets:set PAYSTACK_SECRET_KEY --project live`
    (paste the LIVE secret key), then redeploy:
-   `firebase deploy --only functions`.
+   `firebase deploy --only functions --project live`. Never put a live key
+   in the test project.
 4. **Live public key**: in Vercel, set `VITE_PAYSTACK_PUBLIC_KEY` to the
-   LIVE public key (Production), then redeploy the site.
+   LIVE public key (Production only; the `test` branch keeps its test
+   key), then redeploy the site.
 5. **Live webhook** in the Paystack dashboard, switched to Live mode:
    Settings → API Keys & Webhooks → Live Webhook URL =
    `https://europe-west1-telemedicine-hfch.cloudfunctions.net/paystackWebhook`.
    Test and live each have their own webhook URL; set the live one.
+   Then point the **Test** Webhook URL at the test project:
+   `https://europe-west1-telemedicine-hfch-test.cloudfunctions.net/paystackWebhook`
+   (the test website keeps the test keys; see HANDOVER.md "Test environment").
 6. **One real test**: book a video call with a real wallet for a small
    price (set a low price in Control panel first, then put it back), check
    the booking appears, then refund it from Revenue → Refund requests (or
