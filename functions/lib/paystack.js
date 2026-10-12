@@ -18,7 +18,12 @@ const { defineSecret } = require("firebase-functions/params");
 const logger = require("firebase-functions/logger");
 
 const PAYSTACK_SECRET_KEY = defineSecret("PAYSTACK_SECRET_KEY");
-const PAYSTACK_API = "https://api.paystack.co";
+// The end-to-end tests (e2e/) point this at a fake Paystack. Honoured only
+// inside the local Firebase emulator, never in a deployed function.
+const PAYSTACK_API =
+  process.env.FUNCTIONS_EMULATOR === "true" && process.env.PAYSTACK_API_BASE
+    ? process.env.PAYSTACK_API_BASE
+    : "https://api.paystack.co";
 
 // Trimmed so a stray newline from pasting doesn't break authentication.
 const secretKey = () => PAYSTACK_SECRET_KEY.value().trim();

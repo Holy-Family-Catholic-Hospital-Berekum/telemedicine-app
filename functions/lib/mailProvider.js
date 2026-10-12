@@ -100,6 +100,13 @@ async function sendBrevo({ id, kind, from, to, replyTo, subject, text, html }) {
   };
 }
 
-const send = (message) => PROVIDERS[PROVIDER].send(message);
+// Automated tests (local emulator only, MAIL_DELIVERY=off in
+// functions/.env.demo-telemedicine): nothing is sent to any email service.
+const DELIVERY_OFF = process.env.FUNCTIONS_EMULATOR === "true" && process.env.MAIL_DELIVERY === "off";
+
+const send = (message) =>
+  DELIVERY_OFF
+    ? Promise.resolve({ ok: true, status: 200, providerId: `not-sent-${message.id}`, error: "" })
+    : PROVIDERS[PROVIDER].send(message);
 
 module.exports = { PROVIDER, MAIL_SECRET, send, parseAddress };

@@ -5,7 +5,9 @@
 // photos, call recordings), not with the home page. Import `storage` from
 // here; never call getStorage() anywhere else.
 
-import { getStorage } from "firebase/storage";
-import { app } from "./firebase";
+import { getStorage, connectStorageEmulator } from "firebase/storage";
+import { app, USE_EMULATORS } from "./firebase";
 
 export const storage = getStorage(app);
+// End-to-end tests only (see src/firebase.js).
+if (USE_EMULATORS) connectStorageEmulator(storage, "127.0.0.1", 9199);

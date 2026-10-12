@@ -46,7 +46,7 @@ const {
   audit,
   rateLimit,
 } = require("./lib/core");
-const { PAYSTACK_SECRET_KEY, secretKey, newReference } = require("./lib/paystack");
+const { PAYSTACK_SECRET_KEY, PAYSTACK_API, secretKey, newReference } = require("./lib/paystack");
 const { queueEmail } = require("./lib/mailQueue");
 const {
   markNoShow,
@@ -161,7 +161,7 @@ exports.closeExpiredNoShows = task("closeExpiredNoShows", { schedule: "every 60 
 /* ------------------------------------------------------------------ */
 
 async function verifyTransaction(reference) {
-  const res = await fetch(`https://api.paystack.co/transaction/verify/${encodeURIComponent(reference)}`, {
+  const res = await fetch(`${PAYSTACK_API}/transaction/verify/${encodeURIComponent(reference)}`, {
     headers: { Authorization: `Bearer ${secretKey()}` },
   });
   const body = await res.json().catch(() => null);

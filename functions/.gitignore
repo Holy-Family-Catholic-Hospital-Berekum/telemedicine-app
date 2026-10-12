@@ -8,3 +8,7 @@ service-account*.json
 serviceAccount*.json
 # The test project's non-secret settings (see the file).
 !.env.telemedicine-hfch-test
+# The test emulator's non-secret settings.
+!.env.demo-telemedicine
+# Dummy secrets for the emulator, written by e2e/run.mjs.
+.secret.local

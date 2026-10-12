@@ -35,3 +35,8 @@ serviceAccount*.json
 *.njsproj
 *.sln
 *.sw?
+# End-to-end test output
+dist-e2e/
+test-results/
+e2e-report/
+playwright-report/

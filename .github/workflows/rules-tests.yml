@@ -9,7 +9,7 @@ name: Automated tests
 #                             refunds, against a real (emulated) database
 on:
   push:
-    branches: [main]
+    branches: [main, test]
     paths:
       - "firestore.rules"
       - "storage.rules"
@@ -18,7 +18,7 @@ on:
       - "functions/**"
       - ".github/workflows/rules-tests.yml"
   pull_request:
-    branches: [main]
+    branches: [main, test]
     paths:
       - "firestore.rules"
       - "storage.rules"

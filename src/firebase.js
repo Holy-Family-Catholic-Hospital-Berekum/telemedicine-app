@@ -15,9 +15,10 @@ import {
   browserSessionPersistence,
   browserLocalPersistence,
   initializeRecaptchaConfig,
+  connectAuthEmulator,
 } from "firebase/auth";
-import { getFirestore } from "firebase/firestore";
-import { getFunctions } from "firebase/functions";
+import { getFirestore, connectFirestoreEmulator } from "firebase/firestore";
+import { getFunctions, connectFunctionsEmulator } from "firebase/functions";
 
 // Every Cloud Function is deployed here (functions/lib/core.js REGION),
 // inside Firestore's eur3 location.
@@ -68,7 +69,17 @@ export const auth = initializeAuth(app, {
   persistence: [browserSessionPersistence, browserLocalPersistence],
 });
 
+// End-to-end tests only (e2e/, `npm run test:e2e`): talk to the local
+// Firebase emulators. VITE_USE_EMULATORS is set only by that build, so in
+// every real build this whole block is removed.
+export const USE_EMULATORS = import.meta.env.VITE_USE_EMULATORS === "1";
+if (USE_EMULATORS) {
+  connectAuthEmulator(auth, "http://127.0.0.1:9099", { disableWarnings: true });
+  connectFirestoreEmulator(db, "127.0.0.1", 8080);
+  connectFunctionsEmulator(functions, "127.0.0.1", 5001);
+}
+
 // reCAPTCHA protection for email/password sign-in and sign-up, when it's
 // switched on for the project (scripts/staffAdmin.js auth-recaptcha).
 // Loads the project's settings up front; harmless when it's off.
-initializeRecaptchaConfig(auth).catch(() => {});
+if (!USE_EMULATORS) initializeRecaptchaConfig(auth).catch(() => {});

@@ -676,6 +676,12 @@ exports.getTurnCredentials = onCall(
     if (consultation.doctorUnavailable)
       throw doctorUnavailableError(caller.role);
 
+    // Automated tests (local emulator only, TURN_RELAY=off in
+    // functions/.env.demo-telemedicine): no relay, nothing sent to Cloudflare.
+    if (process.env.FUNCTIONS_EMULATOR === "true" && process.env.TURN_RELAY === "off") {
+      return { iceServers: [] };
+    }
+
     const response = await fetch(
       `https://rtc.live.cloudflare.com/v1/turn/keys/${CLOUDFLARE_TURN_KEY_ID.value()}/credentials/generate-ice-servers`,
       {
