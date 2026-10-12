@@ -29,7 +29,7 @@ Firebase config: `firebase.json`, `.firebaserc` (project `telemedicine-hfch`), `
 
 `VITE_FIREBASE_API_KEY`, `VITE_FIREBASE_AUTH_DOMAIN`, `VITE_FIREBASE_PROJECT_ID`, `VITE_FIREBASE_STORAGE_BUCKET`, `VITE_FIREBASE_MESSAGING_SENDER_ID`, `VITE_FIREBASE_APP_ID`, `VITE_PAYSTACK_PUBLIC_KEY`, `VITE_STAFF_LOGIN_PATH`, `VITE_RECAPTCHA_ENTERPRISE_SITE_KEY` (App Check; App Check is skipped when unset), `VITE_SITE_URL` (public address for canonical links, link previews, robots.txt and sitemap.xml; defaults to https://telemedicine.hfhberekum.org) and, local only, `VITE_APPCHECK_DEBUG_TOKEN`. The staff sign-in route is registered only if `VITE_STAFF_LOGIN_PATH` is set (`src/staffRoute.js`); there's deliberately no default path, and the hidden URL should never be hard-coded or linked from public pages.
 
-Function secrets (via `firebase functions:secrets:set`): `PAYSTACK_SECRET_KEY` (test key until go-live), `CLOUDFLARE_TURN_KEY_ID`, `CLOUDFLARE_TURN_API_TOKEN`.
+Secret values are never read by an AI assistant: `.claude/settings.json` denies `gcloud secrets versions access`, `functions:secrets:access`, Secret Manager API calls and the gcloud/firebase credential files; the owner sets and copies secrets by hand. Function secrets (via `firebase functions:secrets:set`): `PAYSTACK_SECRET_KEY` (test key until go-live), `CLOUDFLARE_TURN_KEY_ID`, `CLOUDFLARE_TURN_API_TOKEN`.
 
 ## Layout
 

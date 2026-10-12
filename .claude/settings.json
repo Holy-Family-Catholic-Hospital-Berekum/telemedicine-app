@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "deny": [
+      "Bash(*secrets versions access*)",
+      "Bash(*functions:secrets:access*)",
+      "Bash(*secretmanager.googleapis.com*)",
+      "PowerShell(*secrets versions access*)",
+      "PowerShell(*functions:secrets:access*)",
+      "PowerShell(*secretmanager.googleapis.com*)",
+      "Read(~/AppData/Roaming/gcloud/**)",
+      "Read(~/.config/gcloud/**)",
+      "Read(~/.config/configstore/firebase-tools.json)",
+      "Read(~/AppData/Roaming/configstore/firebase-tools.json)"
+    ]
+  }
+}
