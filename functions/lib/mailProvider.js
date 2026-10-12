@@ -19,15 +19,17 @@
 
 const { defineSecret } = require("firebase-functions/params");
 
+// Only the chosen provider's secret is defined: the Firebase CLI asks for
+// every secret defined anywhere in the code, used or not.
 const PROVIDERS = {
-  resend: { secret: defineSecret("RESEND_API_KEY"), send: sendResend },
-  brevo: { secret: defineSecret("BREVO_API_KEY"), send: sendBrevo },
+  resend: { secretName: "RESEND_API_KEY", send: sendResend },
+  brevo: { secretName: "BREVO_API_KEY", send: sendBrevo },
 };
 const PROVIDER = String(process.env.MAIL_PROVIDER || "resend").trim().toLowerCase();
 if (!PROVIDERS[PROVIDER]) {
   throw new Error(`MAIL_PROVIDER "${PROVIDER}" isn't supported (use resend or brevo).`);
 }
-const MAIL_SECRET = PROVIDERS[PROVIDER].secret;
+const MAIL_SECRET = defineSecret(PROVIDERS[PROVIDER].secretName);
 
 /** "Name <a@b.org>" -> { name, email } */
 function parseAddress(address) {
