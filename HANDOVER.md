@@ -18,7 +18,8 @@ developer adds the new one and then removes themselves.
 | **Google Cloud billing** account (Firebase Payment) | Pays for Firebase; budget alerts | *Billing account viewer* at least |
 | **Vercel** project | Hosts the website, environment variables | Team member |
 | **Paystack** dashboard | Payments, refunds, webhook URL, API keys | Developer role |
-| **Resend** | Emails; API key | Team member |
+| **Brevo** | Emails (since 13 Oct 2026; free plan 300/day); API keys `telemedicine-live` / `telemedicine-test`; domain `mail.hfhberekum.org` authenticated; **Authorised IPs must stay off** (Google's servers change address) | Team member |
+| **Resend** | Previous email service, kept for a few days as a fallback; remove its keys and DNS records once Brevo has run without problems | Team member |
 | **Cloudflare** account `hfhberekum.org` | DNS (website, email records), TURN video relay key | Member with DNS + Calls/TURN access |
 | **Snyk, GitGuardian** | Security scans used by CI (tokens stored as GitHub secrets) | Optional |
 | A **staff test account** on the live site | Testing the portals | An admin creates it; needs an authenticator app |
@@ -28,7 +29,7 @@ Secrets never live in the repo:
 | Secret | Where it lives | Set with |
 |---|---|---|
 | Paystack secret key | Firebase function secret `PAYSTACK_SECRET_KEY` | `firebase functions:secrets:set PAYSTACK_SECRET_KEY --project live` |
-| Resend API key | Firebase function secret `RESEND_API_KEY` | `firebase functions:secrets:set RESEND_API_KEY --project live` |
+| Brevo API key | Firebase function secret `BREVO_API_KEY` (one key per project) | `firebase functions:secrets:set BREVO_API_KEY --project live` (or `--project test`); the service is chosen by `MAIL_PROVIDER` in `functions/.env.<project id>` |
 | Cloudflare TURN | Function secrets `CLOUDFLARE_TURN_KEY_ID`, `CLOUDFLARE_TURN_API_TOKEN` | same command |
 | Website settings | `.env` locally, Vercel env vars live | see `.env.example` |
 | CI tokens | GitHub repo secrets `SNYK_TOKEN`, `GITGUARDIAN_API_KEY` | GitHub → Settings → Secrets |
@@ -160,7 +161,7 @@ FUNCTIONS_DISCOVERY_TIMEOUT=60 firebase deploy --only functions --project test
   browser key only works from the test site, `localhost:5173` and
   `telemedicine-hfch-test.firebaseapp.com`; authenticator apps and the
   password policy as on live.
-- **Secrets:** the test project has its **own** Resend and Cloudflare TURN
+- **Secrets:** the test project has its **own** Brevo and Cloudflare TURN
   keys (named `telemedicine-test` at the providers), so a leak there never
   exposes live's keys; Paystack is always a **test** key (`sk_test_…`).
   Set with `firebase functions:secrets:set NAME --project test` (on
@@ -177,7 +178,7 @@ FUNCTIONS_DISCOVERY_TIMEOUT=60 firebase deploy --only functions --project test
   - Live variables in Vercel are **Production only**; never tick Preview
     on them (every preview would then use the live database).
   - Never give the test project a live (`sk_live_`) key, or live's own
-    Resend or Cloudflare keys.
+    Brevo or Cloudflare keys.
 - Paystack sends webhooks to one URL per mode, and until go-live the test
   keys point at live's `paystackWebhook`. Test-project payments are
   confirmed by the verify-by-reference check when the patient returns.

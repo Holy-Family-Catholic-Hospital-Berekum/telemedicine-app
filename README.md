@@ -43,7 +43,7 @@ never written in the code) with a password **and** an authenticator app.
    • App Check       – only the real website may call the above
         │
         ├── Paystack ── mobile money payments and refunds
-        ├── Resend ──── appointment emails (appointments@mail.hfhberekum.org)
+        ├── Brevo ───── appointment emails (appointments@mail.hfhberekum.org)
         └── Cloudflare ─ relays video calls when a direct connection fails
 ```
 
@@ -63,7 +63,7 @@ let the browser read only what each person may see.
 | Installable app / offline | vite-plugin-pwa (service worker), self-hosted fonts |
 | Back end | Firebase: Authentication (Identity Platform + TOTP), Firestore (`eur3`), Cloud Functions v2 (Node 24, `europe-west1`), Storage, App Check (reCAPTCHA Enterprise) |
 | Payments | Paystack (mobile money), webhook + daily reconciliation |
-| Email | Resend (verified domain `mail.hfhberekum.org`) |
+| Email | Brevo (verified domain `mail.hfhberekum.org`; Resend also supported, `MAIL_PROVIDER`) |
 | Video | WebRTC; Cloudflare TURN relay |
 | Hosting | Vercel (website), Firebase (back end) |
 | Quality / security | ESLint (+ security plugin), Husky pre-commit (TruffleHog secret scan, lint), GitHub Actions (TruffleHog, ESLint, Semgrep, Snyk, GitGuardian, rules tests) |
