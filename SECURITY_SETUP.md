@@ -200,17 +200,15 @@ dashboard. Their hospital admin account is enough.
    someone ready to run `node scripts/staffAdmin.js auth-recaptcha --project live` (which
    sets audit) to undo it. Password guessing is still limited by Firebase's
    built-in throttling, the password policy and the staff authenticator.
-2. **Replace the placeholders** in `components/shared/contact.js`: the
-   hospital phone number and the WhatsApp support number.
+2. **Replace the placeholders** in `components/shared/contact.js` (the
+   hospital phone number and the WhatsApp support number) and
+   `HOSPITAL_PHONE` in `functions/lib/mailConfig.js`.
 3. **Paystack go-live** (in this order; see "Payments go-live checklist"
    below for the detail).
-4. **Development against the live project.** `localhost` is an authorized
-   sign-in domain and `.env` holds an App Check debug token, because
-   development uses the live Firebase project. A debug token lets its
-   holder past App Check: keep it out of Vercel and anywhere shared, and
-   delete it in App Check → Apps → Manage debug tokens when you aren't
-   developing. Better, once the hospital has time: a separate test
-   Firebase project for development, then remove `localhost` here.
+
+Development uses the test project (HANDOVER.md "Test environment"). The
+live project has no `localhost` authorized domain and no App Check debug
+tokens (checked 13 Oct 2026); keep it that way.
 
 ## Publish the current privacy policy
 

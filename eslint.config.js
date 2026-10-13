@@ -6,7 +6,7 @@ import security from "eslint-plugin-security";
 import { defineConfig, globalIgnores } from "eslint/config";
 
 export default defineConfig([
-  globalIgnores(["dist"]),
+  globalIgnores(["dist", "dist-e2e"]),
   {
     files: ["**/*.{js,jsx}"],
     ignores: ["functions/**"],
