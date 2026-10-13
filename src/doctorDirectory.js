@@ -1,22 +1,30 @@
 // src/doctorDirectory.js
 //
 // List of doctors shown on the home page and in the booking picker, read
-// from the public `doctorProfiles` collection (isListed == true). Read once
-// (not live: lighter on mobile data), and again when the visitor comes back
-// to the page after a minute or more. Firebase is loaded on demand, so the
-// page shows first.
+// from the public `doctorProfiles` collection (isListed == true).
 // Admins control listing and consultation types; each doctor edits their
 // own photo and specialties from the doctor portal. Bio, languages,
 // qualifications and years of experience are not shown anywhere (Ghana's
 // rules on advertising doctors).
 //
+// Loading, so the "Meet our doctors" section is never empty for long:
+//   - the list (public information only) is kept on the device from the
+//     last visit, so a returning visitor sees the doctors at once;
+//   - reading starts as soon as this file loads (with the page), not when
+//     the section first draws, and is shared by every component using it;
+//   - a failed read is retried after 2, 5 and 10 seconds before giving up;
+//   - not live (lighter on mobile data): read again when the visitor comes
+//     back to the page after a minute or more.
+//
 // Shape returned for each doctor:
 //   { id, name, role, availableFor, specialties, image,
 //     initials, isAvailable, availability }
 
-import { useEffect, useState } from "react";
+import { useSyncExternalStore } from "react";
 
 const REFRESH_AFTER_MS = 60 * 1000;
+const RETRY_AFTER_MS = [2000, 5000, 10000];
+const CACHE_KEY = "hfh:doctors:v1";
 
 function initialsOf(name) {
   return String(name || "")
@@ -57,29 +65,76 @@ async function fetchListedDoctors() {
   return snap.docs.map((d) => toDoctor(d.id, d.data())).sort((a, b) => a.name.localeCompare(b.name));
 }
 
+/* ---- one shared list, however many components use it ---- */
+
+function readCache() {
+  try {
+    const raw = localStorage.getItem(CACHE_KEY);
+    const list = raw ? JSON.parse(raw) : null;
+    return Array.isArray(list) ? list : null;
+  } catch {
+    return null;
+  }
+}
+function writeCache(doctors) {
+  try {
+    localStorage.setItem(CACHE_KEY, JSON.stringify(doctors));
+  } catch {
+    // storage blocked (private mode): the list just isn't kept
+  }
+}
+
+const cached = typeof window !== "undefined" ? readCache() : null;
+// loading: no list to show yet (first visit, still reading).
+let state = { doctors: cached || [], loading: !cached, error: null };
+const listeners = new Set();
+let lastLoaded = 0;
+let inFlight = null;
+
+function publish(next) {
+  state = next;
+  listeners.forEach((l) => l());
+}
+
+function load(attempt = 0) {
+  if (inFlight && attempt === 0) return inFlight; // already reading
+  lastLoaded = Date.now();
+  inFlight = fetchListedDoctors().then(
+    (doctors) => {
+      inFlight = null;
+      writeCache(doctors);
+      publish({ doctors, loading: false, error: null });
+    },
+    (error) => {
+      if (attempt < RETRY_AFTER_MS.length) {
+        // Keep inFlight set: a visit to the page meanwhile doesn't start
+        // a second read; the retry replaces it.
+        setTimeout(() => load(attempt + 1), RETRY_AFTER_MS[attempt]);
+        return;
+      }
+      inFlight = null;
+      // Keep whatever is on screen (a kept list) and stop "loading".
+      publish({ ...state, loading: false, error });
+    },
+  );
+  return inFlight;
+}
+
+if (typeof window !== "undefined") {
+  // Start with the page, not when the section first draws.
+  load();
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible" && Date.now() - lastLoaded > REFRESH_AFTER_MS) load();
+  });
+}
+
+function subscribe(listener) {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
+const getSnapshot = () => state;
+
 /** { doctors, loading, error } — doctors sorted by name. */
 export function useListedDoctors() {
-  const [state, setState] = useState({ doctors: [], loading: true, error: null });
-
-  useEffect(() => {
-    let active = true;
-    let lastLoaded = 0;
-    const load = () => {
-      lastLoaded = Date.now();
-      fetchListedDoctors()
-        .then((doctors) => active && setState({ doctors, loading: false, error: null }))
-        .catch((error) => active && setState((s) => ({ ...s, loading: false, error })));
-    };
-    const onVisible = () => {
-      if (document.visibilityState === "visible" && Date.now() - lastLoaded > REFRESH_AFTER_MS) load();
-    };
-    load();
-    document.addEventListener("visibilitychange", onVisible);
-    return () => {
-      active = false;
-      document.removeEventListener("visibilitychange", onVisible);
-    };
-  }, []);
-
-  return state;
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 }

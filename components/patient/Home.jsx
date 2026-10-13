@@ -590,7 +590,7 @@ function OpenSlots() {
 }
 
 function DoctorsSlider() {
-  const { doctors, loading } = useListedDoctors();
+  const { doctors, loading, error } = useListedDoctors();
   const { doctorSelectionEnabled } = useSiteSettings().settings;
   const [perView, setPerView] = useState(1);
   const [index, setIndex] = useState(0);
@@ -653,10 +653,32 @@ function DoctorsSlider() {
     touchStartX.current = e.touches[0].clientX;
   };
 
-  if (!loading && doctors.length === 0) {
+  // Still reading the list (first visit): placeholder cards, same size as
+  // the real ones, so nothing jumps when the doctors arrive.
+  if (loading && doctors.length === 0) {
+    return (
+      <div className="mt-10 sm:mt-12 flex" role="status" aria-label="Loading our doctors">
+        {Array.from({ length: perView }).map((_, i) => (
+          <div key={i} className="shrink-0 px-2 sm:px-3" style={{ flexBasis: `${100 / perView}%` }}>
+            <div className="h-full rounded-3xl border border-[#14213814] bg-white p-3 shadow-[0_18px_40px_-28px_rgba(15,20,17,0.6)]">
+              <div className="aspect-[3/4] w-full animate-pulse rounded-2xl bg-[#14213810]" />
+              <div className="px-1.5 pb-1 pt-4">
+                <div className="h-4 w-3/5 animate-pulse rounded bg-[#14213814]" />
+                <div className="mt-3 h-3.5 w-2/5 animate-pulse rounded bg-[#1421380d]" />
+                <div className="mt-2 h-3.5 w-4/5 animate-pulse rounded bg-[#1421380d]" />
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  }
+  if (doctors.length === 0) {
     return (
       <p className="mt-8 px-2 sm:px-3 text-[16px] text-[#142138cc]">
-        Our doctors' profiles will appear here soon.
+        {error
+          ? "We couldn't load our doctors just now. Check your internet connection and open this page again."
+          : "Our doctors' profiles will appear here soon."}
       </p>
     );
   }
