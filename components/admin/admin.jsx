@@ -26,6 +26,7 @@ import { IconBell, IconRefresh } from "./icons.jsx";
 
 import "./admin.css";
 import { usePageMeta } from "../../src/seo.js";
+import { useStaffAppManifest } from "../../src/staffApp.js";
 
 const TAB_TITLES = {
   account: {
@@ -100,6 +101,8 @@ const refundDueIssuesQuery = query(
 );
 
 export default function Admin() {
+  // Installing from a staff page gives the staff app (opens on staff sign-in).
+  useStaffAppManifest();
   usePageMeta({ title: "Admin", noindex: true });
   const [tab, setTab] = useState("overview");
   const { user, profile, signOutUser } = useAuth();

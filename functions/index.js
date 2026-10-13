@@ -99,7 +99,11 @@ exports.updateHospitalServices = siteSettings.updateHospitalServices;
 exports.updateDoctorSelection = siteSettings.updateDoctorSelection;
 exports.updateLegalDocument = legalDocs.updateLegalDocument;
 // Admin metrics report (Metrics & reports tab: CSV / PDF export)
-exports.exportMetrics = require("./reports").exportMetrics;
+const reports = require("./reports");
+exports.exportMetrics = reports.exportMetrics;
+exports.cancelReportRequest = reports.cancelReportRequest;
+exports.decideReportRequest = reports.decideReportRequest;
+exports.downloadReport = reports.downloadReport;
 
 // Errors in visitors' browsers -> Cloud Logging "CLIENT_ERROR" (alerted)
 exports.reportClientError = require("./clientErrors").reportClientError;
@@ -127,6 +131,8 @@ const TASKS = [
   maintenance.releaseSlotHolds,
   maintenance.cleanupSignalling,
   maintenance.cleanupRateLimits,
+  // Metrics report data nobody downloaded
+  reports.cleanupReportData,
 ];
 
 // Appointment emails and reminders to patients and doctors. Sending needs

@@ -474,6 +474,33 @@ export default function BookConsultation() {
   // instead of creating an unrelated fresh one. Read-only: it comes from
   // the URL and never changes during the flow.
   const [slotId] = useState(() => searchParams.get("slotId") || null);
+  // A claimed slot fixes the doctor, type and mode (the admin chose that
+  // pairing when opening it): the patient can't change them here, and the
+  // server refuses a different doctor or type. Read from the slot itself
+  // (open slots are public), not trusted from the link.
+  const slotLocked = Boolean(slotId);
+  const [slotProblem, setSlotProblem] = useState(null);
+  useEffect(() => {
+    if (!slotId) return undefined;
+    let active = true;
+    Promise.all([import("../../src/firebase"), import("firebase/firestore")])
+      .then(([{ db }, { doc, getDoc }]) => getDoc(doc(db, "availableSlots", slotId)))
+      .then((snap) => {
+        if (!active) return;
+        const slot = snap.exists() ? snap.data() : null;
+        if (!slot || slot.status !== "open") {
+          setSlotProblem("This appointment time is no longer available. Please choose another time.");
+          return;
+        }
+        if (slot.type === "OPD" || slot.type === "SURGICAL") setType(slot.type);
+        if (slot.mode === "online" || slot.mode === "in_person") setMode(slot.mode);
+        setSelectedDoctorId(slot.doctorUid || null);
+      })
+      .catch(() => {}); // the server checks the slot again when booking
+    return () => {
+      active = false;
+    };
+  }, [slotId]);
 
   // Admin switch. A slot claimed from the dashboard still carries its
   // doctor (the admin chose that pairing when opening the slot).
@@ -934,6 +961,17 @@ export default function BookConsultation() {
                     <legend className="text-[16px] font-medium mb-3">
                       Consultation type
                     </legend>
+                    {slotLocked && (
+                      <p className="-mt-1 mb-3 text-[15px] text-black/75">
+                        You chose an appointment time, so the type, the way you
+                        see the doctor and the doctor are set by that time.
+                      </p>
+                    )}
+                    {slotProblem && (
+                      <p role="alert" className="-mt-1 mb-3 text-[15px] font-medium text-[#B42318]">
+                        {slotProblem}
+                      </p>
+                    )}
                     <div className="grid sm:grid-cols-2 gap-3">
                       {[
                         {
@@ -951,9 +989,10 @@ export default function BookConsultation() {
                           key={opt.key}
                           type="button"
                           onClick={() => handleTypeChange(opt.key)}
+                          disabled={slotLocked && type !== opt.key}
                           aria-pressed={type === opt.key}
                           className={
-                            "text-left rounded-2xl p-5 border-2 transition-colors " +
+                            "text-left rounded-2xl p-5 border-2 transition-colors disabled:opacity-40 disabled:cursor-not-allowed " +
                             (type === opt.key
                               ? "border-[#F88535] bg-[#F88535]/10"
                               : "border-black/10 hover:border-black/30")
@@ -991,9 +1030,10 @@ export default function BookConsultation() {
                           key={opt.key}
                           type="button"
                           onClick={() => setMode(opt.key)}
+                          disabled={slotLocked && mode !== opt.key}
                           aria-pressed={mode === opt.key}
                           className={
-                            "text-left rounded-2xl p-5 border-2 transition-colors " +
+                            "text-left rounded-2xl p-5 border-2 transition-colors disabled:opacity-40 disabled:cursor-not-allowed " +
                             (mode === opt.key
                               ? "border-[#F88535] bg-[#F88535]/10"
                               : "border-black/10 hover:border-black/30")
@@ -1037,6 +1077,12 @@ export default function BookConsultation() {
                             choose one yourself.
                           </p>
                         )}
+                        {slotLocked ? (
+                          <p className="text-[15px] text-black/75 max-w-xs">
+                            This appointment time is with this doctor. To see a
+                            different doctor, go back and choose another time.
+                          </p>
+                        ) : (
                         <div className="flex items-center gap-4">
                           {selectedDoctor && (
                             <button
@@ -1057,6 +1103,7 @@ export default function BookConsultation() {
                                                             : "Choose a doctor"}
                           </button>
                         </div>
+                        )}
                       </div>
                     )}
 

@@ -81,4 +81,4 @@ jobs:
         run: >
           npx --yes firebase-tools@15.31.0 emulators:exec
           --only firestore --project demo-telemedicine
-          "cd functions && node --test test/emulator/*.test.js"
+          "cd functions && node --test --test-concurrency=1 test/emulator/*.test.js"

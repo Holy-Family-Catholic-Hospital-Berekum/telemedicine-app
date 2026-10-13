@@ -42,6 +42,7 @@ import hospitalLogo from "../../src/assets/logo.webp";
 import { callableMessage, HOSPITAL_TIME_ZONE } from "../../src/constants";
 import { getRoomDevice } from "../../src/roomDevice";
 import { usePageMeta } from "../../src/seo.js";
+import { useStaffAppManifest } from "../../src/staffApp.js";
 
 const TABS = [
   { id: "schedule", label: "Schedule", icon: CalendarDays },
@@ -58,6 +59,8 @@ function isSameDay(a, b) {
 }
 
 export default function DoctorDashboard() {
+  // Installing from a staff page gives the staff app (opens on staff sign-in).
+  useStaffAppManifest();
   usePageMeta({ title: "Doctor portal", noindex: true });
   // ---- All hooks live here, unconditionally, before any early return
   // below — the auth guard only affects what gets rendered, never which

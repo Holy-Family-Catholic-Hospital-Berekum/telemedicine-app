@@ -215,3 +215,54 @@ test("no refund for a consultation that took place", async () => {
     /were in the call/,
   );
 });
+
+/* --------------------------- booking an open slot --------------------------- */
+
+const { createBookingDraft } = require("../../payments");
+const { CURRENT_BOOKING_CONSENT } = require("../../lib/consentText");
+
+async function seedOpenSlot() {
+  await db.doc(`users/${PATIENT}`).set({ status: "active", name: "Test Patient", email: "patient@example.test" });
+  await db.doc(`adminUsers/${DOCTOR}`).set({ role: "doctor", status: "active", name: "Dr Test", email: "doctor@example.test" });
+  await db.doc("adminUsers/otherDoctor").set({ role: "doctor", status: "active", name: "Dr Other", email: "other@example.test" });
+  for (const uid of [DOCTOR, "otherDoctor"]) {
+    await db.doc(`doctorProfiles/${uid}`).set({ name: "Dr", isListed: true, isAvailable: true, availableFor: ["OPD", "SURGICAL"] });
+  }
+  await db.doc("availableSlots/slot1").set({
+    doctorUid: DOCTOR,
+    doctorName: "Dr Test",
+    type: "OPD",
+    mode: "online",
+    status: "open",
+    startAt: ts(Date.now() + 24 * 60 * MIN),
+  });
+}
+
+const slotBooking = (extra) => ({
+  slotId: "slot1",
+  type: "OPD",
+  mode: "online",
+  ageYears: 34,
+  sex: "female",
+  town: "Berekum",
+  area: "Kato",
+  phone: "0241234567",
+  consentVersion: CURRENT_BOOKING_CONSENT,
+  ...extra,
+});
+
+test("an open slot can't be moved to another doctor", async () => {
+  await seedOpenSlot();
+  await assert.rejects(
+    createBookingDraft.run(asPatient(slotBooking({ doctorUid: "otherDoctor" }))),
+    /set doctor/,
+  );
+  await assert.rejects(createBookingDraft.run(asPatient(slotBooking({ type: "SURGICAL" }))), /changed/);
+});
+
+test("an open slot books its own doctor", async () => {
+  await seedOpenSlot();
+  const res = await createBookingDraft.run(asPatient(slotBooking({ doctorUid: DOCTOR })));
+  const b = (await db.doc(`bookings/${res.bookingId}`).get()).data();
+  assert.equal(b.doctorUid ?? b.requestedDoctorUid, DOCTOR);
+});

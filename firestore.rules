@@ -223,6 +223,16 @@ service cloud.firestore {
       allow read: if isAdmin();
       allow write: if false; // requestRecordingAccess, decideRecordingAccess, getRecordingUrl
     }
+    // Metrics report downloads, approved by a second admin (reports.js).
+    // The report itself (reportData) is never readable from a browser, so
+    // the approval can't be bypassed.
+    match /reportRequests/{requestId} {
+      allow read: if isAdmin();
+      allow write: if false; // exportMetrics, cancel/decideReportRequest, downloadReport
+    }
+    match /reportData/{requestId} {
+      allow read, write: if false;
+    }
     match /auditLog/{entryId} {
       allow read: if isAdmin();
       allow write: if false;

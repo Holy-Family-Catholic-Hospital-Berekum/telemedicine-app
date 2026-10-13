@@ -1,5 +1,6 @@
 import react from "@vitejs/plugin-react";
 import process from "node:process";
+import { createHash } from "node:crypto";
 import { defineConfig, loadEnv } from "vite";
 import tailwindcss from "@tailwindcss/vite";
 import { VitePWA } from "vite-plugin-pwa";
@@ -75,6 +76,7 @@ const pwa = VitePWA({
   manifest: {
     // short_name is the label under the home-screen icon (about 12
     // characters fit); name is used on the install prompt and splash.
+    id: "/dashboard",
     name: "Holy Family Telemedicine",
     short_name: "Holy Family",
     description: "Book and join video consultations with Holy Family Catholic Hospital, Berekum.",
@@ -127,12 +129,59 @@ const pwa = VitePWA({
   },
 });
 
+// A second installable app for staff ("Holy Family Staff"): it opens on
+// the staff sign-in page instead of the patient dashboard. Its manifest is
+// written at build time under a name derived from the staff path (not
+// guessable without it), and only the staff pages point to it
+// (src/staffApp.js), so the patient app and the public pages are unchanged.
+// A different manifest `id` lets both apps be installed on one computer.
+function staffAppManifest(rawPath) {
+  const trimmed = (rawPath || "").trim();
+  const staffPath = trimmed ? (trimmed.startsWith("/") ? trimmed : `/${trimmed}`) : null;
+  const file = staffPath
+    ? `staff-${createHash("sha256").update(staffPath).digest("hex").slice(0, 16)}.webmanifest`
+    : null;
+  return {
+    name: "staff-app-manifest",
+    config: () => ({
+      define: { "import.meta.env.VITE_STAFF_MANIFEST": JSON.stringify(file ? `/${file}` : "") },
+    }),
+    generateBundle() {
+      if (!file) return;
+      this.emitFile({
+        type: "asset",
+        fileName: file,
+        source: JSON.stringify(
+          {
+            id: "/holy-family-staff",
+            name: "Holy Family Staff",
+            short_name: "HF Staff",
+            description: "Sign-in for Holy Family telemedicine staff (administrators and doctors).",
+            start_url: staffPath,
+            scope: "/",
+            display: "standalone",
+            background_color: "#ffffff",
+            theme_color: "#12242C",
+            icons: [
+              { src: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
+              { src: "/icons/icon-512.png", sizes: "512x512", type: "image/png" },
+              { src: "/icons/maskable-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
+            ],
+          },
+          null,
+          2,
+        ),
+      });
+    },
+  };
+}
+
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "VITE_");
   const siteUrl = (env.VITE_SITE_URL || DEFAULT_SITE_URL).replace(/\/+$/, "");
   return {
-    plugins: [react(), tailwindcss(), seoFiles(siteUrl), pwa],
+    plugins: [react(), tailwindcss(), seoFiles(siteUrl), staffAppManifest(env.VITE_STAFF_LOGIN_PATH), pwa],
     // Which release a browser error came from (src/errorReporting.js):
     // the commit Vercel builds, or "local".
     define: {

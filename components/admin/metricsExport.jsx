@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { httpsCallable } from "firebase/functions";
-import { functions } from "../../src/firebase";
+import { collection, query, where } from "firebase/firestore";
+import { db, functions } from "../../src/firebase";
 import { callableMessage, formatDateTime } from "../../src/constants";
+import { useAuth } from "../../src/context/authContext.jsx";
+import { useFirestoreCollection } from "./hooks/useFirestoreCollection.js";
 import DateSelect from "../shared/dateSelect.jsx";
 import "./metricsExport.css";
 
@@ -14,6 +17,12 @@ import "./metricsExport.css";
 //   - CSV, which Excel opens (UTF-8 with BOM so "GHS"/names show correctly)
 //   - PDF, by printing a report-only layout (the browser's "Save as PDF")
 // Nothing is stored on the device. The report has no patient details.
+//
+// Two-admin rule (functions/reports.js): the admin who prepares a report
+// can view it here, but the CSV / PDF unlock only after a DIFFERENT admin
+// approves ("Waiting for your approval" below), within 24 hours, and the
+// file data is fetched from the server once. The admin can cancel the
+// report at any time.
 
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",
@@ -193,13 +202,43 @@ export default function MetricsExport() {
   const [quarter, setQuarter] = useState(Math.floor(now.getUTCMonth() / 3) + 1);
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
+  const { user } = useAuth();
+  // The report as prepared (for viewing), and the copy released after
+  // approval (for the files).
   const [report, setReport] = useState(null);
+  const [released, setReleased] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [acting, setActing] = useState(null); // request id being acted on
   const [error, setError] = useState(null);
   const [printing, setPrinting] = useState(false);
 
+  // Open report requests (pending or approved): this admin's own, and
+  // other admins' waiting for a decision.
+  const openQuery = useMemo(
+    () => query(collection(db, "reportRequests"), where("status", "in", ["pending", "approved"])),
+    [],
+  );
+  const { data: open } = useFirestoreCollection(openQuery);
+  const [openedAt] = useState(() => Date.now());
+  const alive = (r) => {
+    const until = r.status === "approved" ? r.usableUntil : r.expiresAt;
+    return !until || new Date(until).getTime() > openedAt;
+  };
+  const mine = open
+    .filter((r) => r.requestedByUid === user?.uid && alive(r))
+    .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))[0];
+  const toApprove = open
+    .filter((r) => r.status === "pending" && r.requestedByUid !== user?.uid && alive(r))
+    .sort((a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0));
+
+  // What's on screen: the released copy, or the one just prepared if it's
+  // still this admin's open request.
+  const viewing = released || (report && (!mine || mine.id === report.requestId) ? report : null);
+
   const period = periodOf(kind, { year, month, quarter, from, to });
-  const stale = report && period && (report.from !== period.from || report.to !== period.to);
+  const stale = viewing && period && (viewing.from !== period.from || viewing.to !== period.to);
+
+  const call = (name, data) => httpsCallable(functions, name)(data).then((r) => r.data);
 
   const prepare = async () => {
     if (!period) return;
@@ -210,8 +249,8 @@ export default function MetricsExport() {
     setBusy(true);
     setError(null);
     try {
-      const res = await httpsCallable(functions, "exportMetrics")(period);
-      setReport(res.data);
+      setReport(await call("exportMetrics", period));
+      setReleased(null);
     } catch (err) {
       setError(callableMessage(err, "The report couldn't be prepared. Please try again."));
     } finally {
@@ -219,11 +258,58 @@ export default function MetricsExport() {
     }
   };
 
+  const cancel = async (requestId) => {
+    setActing(requestId);
+    setError(null);
+    try {
+      await call("cancelReportRequest", { requestId });
+      setReport(null);
+      setReleased(null);
+    } catch (err) {
+      setError(callableMessage(err, "The report couldn't be cancelled. Please try again."));
+    } finally {
+      setActing(null);
+    }
+  };
+
+  const decide = async (requestId, decision) => {
+    setActing(requestId);
+    setError(null);
+    try {
+      await call("decideReportRequest", { requestId, decision });
+    } catch (err) {
+      setError(callableMessage(err, "That didn't go through. Please try again."));
+    } finally {
+      setActing(null);
+    }
+  };
+
+  // After approval: fetch the report once, then make the file. Both formats
+  // come from that one copy while this page stays open.
+  const getFile = async (format) => {
+    let copy = released;
+    if (!copy) {
+      setActing(mine.id);
+      setError(null);
+      try {
+        copy = await call("downloadReport", { requestId: mine.id });
+        setReleased(copy);
+      } catch (err) {
+        setError(callableMessage(err, "The report couldn't be downloaded. Please try again."));
+        return;
+      } finally {
+        setActing(null);
+      }
+    }
+    if (format === "csv") download(fileName(copy, "csv"), toCsv(copy));
+    else setPrinting(true);
+  };
+
   // Print only the report; the saved PDF takes its name from the title.
   useEffect(() => {
-    if (!printing) return undefined;
+    if (!printing || !released) return undefined;
     const title = document.title;
-    document.title = fileName(report, "pdf").replace(/\.pdf$/, "");
+    document.title = fileName(released, "pdf").replace(/\.pdf$/, "");
     document.body.classList.add("mx-printing");
     const done = () => setPrinting(false);
     window.addEventListener("afterprint", done);
@@ -234,7 +320,7 @@ export default function MetricsExport() {
       document.body.classList.remove("mx-printing");
       document.title = title;
     };
-  }, [printing, report]);
+  }, [printing, released]);
 
   const select = (value, onChange, options, label) => (
     <select className="admin-date-part" value={value} onChange={(e) => onChange(Number(e.target.value))} aria-label={label}>
@@ -302,36 +388,91 @@ export default function MetricsExport() {
         {error && <div className="admin-banner warn"><p>{error}</p></div>}
       </div>
 
-      {report && (
+      {toApprove.length > 0 && (
+        <div className="mx-approvals">
+          <h3>Waiting for your approval</h3>
+          <p className="admin-cell-sub">
+            Another admin prepared these reports. They can download them only after you approve.
+          </p>
+          <ul>
+            {toApprove.map((r) => (
+              <li key={r.id}>
+                <span>
+                  <strong>{r.label}</strong> · prepared by {r.requestedByName || "another admin"}
+                  {r.createdAt ? ` · ${formatDateTime(r.createdAt)}` : ""}
+                </span>
+                <span className="mx-actions">
+                  <button type="button" className="btn btn-primary" disabled={acting === r.id} onClick={() => decide(r.id, "approve")}>
+                    Approve download
+                  </button>
+                  <button type="button" className="btn btn-outline" disabled={acting === r.id} onClick={() => decide(r.id, "reject")}>
+                    Reject
+                  </button>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {(mine || released) && (
         <div className="mx-result">
           <div className="mx-result-head">
             <div>
-              <strong>{report.label}</strong>
+              <strong>{(released || mine).label}</strong>
               <span className="admin-cell-sub">
-                {" "}· prepared {formatDateTime(new Date(report.generatedAt))}
+                {released
+                  ? " · downloaded: both files can be saved while this page stays open"
+                  : mine.status === "approved"
+                    ? ` · approved by ${mine.decidedByName || "another admin"}: download within 24 hours (once)`
+                    : " · waiting for another admin to approve the download"}
                 {stale ? " · you've changed the period: prepare it again" : ""}
               </span>
             </div>
             <div className="mx-actions">
-              <button type="button" className="btn btn-outline" onClick={() => download(fileName(report, "csv"), toCsv(report))}>
+              <button
+                type="button"
+                className="btn btn-outline"
+                disabled={!released && (mine?.status !== "approved" || acting === mine?.id)}
+                onClick={() => getFile("csv")}
+              >
                 Download for Excel (CSV)
               </button>
-              <button type="button" className="btn btn-outline" onClick={() => setPrinting(true)}>
+              <button
+                type="button"
+                className="btn btn-outline"
+                disabled={!released && (mine?.status !== "approved" || acting === mine?.id)}
+                onClick={() => getFile("pdf")}
+              >
                 Save as PDF
               </button>
+              {mine && !released && (
+                <button type="button" className="btn btn-outline danger" disabled={acting === mine.id} onClick={() => cancel(mine.id)}>
+                  Cancel report
+                </button>
+              )}
+              {released && (
+                <button type="button" className="btn btn-outline" onClick={() => setReleased(null)}>
+                  Close
+                </button>
+              )}
             </div>
           </div>
-          <div className="mx-preview">
-            {report.tables.map((t) => (
-              <div key={t.title} className="mx-block">
-                <h3>{t.title}</h3>
-                <div className="mx-scroll">
-                  <ReportTable table={t} />
+          {viewing ? (
+            <div className="mx-preview">
+              {viewing.tables.map((t) => (
+                <div key={t.title} className="mx-block">
+                  <h3>{t.title}</h3>
+                  <div className="mx-scroll">
+                    <ReportTable table={t} />
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
-          {printing && <PrintableReport report={report} />}
+              ))}
+            </div>
+          ) : (
+            <p className="admin-cell-sub">Prepare the report again to view it on this page.</p>
+          )}
+          {printing && released && <PrintableReport report={released} />}
         </div>
       )}
     </section>

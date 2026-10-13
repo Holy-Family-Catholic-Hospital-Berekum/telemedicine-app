@@ -82,6 +82,8 @@ beforeEach(async () => {
     await put("auditLog/a1", { code: "x" });
     await put("deletionRequests/r1", { status: "pending" });
     await put("accessRequests/q1", { status: "pending", purpose: "play" });
+    await put("reportRequests/r1", { status: "pending", label: "October 2026" });
+    await put("reportData/r1", { report: "{}" });
     await put("bookingLog/b1", { type: "OPD", mode: "online" });
     await put("rateLimits/x_pat1", { count: 1 });
     await put("mail/m1", { to: "x@y.z" });
@@ -200,6 +202,14 @@ describe("server-owned collections", () => {
     await assertFails(get(patient("pat1"), "bookingLog/b1"));
     await assertFails(setDoc(doc(admin().firestore(), "bookingLog/b2"), { type: "OPD" }));
   });
+  test("report download requests: admins read; the report data nobody", async () => {
+    await assertSucceeds(get(admin(), "reportRequests/r1"));
+    await assertFails(get(doctor(), "reportRequests/r1"));
+    await assertFails(get(patient("pat1"), "reportRequests/r1"));
+    await assertFails(get(admin(), "reportData/r1"));
+    await assertFails(setDoc(doc(admin().firestore(), "reportRequests/r2"), { status: "approved" }));
+  });
+
   test("recording access requests: admins read only; nobody writes", async () => {
     await assertSucceeds(get(admin(), "accessRequests/q1"));
     await assertFails(get(doctor(), "accessRequests/q1"));

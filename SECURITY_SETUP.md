@@ -20,6 +20,7 @@ script prints the project before doing anything. That Google account must itself
 |---|---|---|
 | Staff authenticator app | Admins and doctors sign in with password + authenticator code (Google/Microsoft Authenticator). Only the authenticator linked with a one-time **setup code** works. Fresh sign-in every 12 h. | Every function (`requireRole`), Firestore and Storage rules |
 | Idle sign-out | Staff after 30 min, patients after 60 min. Never during a video call. Staff also on the server: no activity for 35 min = refused. | Website; `requireRole`, both rules files |
+| Two-admin report downloads | An admin can prepare and view a metrics report, but the Excel/PDF file unlocks only after a *different* admin approves (Metrics tab, "Waiting for your approval"), for 24 hours, once. The preparer can cancel any time. All audited (`metrics.report_*`). | functions/reports.js |
 | Two-admin recording access and deletion | Playing, downloading or deleting a recording: one admin requests, a *different* admin approves. Requests expire after 72 h. **Needs at least two admins.** | `recordings.js` |
 | Password policy | 10+ characters, upper and lower case, number, symbol. | Firebase Authentication |
 | Sign-in reCAPTCHA (audit) | Every email/password sign-in and sign-up is scored by reCAPTCHA; nothing is blocked (see "Still to do"). | Firebase Authentication |

@@ -191,6 +191,13 @@ Emails and reminders are only deployed when `functions/lib/mailConfig.js`
 has a real sender address (it does now), and every function secret must
 exist or the CLI refuses to deploy anything.
 
+### Staff app on a desktop
+
+Open the staff sign-in page in Chrome or Edge and use **Install** (the icon
+in the address bar, or menu → *Install Holy Family Staff*). The installed
+"Holy Family Staff" app opens straight on the staff sign-in page. Patients'
+installed app ("Holy Family") is separate and opens the patient dashboard.
+
 ## 5. Where things are
 
 - **All routes:** `src/App.jsx`. **Auth state:** `src/context/authContext.jsx`

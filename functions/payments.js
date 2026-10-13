@@ -625,7 +625,18 @@ exports.createBookingDraft = onCall({ secrets: [PAYSTACK_SECRET_KEY] }, async (r
       if ((slot.startAt?.toMillis?.() ?? 0) < now) {
         throw new HttpsError("failed-precondition", "That slot has already passed.");
       }
-      // The slot decides the doctor, type and mode.
+      // The slot decides the doctor, type and mode: a patient booking an
+      // open time can't move it to another doctor or type (the booking
+      // page locks them; anything else sent here is refused, not ignored).
+      if (doctorUid && doctorUid !== slot.doctorUid) {
+        throw new HttpsError(
+          "failed-precondition",
+          "This appointment time is with a set doctor. To see a different doctor, choose another time.",
+        );
+      }
+      if (type !== slot.type) {
+        throw new HttpsError("failed-precondition", "That slot has changed. Please reload the page.");
+      }
       doctorUid = slot.doctorUid;
       type = slot.type;
       if (slot.mode !== mode) {

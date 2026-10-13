@@ -1,9 +1,23 @@
-// Admin metrics export (Metrics & reports tab → "Export a report").
+// Admin metrics reports (Metrics & reports tab → "Export a report").
 //
-// exportMetrics({ from: "YYYY-MM-DD", to: "YYYY-MM-DD", label? }) returns
-// the report for those days (both included, hospital time = UTC) as tables
-// (lib/metrics.js buildReport); the admin page saves them as CSV or prints
-// them as a PDF. Admins only; each export is audited (metrics.exported).
+// Two-admin rule for downloads (hospital decision, 13 Oct 2026): one admin
+// prepares and views a report; a DIFFERENT admin must approve before the
+// file can be downloaded.
+//
+//   exportMetrics({ from, to, label? })   prepares the report for those days
+//       (both included, hospital time = UTC; lib/metrics.js buildReport),
+//       returns it for viewing, and opens reportRequests/{id} (pending,
+//       REQUEST_HOURS). The report itself is kept in reportData/{id}, which no
+//       browser can read, so approval can't be bypassed by reading the
+//       database. Preparing a new report replaces the admin's open one.
+//   cancelReportRequest({ requestId })    the admin who prepared it cancels
+//   decideReportRequest({ requestId, decision: "approve" | "reject" })
+//       another admin decides
+//   downloadReport({ requestId })         the admin who prepared it, once
+//       approved, within APPROVAL_HOURS: returns the stored report (the page
+//       makes the CSV / PDF), once; the stored data is then deleted.
+// Every step is audited (metrics.report_*). Viewing before approval can't
+// stop someone copying their own screen; the approval governs the file.
 //
 // Cost: reads only the period's payments, refunds, booking log, closed
 // consultations and (last 30 days only) the email outbox, with just the
@@ -22,10 +36,17 @@ const {
   audit,
   requestMeta,
   str,
+  docId,
+  serverTime,
 } = require("./lib/core");
+const { task } = require("./lib/task");
 const { buildReport, DAY_MS } = require("./lib/metrics");
 
 const MAX_DAYS = 366;
+const REQUEST_HOURS = 72;
+const APPROVAL_HOURS = 24;
+const requestRef = (id) => db.collection("reportRequests").doc(id);
+const dataRef = (id) => db.collection("reportData").doc(id);
 const EVENT_CODES = [
   "consultation.doctor_unavailable",
   "consultation.call_incomplete",
@@ -110,21 +131,181 @@ exports.exportMetrics = onCall(async (request) => {
     mail: mail ? rows(mail) : null,
   });
 
-  await audit(null, {
-    actorId: caller.uid,
-    actorRole: "admin",
-    action: `Exported the metrics report (${label})`,
-    code: "metrics.exported",
-    category: "admin",
-    details: { from: d.from, to: d.to },
-    meta: requestMeta(request),
-  });
+  const generatedAt = new Date().toISOString();
+  const full = { label, from: d.from, to: d.to, generatedAt, ...report };
 
-  return {
+  // A new report replaces this admin's open one (pending or approved).
+  const mine = await db
+    .collection("reportRequests")
+    .where("requestedByUid", "==", caller.uid)
+    .where("status", "in", ["pending", "approved"])
+    .get();
+  const ref = db.collection("reportRequests").doc();
+  const batch = db.batch();
+  for (const old of mine.docs) {
+    batch.update(old.ref, { status: "replaced", closedAt: serverTime() });
+    batch.delete(dataRef(old.id));
+  }
+  batch.set(ref, {
+    status: "pending",
     label,
     from: d.from,
     to: d.to,
-    generatedAt: new Date().toISOString(),
-    ...report,
-  };
+    requestedByUid: caller.uid,
+    requestedByName: caller.profile.name || null,
+    createdAt: serverTime(),
+    expiresAt: Timestamp.fromMillis(Date.now() + REQUEST_HOURS * 3600 * 1000),
+  });
+  // Firestore can't store nested arrays: the tables are kept as JSON.
+  batch.set(dataRef(ref.id), { report: JSON.stringify(full), createdAt: serverTime() });
+  audit(batch, {
+    actorId: caller.uid,
+    actorRole: "admin",
+    action: `Prepared the metrics report (${label}); download needs a second admin`,
+    code: "metrics.report_prepared",
+    category: "admin",
+    targetType: "report",
+    targetId: ref.id,
+    details: { from: d.from, to: d.to },
+    meta: requestMeta(request),
+  });
+  await batch.commit();
+
+  return { requestId: ref.id, ...full };
+});
+
+/** The admin who prepared a report cancels it. data: { requestId } */
+exports.cancelReportRequest = onCall(async (request) => {
+  const caller = await requireRole(request, ["admin"]);
+  const requestId = docId(request.data?.requestId, "Report");
+  await rateLimit(caller.uid, "cancelReportRequest", { max: 60, windowSeconds: 3600 });
+  await db.runTransaction(async (tx) => {
+    const snap = await tx.get(requestRef(requestId));
+    if (!snap.exists) throw new HttpsError("not-found", "Report not found.");
+    const r = snap.data();
+    if (r.requestedByUid !== caller.uid) {
+      throw new HttpsError("permission-denied", "Only the admin who prepared this report can cancel it.");
+    }
+    if (!["pending", "approved"].includes(r.status)) {
+      throw new HttpsError("failed-precondition", "This report is already closed.");
+    }
+    tx.update(requestRef(requestId), { status: "cancelled", closedAt: serverTime() });
+    tx.delete(dataRef(requestId));
+    audit(tx, {
+      actorId: caller.uid,
+      actorRole: "admin",
+      action: `Cancelled the metrics report (${r.label})`,
+      code: "metrics.report_cancelled",
+      category: "admin",
+      targetType: "report",
+      targetId: requestId,
+      meta: requestMeta(request),
+    });
+  });
+  return { status: "cancelled" };
+});
+
+/** Another admin approves or rejects the download. data: { requestId, decision } */
+exports.decideReportRequest = onCall(async (request) => {
+  const caller = await requireRole(request, ["admin"]);
+  const d = request.data || {};
+  const requestId = docId(d.requestId, "Report");
+  const approve = d.decision === "approve";
+  await rateLimit(caller.uid, "decideReportRequest", { max: 60, windowSeconds: 3600 });
+  const status = await db.runTransaction(async (tx) => {
+    const snap = await tx.get(requestRef(requestId));
+    if (!snap.exists) throw new HttpsError("not-found", "Report not found.");
+    const r = snap.data();
+    if (r.status !== "pending") throw new HttpsError("failed-precondition", "This report has already been handled.");
+    if (r.requestedByUid === caller.uid) {
+      throw new HttpsError("permission-denied", "Another admin must approve or reject a report you prepared.");
+    }
+    if ((r.expiresAt?.toMillis?.() ?? 0) < Date.now()) {
+      tx.update(requestRef(requestId), { status: "expired", closedAt: serverTime() });
+      tx.delete(dataRef(requestId));
+      return "expired";
+    }
+    tx.update(requestRef(requestId), {
+      status: approve ? "approved" : "rejected",
+      decidedByUid: caller.uid,
+      decidedByName: caller.profile.name || null,
+      decidedAt: serverTime(),
+      ...(approve
+        ? { usableUntil: Timestamp.fromMillis(Date.now() + APPROVAL_HOURS * 3600 * 1000) }
+        : { closedAt: serverTime() }),
+    });
+    if (!approve) tx.delete(dataRef(requestId));
+    audit(tx, {
+      actorId: caller.uid,
+      actorRole: "admin",
+      action: approve
+        ? `Approved downloading the metrics report (${r.label})`
+        : `Rejected downloading the metrics report (${r.label})`,
+      code: approve ? "metrics.report_approved" : "metrics.report_rejected",
+      category: "admin",
+      targetType: "report",
+      targetId: requestId,
+      details: { requestedByUid: r.requestedByUid },
+      meta: requestMeta(request),
+    });
+    return approve ? "approved" : "rejected";
+  });
+  if (status === "expired") {
+    throw new HttpsError("failed-precondition", "This request expired. The admin can prepare the report again.");
+  }
+  return { status };
+});
+
+/** The admin who prepared an approved report fetches it, once. data: { requestId } */
+exports.downloadReport = onCall(async (request) => {
+  const caller = await requireRole(request, ["admin"]);
+  const requestId = docId(request.data?.requestId, "Report");
+  await rateLimit(caller.uid, "downloadReport", { max: 30, windowSeconds: 3600 });
+  const report = await db.runTransaction(async (tx) => {
+    const [snap, data] = await Promise.all([tx.get(requestRef(requestId)), tx.get(dataRef(requestId))]);
+    if (!snap.exists) throw new HttpsError("not-found", "Report not found.");
+    const r = snap.data();
+    if (r.requestedByUid !== caller.uid) {
+      throw new HttpsError("permission-denied", "Only the admin who prepared this report can download it.");
+    }
+    if (r.status !== "approved") {
+      throw new HttpsError(
+        "failed-precondition",
+        r.status === "pending" ? "Another admin hasn't approved this download yet." : "This report is closed.",
+      );
+    }
+    if ((r.usableUntil?.toMillis?.() ?? 0) < Date.now() || !data.exists) {
+      tx.update(requestRef(requestId), { status: "expired", closedAt: serverTime() });
+      tx.delete(dataRef(requestId));
+      return null;
+    }
+    tx.update(requestRef(requestId), { status: "downloaded", downloadedAt: serverTime(), closedAt: serverTime() });
+    tx.delete(dataRef(requestId));
+    audit(tx, {
+      actorId: caller.uid,
+      actorRole: "admin",
+      action: `Downloaded the metrics report (${r.label})`,
+      code: "metrics.report_downloaded",
+      category: "admin",
+      targetType: "report",
+      targetId: requestId,
+      meta: requestMeta(request),
+    });
+    return JSON.parse(data.data().report);
+  });
+  if (!report) throw new HttpsError("failed-precondition", "The approval has expired. Prepare the report again.");
+  return report;
+});
+
+// Daily: report data nobody downloaded (expired or forgotten) is deleted
+// after REQUEST_HOURS + APPROVAL_HOURS; the request records stay as history.
+exports.cleanupReportData = task("cleanupReportData", { schedule: "every 24 hours", timeoutSeconds: 120 }, async () => {
+  const cutoff = Timestamp.fromMillis(Date.now() - (REQUEST_HOURS + APPROVAL_HOURS) * 3600 * 1000);
+  const old = await db.collection("reportData").where("createdAt", "<", cutoff).limit(200).get();
+  const batch = db.batch();
+  for (const doc of old.docs) {
+    batch.delete(doc.ref);
+    batch.set(requestRef(doc.id), { status: "expired", closedAt: serverTime() }, { merge: true });
+  }
+  if (!old.empty) await batch.commit();
 });

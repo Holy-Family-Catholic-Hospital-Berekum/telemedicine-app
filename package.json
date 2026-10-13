@@ -10,7 +10,7 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "prepare": "husky",
-    "test:functions": "firebase emulators:exec --only firestore --project demo-telemedicine \"cd functions && node --test test/unit/*.test.js test/emulator/*.test.js\"",
+    "test:functions": "firebase emulators:exec --only firestore --project demo-telemedicine \"cd functions && node --test --test-concurrency=1 test/unit/*.test.js test/emulator/*.test.js\"",
     "test:rules": "firebase emulators:exec --only firestore,storage --project demo-telemedicine \"node --test tests/rules/rules.test.mjs\"",
     "deploy:functions": "node functions/scripts/deployFunctions.js",
     "test:e2e": "node e2e/run.mjs"
