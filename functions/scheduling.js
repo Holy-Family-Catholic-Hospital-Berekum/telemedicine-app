@@ -37,7 +37,15 @@ const {
 const { queueEmail } = require("./lib/mailQueue");
 const { loadNoShowPolicy } = require("./siteSettings");
 const { PAYSTACK_SECRET_KEY } = require("./lib/paystack");
-const { markNoShow, rescheduleCountsAsNoShow, rescheduleNeedsLateFee } = require("./lib/consultationLifecycle");
+const {
+  markNoShow,
+  rescheduleCountsAsNoShow,
+  rescheduleNeedsLateFee,
+  freeChangeUntil,
+} = require("./lib/consultationLifecycle");
+
+/** Short notice (under 24 h): the free-change deadline for the email, else null. */
+const freeUntilFor = (when) => freeChangeUntil({ scheduledTime: when, scheduleSetAt: new Date() });
 
 // A doctor can't have two consultations closer together than this.
 const MIN_GAP_MINUTES = 30;
@@ -194,6 +202,9 @@ exports.scheduleConsultation = onCall(async (request) => {
       doctorName: doctor.name,
       doctorDepartment: doctor.department,
       scheduledTime,
+      // When the time was given: a short-notice time can be changed free
+      // for its first hour (lib/consultationLifecycle.js freeChangeUntil).
+      scheduleSetAt: Timestamp.now(),
       updatedAt: serverTime(),
     });
     // Tell the patient and the doctor by email (sent by functions/email.js).
@@ -209,6 +220,7 @@ exports.scheduleConsultation = onCall(async (request) => {
         scheduledAt: when.getTime(),
         consultationId: id,
         noShow,
+        freeChangeUntil: freeUntilFor(when),
         payAtHospital: booking.payAtHospital === true,
         amountDue: booking.payAtHospital ? booking.amount : null,
       },
@@ -580,6 +592,7 @@ exports.rescheduleConsultation = onCall(async (request) => {
       doctorUid,
       doctorName: doctor.name,
       doctorDepartment: doctor.department,
+      scheduleSetAt: Timestamp.now(),
       callStartedAt: null,
       patientJoinedAt: FieldValue.delete(),
       doctorJoinedAt: FieldValue.delete(),
@@ -601,6 +614,7 @@ exports.rescheduleConsultation = onCall(async (request) => {
         scheduledAt: when.getTime(),
         consultationId: booking.consultationId,
         noShow,
+        freeChangeUntil: freeUntilFor(when),
         payAtHospital: booking.payAtHospital === true,
         amountDue: booking.payAtHospital ? booking.amount : null,
         // The new time after the doctor couldn't make it: says sorry.

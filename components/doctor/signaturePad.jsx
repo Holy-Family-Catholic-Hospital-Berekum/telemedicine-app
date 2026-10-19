@@ -58,10 +58,40 @@ const SignaturePad = forwardRef(function SignaturePad({ onChange }, ref) {
     onChange?.(false);
   }
 
+  // The drawing cropped to the ink (plus a small margin), so on the
+  // prescription it sits on the signature line instead of floating in the
+  // empty part of the box.
+  function croppedPng() {
+    const src = canvasRef.current;
+    const { data } = src.getContext("2d").getImageData(0, 0, WIDTH, HEIGHT);
+    let top = HEIGHT, left = WIDTH, right = -1, bottom = -1;
+    for (let y = 0; y < HEIGHT; y++) {
+      for (let x = 0; x < WIDTH; x++) {
+        if (data[(y * WIDTH + x) * 4 + 3] > 0) {
+          if (x < left) left = x;
+          if (x > right) right = x;
+          if (y < top) top = y;
+          if (y > bottom) bottom = y;
+        }
+      }
+    }
+    if (right < 0) return null;
+    const pad = 6;
+    left = Math.max(0, left - pad);
+    top = Math.max(0, top - pad);
+    const w = Math.min(WIDTH, right + pad + 1) - left;
+    const h = Math.min(HEIGHT, bottom + pad + 1) - top;
+    const out = document.createElement("canvas");
+    out.width = w;
+    out.height = h;
+    out.getContext("2d").drawImage(src, left, top, w, h, 0, 0, w, h);
+    return out.toDataURL("image/png");
+  }
+
   useImperativeHandle(ref, () => ({
     clear,
     // PNG data: URL, or null if nothing was drawn.
-    toPng: () => (hasInk ? canvasRef.current.toDataURL("image/png") : null),
+    toPng: () => (hasInk ? croppedPng() : null),
   }));
 
   return (

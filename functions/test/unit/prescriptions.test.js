@@ -148,3 +148,14 @@ test("admin reschedule: a missed call or one that couldn't be completed, not one
   assert.equal(adminCanReschedule({ metAt: new Date(), doctorUnavailable: { kind: "call_incomplete" } }), true);
   assert.equal(adminCanReschedule({ doctorUnavailable: { kind: "doctor_absent" } }), true);
 });
+
+test("signature is cropped to its ink so it sits on the line", () => {
+  const { PNG } = require("pngjs");
+  const { cropToInk } = require("../../lib/prescriptionPdf");
+  const png = new PNG({ width: 600, height: 200 });
+  for (let x = 200; x < 300; x++) png.data[(100 * 600 + x) * 4 + 3] = 255; // one stroke
+  const out = PNG.sync.read(cropToInk(PNG.sync.write(png).toString("base64")));
+  assert.ok(out.width <= 110 && out.height <= 10, `${out.width}x${out.height}`);
+  // Something that isn't a PNG is passed through untouched.
+  assert.equal(cropToInk(Buffer.from("x").toString("base64")).toString(), "x");
+});

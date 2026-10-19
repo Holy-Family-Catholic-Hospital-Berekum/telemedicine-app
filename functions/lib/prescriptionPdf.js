@@ -14,6 +14,7 @@ const fs = require("fs");
 const path = require("path");
 const PDFDocument = require("pdfkit");
 const QRCode = require("qrcode");
+const { PNG } = require("pngjs");
 const { SITE_URL } = require("./mailConfig");
 const { VALID_DAYS } = require("./prescriptions");
 
@@ -58,6 +59,42 @@ function pdfSafe(text) {
       return base && [...base].every((c) => c.codePointAt(0) >= 0x20 && c.codePointAt(0) <= 0x7e) ? base : "?";
     })
     .join("");
+}
+
+/**
+ * The signature cropped to its ink (base64 PNG in, Buffer out), so it sits
+ * on the signature line whatever empty space was drawn around it.
+ * Signatures saved before the pad cropped them are fixed here too. Falls
+ * back to the original if it can't be read.
+ */
+function cropToInk(base64) {
+  const original = Buffer.from(base64, "base64");
+  try {
+    const png = PNG.sync.read(original);
+    const { width, height, data } = png;
+    let top = height, left = width, right = -1, bottom = -1;
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        if (data[(y * width + x) * 4 + 3] > 16) {
+          if (x < left) left = x;
+          if (x > right) right = x;
+          if (y < top) top = y;
+          if (y > bottom) bottom = y;
+        }
+      }
+    }
+    if (right < 0) return original;
+    const pad = 4;
+    left = Math.max(0, left - pad);
+    top = Math.max(0, top - pad);
+    const w = Math.min(width, right + pad + 1) - left;
+    const h = Math.min(height, bottom + pad + 1) - top;
+    const out = new PNG({ width: w, height: h });
+    PNG.bitblt(png, out, left, top, w, h, 0, 0);
+    return PNG.sync.write(out);
+  } catch {
+    return original;
+  }
 }
 
 /** URL the QR code opens. The code is in the #fragment, so it never reaches a server log. */
@@ -200,14 +237,20 @@ function buildPrescriptionPdf(rx, signaturePng) {
     }
     const qrSize = 104;
     const sigW = 190;
+    const lineY = blockTop + 64;
     if (signaturePng) {
       try {
-        doc.image(Buffer.from(signaturePng, "base64"), left, blockTop, { fit: [sigW, 60], valign: "bottom" });
+        // Sits on the line, its lowest strokes just crossing it, as a pen
+        // signature would (the pad crops the drawing to the ink).
+        doc.image(cropToInk(signaturePng), left + 6, lineY - 52, {
+          fit: [sigW, 56],
+          align: "left",
+          valign: "bottom",
+        });
       } catch {
         // A signature that can't be drawn leaves the line empty; never fail the form.
       }
     }
-    const lineY = blockTop + 64;
     doc.moveTo(left, lineY).lineTo(left + sigW + 40, lineY).lineWidth(0.8).strokeColor(INK).stroke();
     doc.fillColor(INK).font("Helvetica-Bold").fontSize(11).text(pdfSafe(rx.doctorName), left, lineY + 6, { width: sigW + 40 });
     doc.font("Helvetica").fontSize(9.5).fillColor(MUTED);
@@ -237,4 +280,4 @@ function buildPrescriptionPdf(rx, signaturePng) {
   });
 }
 
-module.exports = { buildPrescriptionPdf, checkUrl, pdfSafe };
+module.exports = { buildPrescriptionPdf, checkUrl, pdfSafe, cropToInk };

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { RefreshCw, Loader2 } from "lucide-react";
 import { requestReschedule, getNoShowFeeStatus } from "./patientFirestoreService";
-import { callableMessage } from "../../../src/constants";
+import { callableMessage, formatTime } from "../../../src/constants";
 import { useSiteSettings } from "../../../src/siteSettings";
 import { openPaystackCheckout } from "../../../src/paystackCheckout";
 
@@ -21,13 +21,26 @@ function isLate(booking, now = Date.now()) {
 
 // Mirrors rescheduleNeedsLateFee (functions/lib/consultationLifecycle.js):
 // free up to 24 hours before the start; after that, until the start, the
-// reschedule fee. The appointment stays booked until it's paid.
+// reschedule fee. The appointment stays booked until it's paid. A time
+// given less than 24 hours ahead is free to change for its first hour.
 const FREE_RESCHEDULE_HOURS = 24;
+const SHORT_NOTICE_FREE_MINUTES = 60;
+function freeChangeUntil(booking) {
+  const start = booking.scheduledTime?.getTime?.();
+  const setAt = booking.scheduleSetAt?.getTime?.();
+  if (!start || !setAt || start - setAt >= FREE_RESCHEDULE_HOURS * 3600 * 1000) return null;
+  return new Date(setAt + SHORT_NOTICE_FREE_MINUTES * 60 * 1000);
+}
+function inFreeHour(booking, now = Date.now()) {
+  const until = freeChangeUntil(booking);
+  return Boolean(until) && now < until.getTime();
+}
 function needsLateFee(booking, now = Date.now()) {
   const start = booking.scheduledTime?.getTime?.();
   if (!start || now >= start || booking.metAt) return false;
   if (booking.payAtHospital || booking.doctorUnavailable) return false;
   if (booking.rescheduleRequest?.status === "requested") return false;
+  if (inFreeHour(booking, now)) return false;
   return start - now < FREE_RESCHEDULE_HOURS * 3600 * 1000;
 }
 
@@ -46,6 +59,8 @@ export default function RescheduleForm({ booking, onRequested }) {
   const fee = Number(noShow.rescheduleFee || 0);
   const lateFee = !late && fee > 0 && needsLateFee(booking);
   const charged = (late || lateFee) && fee > 0;
+  // A short-notice time still in its free first hour.
+  const freeUntil = !late && fee > 0 && inFreeHour(booking) ? freeChangeUntil(booking) : null;
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -130,6 +145,12 @@ export default function RescheduleForm({ booking, onRequested }) {
             ? ` and costs an extra GHS ${fee}, paid with mobile money.`
             : "."}{" "}
           We'll email you the new time.
+        </p>
+      ) : freeUntil ? (
+        <p className="text-xs text-[#3E4E56]">
+          Your appointment is less than {FREE_RESCHEDULE_HOURS} hours away, but it was only just
+          booked, so you can change it free of charge until {formatTime(freeUntil)}. Tell us when
+          suits you and we&apos;ll email you the new time.
         </p>
       ) : (
         <p className="text-xs text-[#3E4E56]">

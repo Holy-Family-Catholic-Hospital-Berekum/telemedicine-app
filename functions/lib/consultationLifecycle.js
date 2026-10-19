@@ -115,13 +115,27 @@ function rescheduleCountsAsNoShow(c, waitMinutes, now = Date.now()) {
 // starts; after that, until the start, they pay the reschedule fee
 // (lateReschedule.js) and the appointment stays booked until it's paid.
 const FREE_RESCHEDULE_HOURS = 24;
+// A time given less than FREE_RESCHEDULE_HOURS ahead (a same-day slot, or
+// an admin's time for later today) never had a free window, so it can be
+// changed free of charge for this long after it was set. The schedule
+// email says until when (freeChangeUntil).
+const SHORT_NOTICE_FREE_MINUTES = 60;
+
+/** Until when (ms) a short-notice time can be changed free, or null. */
+function freeChangeUntil(c) {
+  const start = toDate(c.scheduledTime)?.getTime();
+  const setAt = toDate(c.scheduleSetAt || c.createdAt)?.getTime();
+  if (!start || !setAt || start - setAt >= FREE_RESCHEDULE_HOURS * 3600 * 1000) return null;
+  return setAt + SHORT_NOTICE_FREE_MINUTES * 60 * 1000;
+}
 
 /**
  * True if a patient's reschedule request now needs the late reschedule
  * fee: less than FREE_RESCHEDULE_HOURS before the start (from the start on,
  * rescheduleCountsAsNoShow applies instead). Free: a fee of 0, hospital
  * visits paid at the hospital, an appointment the doctor couldn't make (or
- * couldn't complete), a request already made, and one that took place.
+ * couldn't complete), a request already made, one that took place, and a
+ * short-notice time in its first hour (freeChangeUntil).
  */
 function rescheduleNeedsLateFee(c, booking, fee, now = Date.now()) {
   const start = toDate(c.scheduledTime)?.getTime();
@@ -129,6 +143,8 @@ function rescheduleNeedsLateFee(c, booking, fee, now = Date.now()) {
   if (!(Number(fee) > 0) || booking.payAtHospital === true) return false;
   if (booking.doctorUnavailable || c.doctorUnavailable) return false;
   if (booking.rescheduleRequest?.status === "requested") return false;
+  const graceUntil = freeChangeUntil(c);
+  if (graceUntil && now < graceUntil) return false;
   return start - now < FREE_RESCHEDULE_HOURS * 3600 * 1000;
 }
 
@@ -645,6 +661,8 @@ module.exports = {
   deadlineFrom,
   rescheduleCountsAsNoShow,
   FREE_RESCHEDULE_HOURS,
+  SHORT_NOTICE_FREE_MINUTES,
+  freeChangeUntil,
   rescheduleNeedsLateFee,
   markNoShow,
   markDoctorUnavailable,

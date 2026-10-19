@@ -117,6 +117,8 @@ export async function fetchMyBookings(patientUid) {
       bookingId: d.id,
       createdAt: toDate(b.createdAt),
       scheduledTime: toDate(b.scheduledTime),
+      // When the time was given (a short-notice time is free to change for an hour).
+      scheduleSetAt: toDate(b.scheduleSetAt),
       callStartedAt: toDate(b.callStartedAt),
       patientJoinedAt: toDate(b.patientJoinedAt),
       doctorJoinedAt: toDate(b.doctorJoinedAt),

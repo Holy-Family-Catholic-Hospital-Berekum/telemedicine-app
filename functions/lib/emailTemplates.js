@@ -89,8 +89,12 @@ function patientContent(kind, data, when) {
   // (lib/consultationLifecycle.js rescheduleNeedsLateFee). Hospital visits
   // paid at the hospital stay free.
   const lateFee = ns && Number(ns.rescheduleFee) > 0 && !data.payAtHospital;
+  // A time given less than 24 hours ahead: free to change for its first
+  // hour (data.freeChangeUntil, ms).
   const change = lateFee
-    ? `If you can't make it, tap "Change appointment time" on the website or call us on ${HOSPITAL_PHONE}. Changing the time is free up to 24 hours before your appointment; after that it costs GHS ${Number(ns.rescheduleFee)}.`
+    ? data.freeChangeUntil
+      ? `If you can't make it, tap "Change appointment time" on the website or call us on ${HOSPITAL_PHONE}. Because your appointment is less than 24 hours away, you can change the time free of charge until ${clock(new Date(data.freeChangeUntil))} (Ghana time); after that it costs GHS ${Number(ns.rescheduleFee)}.`
+      : `If you can't make it, tap "Change appointment time" on the website or call us on ${HOSPITAL_PHONE}. Changing the time is free up to 24 hours before your appointment; after that it costs GHS ${Number(ns.rescheduleFee)}.`
     : `If you can't make it, tap "Change appointment time" on the website or call us on ${HOSPITAL_PHONE}.`;
   const fee = ns ? `GHS ${Number(ns.rescheduleFee || 0)}` : "";
   const noShowRule = ns
