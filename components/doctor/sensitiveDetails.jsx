@@ -1,32 +1,6 @@
 import { useState } from "react";
 import { Lock, ChevronDown } from "lucide-react";
-
-/** Whole years from a YYYY-MM-DD date of birth (older bookings). */
-function yearsFromDob(dobString) {
-  const dob = new Date(dobString);
-  const now = new Date();
-  let years = now.getFullYear() - dob.getFullYear();
-  const notYetHadBirthday =
-    now.getMonth() < dob.getMonth() ||
-    (now.getMonth() === dob.getMonth() && now.getDate() < dob.getDate());
-  if (notYetHadBirthday) years -= 1;
-  return years;
-}
-
-/** "34 years", "1 year 4 months", "7 months". */
-function describeAge({ age, dateOfBirth }) {
-  if (age && Number.isInteger(age.years)) {
-    const y = age.years;
-    const m = Number.isInteger(age.months) ? age.months : null;
-    const yText = `${y} ${y === 1 ? "year" : "years"}`;
-    const mText = m !== null ? `${m} ${m === 1 ? "month" : "months"}` : "";
-    if (y === 0 && mText) return mText;
-    return mText ? `${yText} ${mText}` : yText;
-  }
-  // Bookings made before age replaced the date of birth.
-  if (dateOfBirth) return `${yearsFromDob(dateOfBirth)} years`;
-  return null;
-}
+import { describeAge } from "./docUtils";
 
 // Visibility is enforced by Firestore Security Rules (only the assigned
 // doctor and admins can read the consultation). These details are deleted

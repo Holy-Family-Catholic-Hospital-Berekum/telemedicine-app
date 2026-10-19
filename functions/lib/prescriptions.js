@@ -53,11 +53,15 @@ function normaliseCheckCode(value) {
 // Letters, digits and the punctuation a prescription needs. No control
 // characters, angle brackets or other characters the PDF's built-in fonts
 // can't draw.
-const TEXT_RE = /^[\p{Script=Latin}0-9 .,;:/()%+\-'"&#*=!?µ]*$/u;
+// Also the typographic characters phones and word processors type
+// (– — ‘ ’ “ ” ° ½ ¼ ¾ × ·), which the PDF fonts can draw.
+const TEXT_RE = /^[\p{Script=Latin}0-9 .,;:/()%+\-'"&#*=!?µ–—‘’“”°½¼¾×·]*$/u;
 
 function rxText(value, opts) {
-  const s = str(value, opts);
-  if (s !== null && !TEXT_RE.test(s)) {
+  let s = str(value, opts);
+  // The notes box allows line breaks (kept, at most two in a row).
+  if (s !== null && opts.multiline) s = s.replace(/\r\n?/g, "\n").replace(/\n{3,}/g, "\n\n");
+  if (s !== null && !TEXT_RE.test(opts.multiline ? s.replace(/\n/g, " ") : s)) {
     throw new HttpsError("invalid-argument", `${opts.field} has characters we can't print.`);
   }
   return s;
@@ -88,7 +92,7 @@ function validatePrescription(data) {
       quantity: rxText(item?.quantity, { field: `Quantity (medicine ${n})`, max: 40, optional: true }),
     };
   });
-  const notes = rxText(data?.notes, { field: "Notes", max: 500, optional: true });
+  const notes = rxText(data?.notes, { field: "Notes", max: 500, optional: true, multiline: true });
   return { items, notes };
 }
 

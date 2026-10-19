@@ -142,11 +142,11 @@ test("the form builds as a PDF with the reference in it", async () => {
 });
 
 test("admin reschedule: a missed call or one that couldn't be completed, not one that took place", () => {
-  const { adminCanReschedule } = require("../../scheduling");
-  assert.equal(adminCanReschedule({}), true);
-  assert.equal(adminCanReschedule({ metAt: new Date() }), false);
-  assert.equal(adminCanReschedule({ metAt: new Date(), doctorUnavailable: { kind: "call_incomplete" } }), true);
-  assert.equal(adminCanReschedule({ doctorUnavailable: { kind: "doctor_absent" } }), true);
+  const { canBeRescheduled } = require("../../scheduling");
+  assert.equal(canBeRescheduled({}), true);
+  assert.equal(canBeRescheduled({ metAt: new Date() }), false);
+  assert.equal(canBeRescheduled({ metAt: new Date(), doctorUnavailable: { kind: "call_incomplete" } }), true);
+  assert.equal(canBeRescheduled({ doctorUnavailable: { kind: "doctor_absent" } }), true);
 });
 
 test("signature is cropped to its ink so it sits on the line", () => {
@@ -158,4 +158,13 @@ test("signature is cropped to its ink so it sits on the line", () => {
   assert.ok(out.width <= 110 && out.height <= 10, `${out.width}x${out.height}`);
   // Something that isn't a PNG is passed through untouched.
   assert.equal(cropToInk(Buffer.from("x").toString("base64")).toString(), "x");
+});
+
+test("notes keep line breaks; typed punctuation like – ’ ° ½ is accepted", () => {
+  const { notes } = validatePrescription({ items: [item], notes: "Take after meals.\r\nReturn if fever for 3 days." });
+  assert.equal(notes, "Take after meals.\nReturn if fever for 3 days.");
+  assert.doesNotThrow(() => validatePrescription({ items: [{ ...item, dose: "½ tablet – don’t crush", frequency: "Store below 25°C" }] }));
+  // Line breaks only in the notes, not in a medicine line.
+  assert.throws(() => validatePrescription({ items: [{ ...item, dose: "1\n2" }] }), /can't print/);
+  assert.equal(pdfSafe("a\nb – ½"), "a\nb – ½");
 });

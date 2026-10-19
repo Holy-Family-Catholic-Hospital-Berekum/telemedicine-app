@@ -53,7 +53,7 @@ function pdfSafe(text) {
   return [...String(text)]
     .map((ch) => {
       const code = ch.codePointAt(0);
-      if ((code >= 0x20 && code <= 0x7e) || (code >= 0xa0 && code <= 0xff) || WINANSI_EXTRA.has(ch)) return ch;
+      if (ch === "\n" || (code >= 0x20 && code <= 0x7e) || (code >= 0xa0 && code <= 0xff) || WINANSI_EXTRA.has(ch)) return ch;
       if (FOLD.has(ch)) return FOLD.get(ch);
       const base = ch.normalize("NFKD").replace(/[̀-ͯ]/g, "");
       return base && [...base].every((c) => c.codePointAt(0) >= 0x20 && c.codePointAt(0) <= 0x7e) ? base : "?";
@@ -192,29 +192,48 @@ function buildPrescriptionPdf(rx, signaturePng) {
       { key: "duration", label: "How long", w: 70 },
       { key: "quantity", label: "Quantity", w: width - 420 },
     ];
+    const cellText = (cells, c) => pdfSafe(cells[c.key] ?? "");
+    const rowFont = (bold) => doc.font(bold ? "Helvetica-Bold" : "Helvetica").fontSize(bold ? 8.5 : 10);
+    const rowHeight = (cells, bold = false) => {
+      rowFont(bold);
+      return Math.max(...cols.map((c) => doc.heightOfString(cellText(cells, c), { width: c.w - 6 })));
+    };
+    // Every cell placed explicitly, never past the bottom margin (pdfkit
+    // would otherwise start a new page inside a cell).
     const drawRow = (cells, ry, { bold = false, color = INK } = {}) => {
       let x = left;
-      let h = 0;
-      doc.font(bold ? "Helvetica-Bold" : "Helvetica").fontSize(bold ? 8.5 : 10).fillColor(color);
+      rowFont(bold).fillColor(color);
       for (const c of cols) {
-        const t = pdfSafe(cells[c.key] ?? "");
-        h = Math.max(h, doc.heightOfString(t, { width: c.w - 6 }));
-        doc.text(t, x + 3, ry, { width: c.w - 6 });
+        doc.text(cellText(cells, c), x + 3, ry, { width: c.w - 6, lineBreak: true });
         x += c.w;
       }
-      return h;
     };
-    const headH = drawRow(
-      Object.fromEntries(cols.map((c) => [c.key, c.label.toUpperCase()])),
-      y,
-      { bold: true, color: MUTED },
-    );
-    y += headH + 4;
-    doc.moveTo(left, y).lineTo(right, y).lineWidth(0.8).strokeColor(LINE).stroke();
-    y += 6;
+    const head = Object.fromEntries(cols.map((c) => [c.key, c.label.toUpperCase()]));
+    const drawHead = () => {
+      drawRow(head, y, { bold: true, color: MUTED });
+      y += rowHeight(head, true) + 4;
+      doc.moveTo(left, y).lineTo(right, y).lineWidth(0.8).strokeColor(LINE).stroke();
+      y += 6;
+    };
+    const pageBottom = doc.page.height - 40 - 40;
+    // A continuation page says which prescription it belongs to.
+    const newPage = () => {
+      doc.addPage();
+      doc.fillColor(MUTED).font("Helvetica").fontSize(8.5)
+        .text(`${HOSPITAL.name}  |  Prescription ${rx.id} (continued)`, left, 30, { width });
+      y = 50;
+    };
+    drawHead();
     rx.items.forEach((item, i) => {
       const medicine = [item.medicine, item.strength, item.form].filter(Boolean).join(" ");
-      const h = drawRow({ ...item, n: `${i + 1}.`, medicine }, y);
+      const cells = { ...item, n: `${i + 1}.`, medicine };
+      const h = rowHeight(cells);
+      if (y + h + 12 > pageBottom) {
+        // A long list carries on on the next page, under the headings again.
+        newPage();
+        drawHead();
+      }
+      drawRow(cells, y);
       y += h + 6;
       doc.moveTo(left, y).lineTo(right, y).lineWidth(0.4).strokeColor(LINE).stroke();
       y += 6;
@@ -222,6 +241,8 @@ function buildPrescriptionPdf(rx, signaturePng) {
 
     if (rx.notes) {
       y += 4;
+      doc.font("Helvetica").fontSize(10);
+      if (y + 12 + doc.heightOfString(pdfSafe(rx.notes), { width }) > pageBottom) newPage();
       doc.fillColor(MUTED).font("Helvetica-Bold").fontSize(8.5).text("NOTES", left, y);
       doc.fillColor(INK).font("Helvetica").fontSize(10).text(pdfSafe(rx.notes), left, y + 12, { width });
       y = doc.y + 6;
@@ -231,8 +252,8 @@ function buildPrescriptionPdf(rx, signaturePng) {
     const footY = () => doc.page.height - 40 - 26;
     let blockTop = Math.max(y + 20, footY() - 170);
     if (blockTop + 160 > footY()) {
-      // A long list: the signature and QR go on a second page.
-      doc.addPage();
+      // A long list: the signature and QR go on the next page.
+      newPage();
       blockTop = 60;
     }
     const qrSize = 104;

@@ -86,12 +86,13 @@ async function activeDoctor(tx, doctorUid, type) {
 const bothJoined = (c) => Boolean(c.metAt);
 
 /**
- * Can an admin give this consultation a new time? Not once it has taken
- * place (the two were connected), unless the doctor reported it couldn't
- * be completed (doctorUnavailable kind "call_incomplete"): that one gets a
- * free new time (or a full refund) even though they met.
+ * Can this consultation be given a new time (admin) or asked for one
+ * (patient)? Not once it has taken place (the two were connected), unless
+ * the doctor reported it couldn't be completed (doctorUnavailable kind
+ * "call_incomplete"): that one gets a free new time (or a full refund)
+ * even though they met.
  */
-function adminCanReschedule(c) {
+function canBeRescheduled(c) {
   return !bothJoined(c) || Boolean(c.doctorUnavailable);
 }
 
@@ -371,7 +372,9 @@ exports.requestReschedule = onCall({ secrets: [PAYSTACK_SECRET_KEY] }, async (re
   const preferredTime = str(d.preferredTime, { field: "Preferred time", max: 80, optional: true });
   const reason = str(d.reason, { field: "Reason", max: 300, optional: true });
 
-  await rateLimit(caller.uid, "requestReschedule", { max: 5, windowSeconds: 86400 });
+  // Each late-fee payment retry comes through here too (Paystack attempts
+  // are capped at 10 per booking in lateReschedule.js).
+  await rateLimit(caller.uid, "requestReschedule", { max: 20, windowSeconds: 86400 });
 
   const ref = db.collection("bookings").doc(bookingId);
   const policy = await loadNoShowPolicy();
@@ -392,8 +395,9 @@ exports.requestReschedule = onCall({ secrets: [PAYSTACK_SECRET_KEY] }, async (re
       tx.get(db.collection("refundRequests").doc(booking.consultationId)),
     ]);
     // A missed consultation can be moved: one where the patient and the
-    // doctor were never connected.
-    if (bothJoined(consultationSnap.data() || {})) {
+    // doctor were never connected, or one the doctor reported couldn't be
+    // completed (the patient adds a time that suits them).
+    if (!canBeRescheduled(consultationSnap.data() || {})) {
       throw new HttpsError("failed-precondition", "This consultation has already taken place.");
     }
     if (refundSnap.exists) {
@@ -421,6 +425,8 @@ exports.requestReschedule = onCall({ secrets: [PAYSTACK_SECRET_KEY] }, async (re
           reason,
           fee: Number(policy.rescheduleFee),
           requestedAt: Timestamp.now(),
+          // This request's payment attempts (kept when it's sent again).
+          refs: booking.pendingLateReschedule?.refs || [],
         },
         updatedAt: serverTime(),
       });
@@ -541,7 +547,7 @@ exports.rescheduleConsultation = onCall(async (request) => {
     const consultation = consultationSnap.data();
     // A call one side never joined was missed, and can be moved; so can one
     // the doctor reported couldn't be completed.
-    if (!adminCanReschedule(consultation)) {
+    if (!canBeRescheduled(consultation)) {
       throw new HttpsError("failed-precondition", "This consultation has already taken place.");
     }
     if ((consultation.rescheduleHistory || []).length >= MAX_RESCHEDULES) {
@@ -593,6 +599,9 @@ exports.rescheduleConsultation = onCall(async (request) => {
       doctorName: doctor.name,
       doctorDepartment: doctor.department,
       scheduleSetAt: Timestamp.now(),
+      // An unpaid late reschedule fee no longer applies (one that lands
+      // later is refunded: lateReschedule.js).
+      pendingLateReschedule: FieldValue.delete(),
       callStartedAt: null,
       patientJoinedAt: FieldValue.delete(),
       doctorJoinedAt: FieldValue.delete(),
@@ -662,4 +671,4 @@ exports.rescheduleConsultation = onCall(async (request) => {
 });
 
 // For the unit tests.
-exports.adminCanReschedule = adminCanReschedule;
+exports.canBeRescheduled = canBeRescheduled;

@@ -78,3 +78,110 @@ test("the schedule email says until when a short-notice time is free to change",
   });
   assert.match(text, /less than 24 hours away, you can change the time free of charge until 10:00 \(Ghana time\); after that it costs GHS 50/);
 });
+
+// markLateRescheduleFeePaid against a stand-in transaction (no database):
+// what it decides, and what it would write.
+function withBooking(booking) {
+  const { db } = require("../../lib/core");
+  const writes = [];
+  const original = db.runTransaction;
+  db.runTransaction = async (fn) =>
+    fn({
+      get: async () => ({ exists: Boolean(booking), data: () => booking }),
+      update: (ref, data) => writes.push({ op: "update", path: ref.path, data }),
+      set: (ref, data) => writes.push({ op: "set", path: ref.path, data }),
+    });
+  return { writes, restore: () => { db.runTransaction = original; } };
+}
+const bookingRef = () => require("../../lib/core").db.collection("bookings").doc("b1");
+const paystack = (reference, amount = 5000) => ({ status: "success", reference, amount, currency: "GHS" });
+const { Timestamp } = require("../../lib/core");
+const scheduled = (extra = {}) => ({
+  status: "scheduled",
+  patientUid: "p1",
+  mode: "online",
+  scheduledTime: Timestamp.fromMillis(Date.now() + 5 * HOUR),
+  lateFeeTxRefs: ["ref-old", "ref-new"],
+  pendingLateReschedule: { fee: 50, preferredTime: "Friday", reason: null, refs: ["ref-new"] },
+  ...extra,
+});
+
+test("late fee: the current request's payment becomes a reschedule request", async () => {
+  const { markLateRescheduleFeePaid } = require("../../lateReschedule");
+  const t = withBooking(scheduled());
+  try {
+    const r = await markLateRescheduleFeePaid(bookingRef(), paystack("ref-new"), "webhook");
+    assert.deepEqual(r, { status: "requested" });
+    const update = t.writes.find((w) => w.path === "bookings/b1");
+    assert.equal(update.data.rescheduleRequest.status, "requested");
+    assert.equal(update.data.rescheduleRequest.preferredTime, "Friday");
+    assert.ok(t.writes.some((w) => w.path === "confirmedPayments/ref-new" && w.data.type === "RESCHEDULE_FEE"));
+  } finally {
+    t.restore();
+  }
+});
+
+test("late fee: an earlier request's payment isn't taken as this one's (refunded instead)", async () => {
+  const { markLateRescheduleFeePaid } = require("../../lateReschedule");
+  const t = withBooking(scheduled({ lateRescheduleFees: [] }));
+  try {
+    const r = await markLateRescheduleFeePaid(bookingRef(), paystack("ref-old"), "verify_api");
+    assert.deepEqual(r, { status: "already", duplicate: true });
+    assert.equal(t.writes.length, 0);
+  } finally {
+    t.restore();
+  }
+});
+
+test("late fee: one already applied is a no-op, not a refund", async () => {
+  const { markLateRescheduleFeePaid } = require("../../lateReschedule");
+  const t = withBooking(scheduled({ lateRescheduleFees: [{ reference: "ref-old", amount: 50 }] }));
+  try {
+    assert.deepEqual(await markLateRescheduleFeePaid(bookingRef(), paystack("ref-old"), "webhook"), { status: "already" });
+  } finally {
+    t.restore();
+  }
+});
+
+test("late fee: approved only after the start is refunded, and the request dropped", async () => {
+  const { markLateRescheduleFeePaid } = require("../../lateReschedule");
+  const t = withBooking(scheduled({ scheduledTime: Timestamp.fromMillis(Date.now() - 60 * 1000) }));
+  try {
+    const r = await markLateRescheduleFeePaid(bookingRef(), paystack("ref-new"), "webhook");
+    assert.deepEqual(r, { status: "already", duplicate: true });
+    const update = t.writes.find((w) => w.path === "bookings/b1");
+    assert.ok(update && "pendingLateReschedule" in update.data && !update.data.rescheduleRequest);
+  } finally {
+    t.restore();
+  }
+});
+
+test("late fee: after the admin moved the booking (request cleared), a late payment is refunded", async () => {
+  const { markLateRescheduleFeePaid } = require("../../lateReschedule");
+  const t = withBooking(scheduled({ pendingLateReschedule: undefined }));
+  try {
+    assert.deepEqual(await markLateRescheduleFeePaid(bookingRef(), paystack("ref-new"), "webhook"), {
+      status: "already",
+      duplicate: true,
+    });
+  } finally {
+    t.restore();
+  }
+});
+
+test("late fee: too little paid is rejected", async () => {
+  const { markLateRescheduleFeePaid } = require("../../lateReschedule");
+  const t = withBooking(scheduled());
+  try {
+    assert.deepEqual(await markLateRescheduleFeePaid(bookingRef(), paystack("ref-new", 1000), "webhook"), {
+      status: "rejected",
+    });
+  } finally {
+    t.restore();
+  }
+});
+
+test("a patient can ask for a new time after 'call couldn't be completed'", () => {
+  const { canBeRescheduled } = require("../../scheduling");
+  assert.equal(canBeRescheduled({ metAt: new Date(), doctorUnavailable: { kind: "call_incomplete" } }), true);
+});

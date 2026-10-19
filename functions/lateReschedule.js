@@ -15,7 +15,8 @@
 // admins and records the fee (bookings.lateRescheduleFees, confirmedPayments
 // type RESCHEDULE_FEE). A fee that arrives after it can't be used (the
 // appointment started, or a request was already made) is flagged and
-// refunded automatically, like any other payment we can't use.
+// refunded automatically, like any other payment we can't use, and so is
+// one approved only after the appointment started (too late to move it).
 
 const {
   db,
@@ -38,18 +39,29 @@ async function markLateRescheduleFeePaid(bookingRef, paystackData, via) {
     const snap = await tx.get(bookingRef);
     if (!snap.exists) return { status: "missing" };
     const booking = snap.data();
-    const refs = Array.isArray(booking.lateFeeTxRefs) ? booking.lateFeeTxRefs : [];
-    const ours = paystackData?.status === "success" && refs.includes(paystackData.reference);
-    if ((booking.lateRescheduleFees || []).some((f) => f.reference === paystackData?.reference)) {
+    const reference = paystackData?.reference;
+    const paid = paystackData?.status === "success";
+    if ((booking.lateRescheduleFees || []).some((f) => f.reference === reference)) {
       return { status: "already" };
     }
     const pending = booking.pendingLateReschedule;
-    if (booking.status !== "scheduled" || !pending || booking.rescheduleRequest?.status === "requested") {
-      // Paid twice, or after the appointment moved on: refund it.
-      return { status: "already", duplicate: ours };
+    // Only an attempt made for the request waiting now counts; any other
+    // of ours (an earlier request, or one cleared when the booking moved
+    // on) is refunded.
+    const anyOfOurs = paid && (booking.lateFeeTxRefs || []).includes(reference);
+    const ours = paid && (pending?.refs || []).includes(reference);
+    if (booking.status !== "scheduled" || !ours || booking.rescheduleRequest?.status === "requested") {
+      return anyOfOurs ? { status: "already", duplicate: true } : { status: "rejected" };
+    }
+    // Paid only after the appointment started (a slow mobile money
+    // approval): too late to move it. Refunded; the no-show rule applies.
+    const start = booking.scheduledTime?.toMillis?.() ?? 0;
+    if (start && Date.now() >= start) {
+      tx.update(bookingRef, { pendingLateReschedule: FieldValue.delete(), updatedAt: serverTime() });
+      return { status: "already", duplicate: true };
     }
     const fee = Number(pending.fee || 0);
-    if (!ours || paystackData.currency !== CURRENCY || !(Number(paystackData.amount) >= Math.round(fee * 100))) {
+    if (paystackData.currency !== CURRENCY || !(Number(paystackData.amount) >= Math.round(fee * 100))) {
       return { status: "rejected" };
     }
     const amount = Number(paystackData.amount) / 100;
@@ -95,7 +107,7 @@ async function markLateRescheduleFeePaid(bookingRef, paystackData, via) {
 }
 
 // How noShow.js checkFeeAttempts finds and applies these payments.
-const LATE_FEE = { refsField: "lateFeeTxRefs", apply: markLateRescheduleFeePaid };
+const LATE_FEE = { refsOf: (b) => b.pendingLateReschedule?.refs, apply: markLateRescheduleFeePaid };
 
 /**
  * After requestReschedule saved bookings.pendingLateReschedule: the
@@ -120,13 +132,18 @@ async function beginLateRescheduleFee({ caller, bookingId }) {
       "Your last payment attempt is still being processed. Approve or decline the prompt on your phone, then wait a minute before trying again.",
     );
   }
-  if ((booking.lateFeeTxRefs || []).length >= 10) {
+  if ((booking.pendingLateReschedule.refs || []).length >= 10) {
     throw new HttpsError("resource-exhausted", "Too many payment attempts. Please contact the hospital.");
   }
 
   const reference = newReference(bookingId);
   const batch = db.batch();
-  batch.update(bookingRef, { lateFeeTxRefs: FieldValue.arrayUnion(reference) });
+  // lateFeeTxRefs: every attempt ever (refund tracing, clean-up);
+  // pendingLateReschedule.refs: this request's attempts.
+  batch.update(bookingRef, {
+    lateFeeTxRefs: FieldValue.arrayUnion(reference),
+    "pendingLateReschedule.refs": FieldValue.arrayUnion(reference),
+  });
   batch.set(db.collection("paymentRefs").doc(reference), {
     bookingId,
     patientUid: caller.uid,

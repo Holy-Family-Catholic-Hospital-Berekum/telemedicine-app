@@ -187,6 +187,7 @@ function reopenForReschedule(tx, { bookingRef, booking, consultationRef, fee }) 
       requestedAt: Timestamp.now(),
     },
     pendingNoShowRequest: FieldValue.delete(),
+    pendingLateReschedule: FieldValue.delete(),
     noShowAt: FieldValue.delete(),
     noShowExpiresAt: FieldValue.delete(),
     callStartedAt: null,
@@ -274,10 +275,10 @@ async function markNoShowFeePaid(bookingRef, paystackData, via) {
 /**
  * Newest fee attempt first; applies a success. "paid" | "in_flight" |
  * "failed" | "none". Also used for the late reschedule fee
- * (lateReschedule.js): refsField "lateFeeTxRefs", apply its markPaid.
+ * (lateReschedule.js LATE_FEE: the current request's attempts, its markPaid).
  */
-async function checkFeeAttempts(bookingRef, booking, { refsField = "feeTxRefs", apply = markNoShowFeePaid } = {}) {
-  const list = refsField === "lateFeeTxRefs" ? booking.lateFeeTxRefs : booking.feeTxRefs;
+async function checkFeeAttempts(bookingRef, booking, { refsOf = (b) => b.feeTxRefs, apply = markNoShowFeePaid } = {}) {
+  const list = refsOf(booking);
   const refs = Array.isArray(list) ? [...list].reverse() : [];
   for (const reference of refs) {
     let tx;

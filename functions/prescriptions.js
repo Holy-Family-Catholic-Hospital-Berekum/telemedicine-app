@@ -270,7 +270,7 @@ exports.getPrescriptionPdf = onCall({ memory: "512MiB" }, async (request) => {
   const id = docId(request.data?.prescriptionId, "Prescription");
   await rateLimit(caller.uid, "getPrescriptionPdf", { max: 30, windowSeconds: 3600 });
 
-  const snap = await rxRef(id).get();
+  const [snap, sigSnap] = await Promise.all([rxRef(id).get(), rxSignatureRef(id).get()]);
   const rx = snap.exists ? snap.data() : null;
   const owner = rx && (caller.role === "patient" ? rx.patientUid : rx.doctorUid) === caller.uid;
   if (!owner) throw new HttpsError("not-found", "Prescription not found.");
@@ -280,7 +280,6 @@ exports.getPrescriptionPdf = onCall({ memory: "512MiB" }, async (request) => {
   if (toDate(rx.expiresAt).getTime() <= Date.now()) {
     throw new HttpsError("failed-precondition", "This prescription has expired.");
   }
-  const sigSnap = await rxSignatureRef(id).get();
   // Lazy: pdfkit is only loaded by the functions that build a form.
   const { buildPrescriptionPdf } = require("./lib/prescriptionPdf");
   const pdf = await buildPrescriptionPdf(

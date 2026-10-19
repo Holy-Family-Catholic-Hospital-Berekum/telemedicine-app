@@ -2,6 +2,7 @@ import { useState } from "react";
 import { X, Plus, Trash2, Loader2, ShieldAlert, FileText } from "lucide-react";
 import { callableMessage } from "../../../src/constants";
 import { medicineLabel, PRESCRIPTION_VALID_DAYS } from "../../shared/prescriptions";
+import { describeAge } from "../docUtils";
 
 // The doctor writes the prescription for a video consultation
 // (functions/prescriptions.js issuePrescription). The server prints it on
@@ -27,12 +28,6 @@ const FIELDS = [
   { key: "quantity", label: "Quantity", placeholder: "e.g. 21", max: 40 },
 ];
 
-function ageLabel(age) {
-  if (!age || !Number.isInteger(age.years)) return null;
-  if (age.years >= 2) return `${age.years} years`;
-  return `${age.years ? `${age.years} year ` : ""}${age.months ?? 0} months`;
-}
-
 // inCall: opened from the video call screen. A panel on the right over the
 // call (no dark backdrop), so the doctor still sees and hears the patient.
 export default function PrescriptionModal({ consultation, onClose, onIssue, inCall = false }) {
@@ -43,7 +38,7 @@ export default function PrescriptionModal({ consultation, onClose, onIssue, inCa
   const [error, setError] = useState(null);
 
   const complete = items.every((it) => REQUIRED.every((k) => it[k].trim()));
-  const age = ageLabel(consultation.sensitiveDetails?.age);
+  const age = describeAge(consultation.sensitiveDetails || {});
   const sex = consultation.sensitiveDetails?.sex;
 
   function setField(i, key, value) {

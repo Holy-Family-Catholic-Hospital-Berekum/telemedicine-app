@@ -236,6 +236,9 @@ async function markNoShow({ consultationId, actor, meta = null, expectDoctorUid 
         noShowAt: serverTime(),
         noShowExpiresAt: holdUntil,
         rescheduleRequest: FieldValue.delete(),
+        // A late reschedule fee still unpaid no longer applies (one that
+        // lands later is refunded: lateReschedule.js).
+        pendingLateReschedule: FieldValue.delete(),
         updatedAt: serverTime(),
       });
     } else if (booking) {
@@ -245,6 +248,7 @@ async function markNoShow({ consultationId, actor, meta = null, expectDoctorUid 
         noShowExpiresAt: holdUntil,
         noShowTerms,
         rescheduleRequest: FieldValue.delete(),
+        pendingLateReschedule: FieldValue.delete(),
         updatedAt: serverTime(),
       });
       queueEmail(tx, {
@@ -559,6 +563,8 @@ async function markDoctorUnavailable({
       // deepcode ignore Sqli: Firestore document ID, not SQL; bookingId read from the server-written consultation.
       tx.update(bookingRef, {
         doctorUnavailable: flag,
+        // Free now: an unpaid late reschedule fee no longer applies.
+        pendingLateReschedule: FieldValue.delete(),
         rescheduleRequest: {
           status: "requested",
           byHospital: true,
