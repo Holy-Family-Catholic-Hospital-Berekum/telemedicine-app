@@ -77,6 +77,16 @@ async function activeDoctor(tx, doctorUid, type) {
 /** True once the patient and the doctor were connected in the video call. */
 const bothJoined = (c) => Boolean(c.metAt);
 
+/**
+ * Can an admin give this consultation a new time? Not once it has taken
+ * place (the two were connected), unless the doctor reported it couldn't
+ * be completed (doctorUnavailable kind "call_incomplete"): that one gets a
+ * free new time (or a full refund) even though they met.
+ */
+function adminCanReschedule(c) {
+  return !bothJoined(c) || Boolean(c.doctorUnavailable);
+}
+
 function checkFutureTime(date) {
   const now = Date.now();
   if (date.getTime() < now - 5 * 60 * 1000) {
@@ -496,8 +506,9 @@ exports.rescheduleConsultation = onCall(async (request) => {
       );
     }
     const consultation = consultationSnap.data();
-    // A call one side never joined was missed, and can be moved.
-    if (bothJoined(consultation)) {
+    // A call one side never joined was missed, and can be moved; so can one
+    // the doctor reported couldn't be completed.
+    if (!adminCanReschedule(consultation)) {
       throw new HttpsError("failed-precondition", "This consultation has already taken place.");
     }
     if ((consultation.rescheduleHistory || []).length >= MAX_RESCHEDULES) {
@@ -535,6 +546,9 @@ exports.rescheduleConsultation = onCall(async (request) => {
       waitDeadline: FieldValue.delete(),
       metAt: FieldValue.delete(),
       doctorUnavailable: FieldValue.delete(),
+      // The new call can have its own prescription. One already written
+      // stays as it is (valid until it expires or the doctor cancels it).
+      prescription: FieldValue.delete(),
       reminders: FieldValue.delete(),
       scheduleSetAt: Timestamp.now(),
       rescheduleHistory: [...(consultation.rescheduleHistory || []), entry],
@@ -611,3 +625,6 @@ exports.rescheduleConsultation = onCall(async (request) => {
   }
   return { ok: true };
 });
+
+// For the unit tests.
+exports.adminCanReschedule = adminCanReschedule;

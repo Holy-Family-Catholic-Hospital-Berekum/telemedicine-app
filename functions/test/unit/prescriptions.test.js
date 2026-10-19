@@ -140,3 +140,11 @@ test("the form builds as a PDF with the reference in it", async () => {
   assert.equal(pdf.subarray(0, 5).toString(), "%PDF-");
   assert.ok(pdf.length > 5000);
 });
+
+test("admin reschedule: a missed call or one that couldn't be completed, not one that took place", () => {
+  const { adminCanReschedule } = require("../../scheduling");
+  assert.equal(adminCanReschedule({}), true);
+  assert.equal(adminCanReschedule({ metAt: new Date() }), false);
+  assert.equal(adminCanReschedule({ metAt: new Date(), doctorUnavailable: { kind: "call_incomplete" } }), true);
+  assert.equal(adminCanReschedule({ doctorUnavailable: { kind: "doctor_absent" } }), true);
+});
