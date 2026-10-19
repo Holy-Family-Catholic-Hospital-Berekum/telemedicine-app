@@ -75,7 +75,7 @@ export const DEFAULT_SERVICES = [
  *                   the other (from the start, or from when they joined if
  *                   later); functions/lib/consultationLifecycle.js
  *   forfeitPercent  share of the fee kept when a no-show asks for a refund
- *   rescheduleFee   GHS a no-show pays to book a new time
+ *   rescheduleFee   GHS a no-show, or a reschedule less than 24 h before, pays
  */
 export const DEFAULT_NO_SHOW = { waitMinutes: 5, forfeitPercent: 20, rescheduleFee: 50 };
 const inRange = (n, min, max) => typeof n === "number" && Number.isFinite(n) && n >= min && n <= max;

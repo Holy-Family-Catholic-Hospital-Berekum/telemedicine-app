@@ -37,7 +37,7 @@ const {
 const { queueEmail } = require("./lib/mailQueue");
 const { loadNoShowPolicy } = require("./siteSettings");
 const { PAYSTACK_SECRET_KEY } = require("./lib/paystack");
-const { markNoShow, rescheduleCountsAsNoShow } = require("./lib/consultationLifecycle");
+const { markNoShow, rescheduleCountsAsNoShow, rescheduleNeedsLateFee } = require("./lib/consultationLifecycle");
 
 // A doctor can't have two consultations closer together than this.
 const MIN_GAP_MINUTES = 30;
@@ -345,11 +345,13 @@ exports.cancelAvailableSlot = onCall(async (request) => {
 /* ------------------------------------------------------------------ */
 
 /** data: { bookingId, preferredTime?, reason? } */
-// Before the start: a free request for the hospital to move it. From the
-// start on (patient not joined, doctor not to blame): it counts as a
-// no-show and the patient pays the no-show fee (lib/consultationLifecycle.js
-// rescheduleCountsAsNoShow); resolves like startNoShowReschedule then:
-// { status: "pay", ... } or { status: "requested" }.
+// Up to 24 hours before the start: a free request for the hospital to move
+// it. Less than 24 hours before: the late reschedule fee
+// (lateReschedule.js; lib/consultationLifecycle.js rescheduleNeedsLateFee);
+// the appointment stays booked until it's paid. From the start on (patient
+// not joined, doctor not to blame): it counts as a no-show and the patient
+// pays the no-show fee (rescheduleCountsAsNoShow). Resolves
+// { status: "requested" } or the popup details { status: "pay", ... }.
 exports.requestReschedule = onCall({ secrets: [PAYSTACK_SECRET_KEY] }, async (request) => {
   const caller = await requireRole(request, ["patient"]);
   const d = request.data || {};
@@ -362,7 +364,7 @@ exports.requestReschedule = onCall({ secrets: [PAYSTACK_SECRET_KEY] }, async (re
   const ref = db.collection("bookings").doc(bookingId);
   const policy = await loadNoShowPolicy();
   const meta = requestMeta(request);
-  const late = await db.runTransaction(async (tx) => {
+  const outcome = await db.runTransaction(async (tx) => {
     const snap = await tx.get(ref);
     if (!snap.exists || snap.data().patientUid !== caller.uid) {
       throw new HttpsError("not-found", "Booking not found.");
@@ -396,7 +398,21 @@ exports.requestReschedule = onCall({ secrets: [PAYSTACK_SECRET_KEY] }, async (re
       booking.rescheduleRequest?.status !== "requested" &&
       rescheduleCountsAsNoShow(consultationSnap.data() || {}, policy.waitMinutes)
     ) {
-      return booking.consultationId;
+      return { noShow: booking.consultationId };
+    }
+    // Less than 24 hours before the start: kept as pending until the fee
+    // is paid (the appointment stays booked meanwhile).
+    if (rescheduleNeedsLateFee(consultationSnap.data() || {}, booking, policy.rescheduleFee)) {
+      tx.update(ref, {
+        pendingLateReschedule: {
+          preferredTime,
+          reason,
+          fee: Number(policy.rescheduleFee),
+          requestedAt: Timestamp.now(),
+        },
+        updatedAt: serverTime(),
+      });
+      return { lateFee: true };
     }
     tx.update(ref, {
       rescheduleRequest: {
@@ -424,10 +440,15 @@ exports.requestReschedule = onCall({ secrets: [PAYSTACK_SECRET_KEY] }, async (re
     return null;
   });
 
-  if (late) {
+  if (outcome?.lateFee) {
+    requireVerifiedEmail(caller); // a payment follows
+    const { beginLateRescheduleFee } = require("./lateReschedule");
+    return beginLateRescheduleFee({ caller, bookingId });
+  }
+  if (outcome?.noShow) {
     requireVerifiedEmail(caller); // a payment follows
     await markNoShow({
-      consultationId: late,
+      consultationId: outcome.noShow,
       actor: { uid: caller.uid, role: "patient" },
       meta,
       byPatient: true,

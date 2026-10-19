@@ -21,7 +21,7 @@ const callUpdate = httpsCallable(functions, "updateNoShowPolicy");
 const FIELDS = [
   { key: "waitMinutes", label: "Waiting time", unit: "minutes", min: 1, max: 30, hint: "How long the patient has to join before it counts as a no-show" },
   { key: "forfeitPercent", label: "Share kept on a refund", unit: "%", min: 0, max: 100, hint: "Taken off the refund when a no-show asks for their money back" },
-  { key: "rescheduleFee", label: "No-show reschedule fee", unit: "GHS", min: 0, max: 5000, hint: "What a no-show pays to book a new time (0 = free)" },
+  { key: "rescheduleFee", label: "Reschedule fee", unit: "GHS", min: 0, max: 5000, hint: "What a patient pays to change the time less than 24 hours before, or after a no-show (0 = free)" },
 ];
 
 const parse = (value, { min, max }) => {

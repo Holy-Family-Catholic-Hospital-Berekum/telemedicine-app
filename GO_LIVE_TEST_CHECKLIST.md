@@ -95,6 +95,17 @@ Repeat with a new booking for each case:
 - [ ] **Doctor's "I can't make it"** before the call: patient and admins
       emailed; appointment leaves the doctor's list.
 
+## 4b. Changing the time
+
+- [ ] More than 24 hours before: "Change appointment time" sends a free
+      request (admin Bookings → Reschedule requests).
+- [ ] Less than 24 hours before: the button shows the fee; paying it sends
+      the request ("late fee paid" on the admin's request); closing the
+      payment window leaves the appointment as it was.
+- [ ] Doctor's "Call couldn't be completed": the patient's card says "Your
+      consultation couldn't be completed" (not "doctor can't make it"); the
+      admin can give it a new time.
+
 ## 5. After a no-show
 
 - [ ] Patient pays the no-show fee: booking becomes a reschedule request.

@@ -14,7 +14,12 @@ const { round2 } = require("./money");
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-const TYPE_NAME = { OPD: "General OPD", SURGICAL: "Surgical", NO_SHOW_FEE: "No-show fees" };
+const TYPE_NAME = {
+  OPD: "General OPD",
+  SURGICAL: "Surgical",
+  NO_SHOW_FEE: "No-show fees",
+  RESCHEDULE_FEE: "Late reschedule fees",
+};
 const MODE_NAME = { online: "Video call", in_person: "At the hospital" };
 
 const ms = (v) => {
@@ -189,7 +194,7 @@ function buildReport({ fromMs, toMs, payments = [], refunds = [], bookings = [],
       ["Gross received", { v: round2(gross), f: "money" }],
       ["Paystack charges", { v: round2(charges), f: "money" }],
       ["Net received (after charges)", { v: round2(gross - charges), f: "money" }],
-      ...["OPD", "SURGICAL", "NO_SHOW_FEE"].map((t) => [
+      ...["OPD", "SURGICAL", "NO_SHOW_FEE", "RESCHEDULE_FEE"].map((t) => [
         `${TYPE_NAME[t]} (${byType[t]?.count || 0} payments)`,
         { v: round2(byType[t]?.amount || 0), f: "money" },
       ]),

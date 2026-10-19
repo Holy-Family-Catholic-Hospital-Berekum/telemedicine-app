@@ -271,9 +271,14 @@ async function markNoShowFeePaid(bookingRef, paystackData, via) {
   });
 }
 
-/** Newest fee attempt first; applies a success. "paid" | "in_flight" | "failed" | "none". */
-async function checkFeeAttempts(bookingRef, booking) {
-  const refs = Array.isArray(booking.feeTxRefs) ? [...booking.feeTxRefs].reverse() : [];
+/**
+ * Newest fee attempt first; applies a success. "paid" | "in_flight" |
+ * "failed" | "none". Also used for the late reschedule fee
+ * (lateReschedule.js): refsField "lateFeeTxRefs", apply its markPaid.
+ */
+async function checkFeeAttempts(bookingRef, booking, { refsField = "feeTxRefs", apply = markNoShowFeePaid } = {}) {
+  const list = refsField === "lateFeeTxRefs" ? booking.lateFeeTxRefs : booking.feeTxRefs;
+  const refs = Array.isArray(list) ? [...list].reverse() : [];
   for (const reference of refs) {
     let tx;
     try {
@@ -283,7 +288,7 @@ async function checkFeeAttempts(bookingRef, booking) {
       return "in_flight"; // couldn't ask: be safe
     }
     if (tx?.status === "success") {
-      const result = await markNoShowFeePaid(bookingRef, tx, "verify_api");
+      const result = await apply(bookingRef, tx, "verify_api");
       if (result.duplicate) {
         const { recordPaymentIssue } = require("./payments");
         await recordPaymentIssue(tx, { reason: "duplicate_payment", bookingId: bookingRef.id, patientUid: booking.patientUid });
@@ -394,7 +399,10 @@ async function beginNoShowReschedule({ caller, bookingId, preferredTime = null, 
   };
 }
 
-/** data: { bookingId } -> { status: "confirmed" | "pending" | "failed" } */
+/**
+ * data: { bookingId } -> { status: "confirmed" | "pending" | "failed" }
+ * The no-show fee, or a late reschedule fee (lateReschedule.js).
+ */
 exports.getNoShowFeeStatus = onCall({ secrets: [PAYSTACK_SECRET_KEY] }, async (request) => {
   const caller = await requireRole(request, ["patient"]);
   const bookingId = docId(request.data?.bookingId, "Booking");
@@ -403,7 +411,16 @@ exports.getNoShowFeeStatus = onCall({ secrets: [PAYSTACK_SECRET_KEY] }, async (r
   const snap = await bookingRef.get();
   const booking = snap.exists ? snap.data() : null;
   if (!booking || booking.patientUid !== caller.uid) throw new HttpsError("not-found", "Booking not found.");
-  if (booking.status !== "no_show") return { status: "confirmed" };
+  if (booking.status !== "no_show") {
+    // A late reschedule fee waiting to be confirmed (lateReschedule.js).
+    if (booking.pendingLateReschedule) {
+      const { LATE_FEE } = require("./lateReschedule");
+      const late = await checkFeeAttempts(bookingRef, booking, LATE_FEE);
+      if (late === "paid") return { status: "confirmed" };
+      return { status: late === "in_flight" ? "pending" : "failed" };
+    }
+    return { status: "confirmed" };
+  }
   const state = await checkFeeAttempts(bookingRef, booking);
   if (state === "paid") return { status: "confirmed" };
   if (state === "failed") return { status: "failed" };
@@ -413,3 +430,4 @@ exports.getNoShowFeeStatus = onCall({ secrets: [PAYSTACK_SECRET_KEY] }, async (r
 exports.markNoShowFeePaid = markNoShowFeePaid;
 exports.emailDoctorMissed = emailDoctorMissed;
 exports.beginNoShowReschedule = beginNoShowReschedule;
+exports.checkFeeAttempts = checkFeeAttempts;

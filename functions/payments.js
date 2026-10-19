@@ -916,6 +916,20 @@ async function applyPaystackTransaction(tx, via) {
     return "applied";
   }
 
+  // A late reschedule fee (lateReschedule.js), not a consultation fee.
+  if (refSnap.data().purpose === "reschedule_fee") {
+    const { markLateRescheduleFeePaid } = require("./lateReschedule");
+    const fee = await markLateRescheduleFeePaid(bookingRef, tx, via);
+    if (tx.status === "success" && (fee.status === "rejected" || fee.status === "missing" || fee.duplicate)) {
+      await recordPaymentIssue(tx, {
+        reason: fee.duplicate ? "duplicate_payment" : fee.status === "missing" ? "no_matching_booking" : "amount_mismatch",
+        ...ids,
+      });
+      return "flagged";
+    }
+    return "applied";
+  }
+
   const result = await markBookingPaid(bookingRef, tx, via);
   if (result.status === "rejected") {
     await recordPaymentIssue(tx, { reason: "amount_mismatch", ...ids });

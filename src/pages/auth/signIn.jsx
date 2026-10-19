@@ -49,7 +49,9 @@ export default function SignIn({ audience = "patient" }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [rememberMe, setRememberMe] = useState(false);
+  // Ticked by default: most patients use their own phone. They can untick
+  // it on a shared device. Staff are never remembered (see handleSubmit).
+  const [rememberMe, setRememberMe] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [resetSent, setResetSent] = useState(false);

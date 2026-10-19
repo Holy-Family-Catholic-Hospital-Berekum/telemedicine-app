@@ -39,6 +39,9 @@ function refundablePayments(booking) {
   if (booking.noShowFee?.reference && Number(booking.noShowFee.amount) > 0) {
     payments.push({ reference: booking.noShowFee.reference, amount: Number(booking.noShowFee.amount), id: null });
   }
+  for (const f of booking.lateRescheduleFees || []) {
+    if (f.reference && Number(f.amount) > 0) payments.push({ reference: f.reference, amount: Number(f.amount), id: null });
+  }
   return payments;
 }
 
@@ -143,7 +146,7 @@ async function purgePatientData(uid, { actor, meta = null }) {
     const mail = await db.collection("mail").where("bookingId", "==", doc.id).get();
     await Promise.all(mail.docs.filter((m) => m.data().status !== "sent").map((m) => m.ref.delete()));
     await doc.ref.delete().catch(() => {});
-    for (const ref of [...(b.txRefs || []), ...(b.feeTxRefs || [])]) {
+    for (const ref of [...(b.txRefs || []), ...(b.feeTxRefs || []), ...(b.lateFeeTxRefs || [])]) {
       await db.collection("paymentRefs").doc(ref).delete().catch(() => {});
     }
   }

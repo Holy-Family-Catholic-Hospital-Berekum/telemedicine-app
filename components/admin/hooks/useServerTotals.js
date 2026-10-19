@@ -37,7 +37,7 @@ const OUTCOME_COLORS = {
   no_show: "var(--color-warning)",
   cancelled: "var(--color-ink-faint)",
 };
-export const PAYMENT_TYPES = ["OPD", "SURGICAL", "NO_SHOW_FEE"];
+export const PAYMENT_TYPES = ["OPD", "SURGICAL", "NO_SHOW_FEE", "RESCHEDULE_FEE"];
 // Paystack's channel names; anything else is shown as "Other".
 export const CHANNELS = ["mobile_money", "card", "bank", "bank_transfer", "ussd", "qr", "apple_pay"];
 

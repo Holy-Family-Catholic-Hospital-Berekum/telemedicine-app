@@ -1412,8 +1412,9 @@ export default function BookConsultation() {
                         ? ` To book a new time after that, you pay an extra GHS ${settings.noShow.rescheduleFee}`
                         : " You can then book a new time"}
                       {`, or you can ask for a refund minus ${settings.noShow.forfeitPercent}% of what you paid.`}{" "}
-                      If you can't make it, change the time free of charge from
-                      your dashboard before the appointment.
+                      {settings.noShow.rescheduleFee > 0
+                        ? `If you can't make it, change the time from your dashboard: free up to 24 hours before the appointment, GHS ${settings.noShow.rescheduleFee} after that.`
+                        : "If you can't make it, change the time free of charge from your dashboard before the appointment."}
                     </p>
                     )}
                   </div>

@@ -43,6 +43,14 @@ const DOCTOR_UNAVAILABLE_META = {
   bg: "#F885351A",
 };
 
+// The doctor reported that the video call, once connected, couldn't be
+// completed (doctorUnavailable.kind "call_incomplete").
+const CALL_INCOMPLETE_META = {
+  label: "Call couldn't be completed",
+  color: "#A85420",
+  bg: "#F885351A",
+};
+
 const MISSED_META = {
   label: "Didn't take place",
   color: "#A85420",
@@ -77,6 +85,7 @@ export default function BookingCard({
   // The doctor can't make it: the hospital gives a new time, or the
   // patient asks for a full refund (functions/lib/consultationLifecycle.js).
   const doctorUnavailable = isScheduled && Boolean(booking.doctorUnavailable);
+  const callIncomplete = doctorUnavailable && booking.doctorUnavailable.kind === "call_incomplete";
 
   const callInProgress =
     booking.mode === "online" && booking.state === "in_progress" && !closed && !doctorUnavailable;
@@ -87,7 +96,9 @@ export default function BookingCard({
 
   const meta =
     doctorUnavailable && !refund
-      ? DOCTOR_UNAVAILABLE_META
+      ? callIncomplete
+        ? CALL_INCOMPLETE_META
+        : DOCTOR_UNAVAILABLE_META
       : didNotHappen && !refund && !rescheduleRequested
       ? MISSED_META
       : booking.payAtHospital && booking.state === "pending_assignment"
@@ -203,10 +214,14 @@ export default function BookingCard({
                 <div className="rounded-md border border-[#F88535]/40 bg-[#F88535]/5 p-4">
                   <p className="flex items-center gap-2 text-sm font-semibold text-[#12242C]">
                     <CalendarX2 size={16} strokeWidth={1.75} className="text-[#A85420]" />
-                    Your doctor can&apos;t make this appointment
+                    {callIncomplete
+                      ? "Your consultation couldn't be completed"
+                      : "Your doctor can't make this appointment"}
                   </p>
                   <p className="mt-1 text-sm text-[#3E4E56]">
-                    We&apos;re sorry. We&apos;ll email you a new time soon, at no extra cost.
+                    {callIncomplete
+                      ? "We're sorry. We'll email you a new time to finish your consultation, at no extra cost."
+                      : "We're sorry. We'll email you a new time soon, at no extra cost."}
                     {booking.rescheduleRequest?.preferredTime
                       ? ` You asked for: ${booking.rescheduleRequest.preferredTime}.`
                       : " You can tell us a time that suits you."}

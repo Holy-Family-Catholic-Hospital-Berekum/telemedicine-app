@@ -110,6 +110,28 @@ function rescheduleCountsAsNoShow(c, waitMinutes, now = Date.now()) {
   return true;
 }
 
+// Late reschedules before the start (hospital decision, 19 Oct 2026): a
+// patient may move an appointment free of charge up to this long before it
+// starts; after that, until the start, they pay the reschedule fee
+// (lateReschedule.js) and the appointment stays booked until it's paid.
+const FREE_RESCHEDULE_HOURS = 24;
+
+/**
+ * True if a patient's reschedule request now needs the late reschedule
+ * fee: less than FREE_RESCHEDULE_HOURS before the start (from the start on,
+ * rescheduleCountsAsNoShow applies instead). Free: a fee of 0, hospital
+ * visits paid at the hospital, an appointment the doctor couldn't make (or
+ * couldn't complete), a request already made, and one that took place.
+ */
+function rescheduleNeedsLateFee(c, booking, fee, now = Date.now()) {
+  const start = toDate(c.scheduledTime)?.getTime();
+  if (!start || now >= start || c.metAt) return false;
+  if (!(Number(fee) > 0) || booking.payAtHospital === true) return false;
+  if (booking.doctorUnavailable || c.doctorUnavailable) return false;
+  if (booking.rescheduleRequest?.status === "requested") return false;
+  return start - now < FREE_RESCHEDULE_HOURS * 3600 * 1000;
+}
+
 /**
  * actor: { uid, role } ("system" for the automatic job)
  * byPatient: the patient asked for a new time after the start
@@ -341,6 +363,7 @@ async function closeConsultation({ consultationId, outcome, actor, meta = null, 
       endedAt: serverTime(),
       amountPaid,
       noShowFeePaid: Number(booking.noShowFee?.amount || 0),
+      lateRescheduleFeesPaid: (booking.lateRescheduleFees || []).reduce((sum, f) => sum + Number(f.amount || 0), 0),
       currency: booking.currency || "GHS",
       forfeitAmount,
       refundOwed,
@@ -382,7 +405,7 @@ async function closeConsultation({ consultationId, outcome, actor, meta = null, 
     });
 
     return {
-      txRefs: [...(booking.txRefs || []), ...(booking.feeTxRefs || [])],
+      txRefs: [...(booking.txRefs || []), ...(booking.feeTxRefs || []), ...(booking.lateFeeTxRefs || [])],
       patientUid: c.patientUid,
       forfeitAmount,
       refundOwed,
@@ -621,6 +644,8 @@ module.exports = {
   waitDeadline,
   deadlineFrom,
   rescheduleCountsAsNoShow,
+  FREE_RESCHEDULE_HOURS,
+  rescheduleNeedsLateFee,
   markNoShow,
   markDoctorUnavailable,
   closeConsultation,

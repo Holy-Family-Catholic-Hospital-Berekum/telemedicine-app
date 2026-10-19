@@ -82,11 +82,16 @@ function patientContent(kind, data, when) {
       `This is an in-person consultation at ${HOSPITAL_NAME}, ${HOSPITAL_TOWN}.`,
       "Please arrive 15 minutes early and bring this booking reference.",
     ];
-  const change = `If you can't make it, tap "Change appointment time" on the website or call us on ${HOSPITAL_PHONE}.`;
-
   // The no-show rule, stated plainly wherever a patient is told about an
   // appointment (data.noShow: { waitMinutes, rescheduleFee, forfeitPercent }).
   const ns = data.noShow;
+  // Free up to 24 hours before; later than that the reschedule fee
+  // (lib/consultationLifecycle.js rescheduleNeedsLateFee). Hospital visits
+  // paid at the hospital stay free.
+  const lateFee = ns && Number(ns.rescheduleFee) > 0 && !data.payAtHospital;
+  const change = lateFee
+    ? `If you can't make it, tap "Change appointment time" on the website or call us on ${HOSPITAL_PHONE}. Changing the time is free up to 24 hours before your appointment; after that it costs GHS ${Number(ns.rescheduleFee)}.`
+    : `If you can't make it, tap "Change appointment time" on the website or call us on ${HOSPITAL_PHONE}.`;
   const fee = ns ? `GHS ${Number(ns.rescheduleFee || 0)}` : "";
   const noShowRule = ns
     ? online

@@ -44,7 +44,12 @@ const RANGES = [
   { key: "90", label: "Last 90 days" },
   { key: "all", label: "All time" },
 ];
-const TYPE_NAME = { OPD: "General OPD", SURGICAL: "Surgical", NO_SHOW_FEE: "No-show fees" };
+const TYPE_NAME = {
+  OPD: "General OPD",
+  SURGICAL: "Surgical",
+  NO_SHOW_FEE: "No-show fees",
+  RESCHEDULE_FEE: "Late reschedule fees",
+};
 
 // Refunds (refundRequests: patients' requests; paymentIssues: payments we
 // couldn't use, refunded automatically). A refund counts as done when its

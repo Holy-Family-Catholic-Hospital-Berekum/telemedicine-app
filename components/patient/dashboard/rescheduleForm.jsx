@@ -19,6 +19,18 @@ function isLate(booking, now = Date.now()) {
   return true;
 }
 
+// Mirrors rescheduleNeedsLateFee (functions/lib/consultationLifecycle.js):
+// free up to 24 hours before the start; after that, until the start, the
+// reschedule fee. The appointment stays booked until it's paid.
+const FREE_RESCHEDULE_HOURS = 24;
+function needsLateFee(booking, now = Date.now()) {
+  const start = booking.scheduledTime?.getTime?.();
+  if (!start || now >= start || booking.metAt) return false;
+  if (booking.payAtHospital || booking.doctorUnavailable) return false;
+  if (booking.rescheduleRequest?.status === "requested") return false;
+  return start - now < FREE_RESCHEDULE_HOURS * 3600 * 1000;
+}
+
 export default function RescheduleForm({ booking, onRequested }) {
   const { noShow } = useSiteSettings().settings;
   const [open, setOpen] = useState(false);
@@ -28,13 +40,18 @@ export default function RescheduleForm({ booking, onRequested }) {
   const [error, setError] = useState(null);
   const [done, setDone] = useState(false);
   const [paying, setPaying] = useState(false);
+  // The late fee wasn't confirmed: the appointment is still booked.
+  const [notPaid, setNotPaid] = useState(false);
   const late = isLate(booking);
   const fee = Number(noShow.rescheduleFee || 0);
+  const lateFee = !late && fee > 0 && needsLateFee(booking);
+  const charged = (late || lateFee) && fee > 0;
 
   async function handleSubmit(e) {
     e.preventDefault();
     setSubmitting(true);
     setError(null);
+    setNotPaid(false);
     try {
       const result = await requestReschedule({
         booking,
@@ -42,15 +59,21 @@ export default function RescheduleForm({ booking, onRequested }) {
         reason,
       });
       if (result?.status === "pay") {
-        // Too late for a free reschedule: it now counts as missed and the
-        // no-show fee is due. Paystack's answer is only a hint; ask the
-        // server. Unconfirmed? The booking card offers to pay again.
+        // A fee is due: less than 24 hours before (the appointment stays
+        // booked until it's paid), or after the start (it now counts as
+        // missed). Paystack's answer is only a hint; ask the server.
         setPaying(true);
         await openPaystackCheckout(result);
+        let status = "pending";
         for (let i = 0; i < 10; i++) {
-          const { status } = await getNoShowFeeStatus(booking.bookingId);
+          ({ status } = await getNoShowFeeStatus(booking.bookingId));
           if (status !== "pending") break;
           await wait(3000);
+        }
+        if (lateFee && status !== "confirmed") {
+          // Nothing changed: no request was sent and the time still stands.
+          setNotPaid(true);
+          return;
         }
       }
       setDone(true);
@@ -83,7 +106,7 @@ export default function RescheduleForm({ booking, onRequested }) {
         style={{ backgroundColor: "#0095D9" }}
       >
         <RefreshCw size={16} strokeWidth={2} />
-        {late && fee > 0 ? `Change appointment time (GHS ${fee} fee)` : "Change appointment time"}
+        {charged ? `Change appointment time (GHS ${fee} fee)` : "Change appointment time"}
       </button>
     );
   }
@@ -93,7 +116,13 @@ export default function RescheduleForm({ booking, onRequested }) {
       onSubmit={handleSubmit}
       className="rounded-md border border-[#DCE6EC] p-3.5 space-y-2.5"
     >
-      {late ? (
+      {lateFee ? (
+        <p className="rounded-sm bg-[#F88535]/10 px-3 py-2 text-sm text-[#12242C]">
+          Your appointment is less than {FREE_RESCHEDULE_HOURS} hours away, so changing the time
+          costs GHS {fee}, paid with mobile money. Your appointment stays booked until the payment
+          goes through. We&apos;ll email you the new time.
+        </p>
+      ) : late ? (
         <p className="rounded-sm bg-[#F88535]/10 px-3 py-2 text-sm text-[#12242C]">
           Your appointment time has started, so moving it now counts as a
           missed appointment
@@ -124,6 +153,12 @@ export default function RescheduleForm({ booking, onRequested }) {
         className="w-full rounded-sm border border-[#DCE6EC] px-3 py-2 text-sm text-[#12242C] focus:border-[#0095D9] focus:outline-none"
       />
       {error && <p className="text-xs text-[#B23A3A]">{error}</p>}
+      {notPaid && (
+        <p className="text-sm text-[#B23A3A]">
+          We didn&apos;t receive the GHS {fee} payment, so your appointment time hasn&apos;t changed.
+          If money left your account, wait a minute and tap the button again: we&apos;ll find it.
+        </p>
+      )}
       <div className="flex gap-2">
         <button
           type="submit"
@@ -136,7 +171,7 @@ export default function RescheduleForm({ booking, onRequested }) {
           )}
           {paying
             ? "Confirming payment…"
-            : late && fee > 0
+            : charged
               ? `Pay GHS ${fee} and send`
               : "Send request"}
         </button>

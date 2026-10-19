@@ -484,10 +484,16 @@ export default function BookingsPanel({
                       )}
                       {b.doctorUnavailable && (subtab === "reschedules" || subtab === "scheduled") && (
                         <div className="admin-cell-sub" style={{ color: "var(--color-danger)", fontWeight: 600 }}>
-                          Doctor can't make it
-                          {DOCTOR_OUT_BY[b.doctorUnavailable.by] ? ` · ${DOCTOR_OUT_BY[b.doctorUnavailable.by]}` : ""}
+                          {b.doctorUnavailable.kind === "call_incomplete"
+                            ? "Call couldn't be completed · reported by the doctor"
+                            : `Doctor can't make it${DOCTOR_OUT_BY[b.doctorUnavailable.by] ? ` · ${DOCTOR_OUT_BY[b.doctorUnavailable.by]}` : ""}`}
                           {" · needs a new time (no fee) or a full refund"}
                           {b.doctorUnavailable.reason ? ` · Note: ${b.doctorUnavailable.reason}` : ""}
+                        </div>
+                      )}
+                      {subtab === "reschedules" && b.rescheduleRequest?.lateFee > 0 && (
+                        <div className="admin-cell-sub">
+                          Less than 24 hours before · late fee paid GHS {b.rescheduleRequest.lateFee}
                         </div>
                       )}
                       {subtab === "reschedules" && b.rescheduleRequest?.afterNoShow && (
