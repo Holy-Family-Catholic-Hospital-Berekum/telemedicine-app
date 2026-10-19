@@ -123,6 +123,24 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Prescriptions after a video consultation (functions/prescriptions.js):
+    // the patient and the doctor who wrote it read their own; admins don't.
+    // Deleted after 7 days. The signatures they're signed with
+    // (prescriptionSignatures) are never readable; a doctor may read their
+    // own current signature to see it in their Account tab.
+    match /prescriptions/{prescriptionId} {
+      allow read: if (isPatient() && resource.data.patientUid == myUid())
+                  || (isDoctor() && resource.data.doctorUid == myUid());
+      allow write: if false; // issuePrescription, cancelPrescription
+    }
+    match /prescriptionSignatures/{prescriptionId} {
+      allow read, write: if false;
+    }
+    match /doctorSignatures/{doctorUid} {
+      allow read: if isDoctor() && myUid() == doctorUid;
+      allow write: if false; // updatePrescriberDetails
+    }
+
     // Open slots are public (doctor, type, mode, time; no patient data) so
     // the home page can list them. Held/booked slots stay staff-only.
     match /availableSlots/{slotId} {

@@ -217,11 +217,13 @@ function EmailCard() {
   );
 }
 
-export default function StaffAccountSettings() {
+// children: extra cards (the doctor portal adds the prescription signature).
+export default function StaffAccountSettings({ children }) {
   return (
     <div className="grid max-w-3xl gap-5">
       <ProfileCard />
       <EmailCard />
+      {children}
     </div>
   );
 }

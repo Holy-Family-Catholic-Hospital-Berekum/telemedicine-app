@@ -20,7 +20,8 @@ site images and the legal text from an admin portal.
 | | Where | What they do |
 |---|---|---|
 | **Patients** | `/` , `/book`, `/dashboard` | Sign up (adults only; children are booked by a parent), book and pay, join video calls, reschedule, ask for refunds. Installable on a phone ("Holy Family"). |
-| **Doctors** | `/doctor` (staff sign-in) | See their schedule and the patient's clinical details, start video calls from a registered room computer, close consultations, report "I can't make it". |
+| **Doctors** | `/doctor` (staff sign-in) | See their schedule and the patient's clinical details, start video calls from a registered room computer, write prescriptions after a video call (signed PDF the patient downloads for 7 days), close consultations, report "I can't make it". |
+| **Pharmacists** | `/check-prescription` (no sign-in) | Scan a prescription's QR code to see whether it's valid, expired or cancelled. |
 | **Admins** | `/admin` (staff sign-in) | Schedule bookings, manage users, prices, refunds, recordings, the audit log, metrics and the control panel. |
 
 Staff sign in on a hidden page (its address is set by `VITE_STAFF_LOGIN_PATH`,

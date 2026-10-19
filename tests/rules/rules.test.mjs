@@ -88,6 +88,9 @@ beforeEach(async () => {
     await put("rateLimits/x_pat1", { count: 1 });
     await put("mail/m1", { to: "x@y.z" });
     await put("recordings/rec1", { doctorUid: "doc1", status: "recording" });
+    await put("prescriptions/RX-1", { patientUid: "pat1", doctorUid: "doc1", status: "active", checkCode: "C" });
+    await put("prescriptionSignatures/RX-1", { png: "x" });
+    await put("doctorSignatures/doc1", { png: "x" });
     await put("doctorProfiles/doc1", {
       name: "Dr One", bio: "", focus: "", specialties: [], languages: [], isAvailable: true, photoURL: null,
     });
@@ -221,6 +224,40 @@ describe("server-owned collections", () => {
     await assertFails(get(admin(), "rateLimits/x_pat1"));
     await assertFails(get(patient("pat1"), "rateLimits/x_pat1"));
     await assertFails(get(admin(), "mail/m1"));
+  });
+});
+
+describe("prescriptions", () => {
+  test("the patient and the doctor who wrote it read it", async () => {
+    await assertSucceeds(get(patient(), "prescriptions/RX-1"));
+    await assertSucceeds(get(doctor(), "prescriptions/RX-1"));
+  });
+  test("other patients, other doctors, password-only doctors and admins can't", async () => {
+    await assertFails(get(patient("pat2"), "prescriptions/RX-1"));
+    await assertFails(get(otherDoctor(), "prescriptions/RX-1"));
+    await assertFails(get(doctor({ secondFactor: false }), "prescriptions/RX-1"));
+    await assertFails(get(admin(), "prescriptions/RX-1"));
+  });
+  test("a deactivated patient can't read prescriptions", async () => {
+    await env.withSecurityRulesDisabled((ctx) =>
+      setDoc(doc(ctx.firestore(), "prescriptions/RX-2"), { patientUid: "patOff", doctorUid: "doc1" }));
+    await assertFails(get(patient("patOff"), "prescriptions/RX-2"));
+  });
+  test("nobody writes prescriptions, not even their doctor", async () => {
+    await assertFails(updateDoc(doc(doctor().firestore(), "prescriptions/RX-1"), { status: "cancelled" }));
+    await assertFails(setDoc(doc(doctor().firestore(), "prescriptions/RX-9"), { patientUid: "pat1", doctorUid: "doc1" }));
+  });
+  test("signatures on prescriptions are closed to everyone", async () => {
+    for (const ctx of [patient(), doctor(), admin()]) {
+      await assertFails(get(ctx, "prescriptionSignatures/RX-1"));
+    }
+  });
+  test("a doctor reads only their own signature and can't write it", async () => {
+    await assertSucceeds(get(doctor(), "doctorSignatures/doc1"));
+    await assertFails(get(otherDoctor(), "doctorSignatures/doc1"));
+    await assertFails(get(admin(), "doctorSignatures/doc1"));
+    await assertFails(get(patient(), "doctorSignatures/doc1"));
+    await assertFails(setDoc(doc(doctor().firestore(), "doctorSignatures/doc1"), { png: "y" }));
   });
 });
 

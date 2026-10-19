@@ -32,6 +32,37 @@ const callRequestRefund = tracked(httpsCallable(functions, "requestRefund"));
 const callStartNoShowReschedule = tracked(httpsCallable(functions, "startNoShowReschedule"));
 const callGetNoShowFeeStatus = tracked(httpsCallable(functions, "getNoShowFeeStatus"));
 
+/**
+ * The patient's prescriptions still within their 7 days (they're deleted
+ * after that), newest first. The PDF comes from the server:
+ * components/shared/prescriptions.js downloadPrescription.
+ */
+export async function fetchMyPrescriptions(patientUid) {
+  const snap = await getDocs(
+    query(collection(db, "prescriptions"), where("patientUid", "==", patientUid)),
+  );
+  const now = Date.now();
+  return snap.docs
+    .map((d) => {
+      const rx = d.data();
+      return {
+        id: d.id,
+        status: rx.status,
+        patientName: rx.patientName || null,
+        guardianName: rx.guardianName || null,
+        doctorName: rx.doctorName || "Your doctor",
+        items: rx.items || [],
+        notes: rx.notes || null,
+        issuedAt: toDate(rx.issuedAt),
+        expiresAt: toDate(rx.expiresAt),
+        cancelledAt: toDate(rx.cancelledAt),
+        cancelReason: rx.cancelReason || null,
+      };
+    })
+    .filter((rx) => rx.expiresAt && rx.expiresAt.getTime() > now)
+    .sort((a, b) => b.issuedAt - a.issuedAt);
+}
+
 /** The patient's refund requests, keyed by consultationId. */
 export async function fetchMyRefundRequests(patientUid) {
   const snap = await getDocs(

@@ -62,8 +62,20 @@ step fails, note what you saw and the time.
 - [ ] Patient leaves the window / switches app: their video is hidden and
       shows "away" until they come back. Watermark with name and time
       moves around.
+- [ ] During the call (once connected), the doctor taps **Prescription**
+      on the call screen (needs the MDC number and signature from the
+      Account tab first): the form opens on the right with the patient
+      still visible; add a medicine, check it, **Sign and issue**: the call
+      screen shows "Prescription issued". (Also possible after the call
+      from the card's **Write prescription**, before Mark done.)
+- [ ] Patient dashboard shows "Your prescriptions"; **Download PDF** gives
+      the hospital form with logo, doctor's name, MDC number, signature and
+      QR code. Scanning the QR on another phone opens the check page:
+      "Valid prescription" with the same medicines and no patient name.
+- [ ] Doctor → Prescriptions → **Cancel**: the patient sees "cancelled",
+      can't download it, and the check page says "Cancelled by the doctor".
 - [ ] Doctor taps **Mark done → Close as completed**: booking moves to
-      history.
+      history; the prescription stays on the patient's dashboard.
 
 Repeat with a new booking for each case:
 

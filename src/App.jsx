@@ -21,6 +21,7 @@ const VerifyEmailNotice = lazy(() => import("./pages/auth/verifyEmailNotice"));
 const Unauthorized = lazy(() => import("./pages/auth/unauthorized"));
 const Privacy = lazy(() => import("./pages/privacy"));
 const Terms = lazy(() => import("./pages/terms"));
+const CheckPrescription = lazy(() => import("./pages/checkPrescription"));
 
 // Larger, easier-to-read type on every page patients use (src/index.css).
 // Every patient page also gets the WhatsApp "Chat with us" button.
@@ -53,6 +54,8 @@ export default function App() {
         <Route path="/" element={<PatientPage><Home /></PatientPage>} />
         <Route path="/privacy" element={<PatientPage><Privacy /></PatientPage>} />
         <Route path="/terms" element={<PatientPage><Terms /></PatientPage>} />
+        {/* Pharmacists check a prescription's QR code here (no sign-in, not indexed). */}
+        <Route path="/check-prescription" element={<PatientPage><CheckPrescription /></PatientPage>} />
 
         {/* Signed-in users get bounced away from these to their own dashboard */}
         <Route element={<PublicOnlyRoute />}>

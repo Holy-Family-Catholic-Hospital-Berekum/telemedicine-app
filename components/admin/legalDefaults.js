@@ -11,7 +11,7 @@
 
 export const DEFAULT_LEGAL = {
   privacy: {
-    lastUpdated: "11 October 2026",
+    lastUpdated: "19 October 2026",
     contactEmail: "info@hfhberekum.org",
     intro:
       "This policy explains what personal information the hospital's telemedicine platform collects, why, who sees it, and how long we keep it. We have tried to keep it short and plain.",
@@ -30,6 +30,7 @@ export const DEFAULT_LEGAL = {
 - Booking details: consultation type, whether you see the doctor by video call or at the hospital, your phone number, and the doctor you choose, if any. For a video call we also ask for your age, sex, town or city and area or nearest landmark; for a visit at the hospital we don't. When you book for your child, these are your child's details, plus your child's name.
 - Your confirmation that you are 18 or older, given when you create an account, and, when you book for a child, your consent as their parent or guardian.
 - Payment details: the amount, the payment reference and whether the payment succeeded, and for refunds, the amount and its progress. Payment is made by mobile money through Paystack, and refunds go back through Paystack to the wallet you paid from. We never see or store your mobile money PIN.
+- Prescriptions: when your doctor writes one after a video consultation, the medicines and how to take them, with the name, age and sex printed on it.
 - Consultation information: what you share with your doctor during the consultation and, when the hospital has call recording switched on, a recording of online consultations (video with sound, or sound only) (see "Consultation recording" below).
 - Basic technical data needed to keep the service working and secure, such as sign-in activity, and any attempt the call screen detects to take a screenshot of or record a video consultation.`,
       },
@@ -51,13 +52,13 @@ export const DEFAULT_LEGAL = {
       {
         id: "who-sees-it",
         title: "Who can see your information",
-        body: `Clinical details you share are visible only to the doctor handling your consultation. Hospital staff who schedule and administer consultations can see your booking details, but only what their role needs.
+        body: `Clinical details you share are visible only to the doctor handling your consultation. A prescription can be seen only by you and the doctor who wrote it; anyone holding the code printed on it (such as your pharmacist) can check online that it is genuine and see the doctor, the dates and the medicines, but not your name. Hospital staff who schedule and administer consultations can see your booking details, but only what their role needs.
 
 We use a small number of service providers to run the platform. They process information on our behalf and only for that purpose:
 
 - Google (Firebase and Google Cloud), for sign-in, our database, file storage (including consultation recordings) and the servers that run the service.
 - Vercel, which hosts the website.
-- Resend, which sends our appointment emails (your email address, name and appointment details).
+- Brevo, which sends our appointment emails (your email address, name and appointment details).
 - Cloudflare, which relays a video call when your device can't connect directly to the doctor's. The call stays encrypted and is not stored.
 - Paystack, for mobile money payments.
 
@@ -76,6 +77,7 @@ We do not sell your information and we do not use it for advertising.`,
         body: `- The details you give when booking (phone number and, for a video call, age, sex and location) are permanently deleted once your consultation is closed. If a consultation is marked as missed, they are kept for up to 14 days so you can book a new time or ask for a refund, then deleted when it closes. Unpaid bookings are deleted after 24 hours.
 - To protect against data loss, we keep encrypted backups of our database for 7 days. Information deleted from the platform can remain in these backups until they expire, at most 7 days later, and is only used to restore the service after a fault.
 - A short record of each consultation (doctor, date, start and end time, outcome and amount paid) is kept so you and the hospital can see your history.
+- Prescriptions are deleted 7 days after your doctor writes them, so download yours before then. We keep only a note that a prescription was written and when, without the medicines. Your doctor records your consultation in the hospital's patient records system, as for a visit at the hospital.
 - A record that you agreed to this policy, and when, is kept as proof of your consent.
 - Consultation recordings are kept only as long as needed for the purposes above; authorised administrators delete them when they are no longer needed.
 - Your account details are kept while your account is active. You can ask us to delete your account at any time (see "Your rights" below).`,
@@ -115,7 +117,7 @@ If you are not happy with how we handle your information, you can complain to Gh
   },
 
   terms: {
-    lastUpdated: "11 October 2026",
+    lastUpdated: "19 October 2026",
     contactEmail: "info@hfhberekum.org",
     intro:
       "These terms explain the rules for using the hospital's telemedicine platform to book and attend consultations. Please read them before you book.",
@@ -146,7 +148,8 @@ If you are not happy with how we handle your information, you can complain to Gh
         title: "Limits of an online consultation",
         body: `- A video consultation cannot replace a physical examination in every case. Your doctor may decide that you need to be seen in person, or need tests or treatment that cannot be done online.
 - Give your doctor complete and accurate information about your health. Advice depends on what you tell us.
-- Follow your doctor's advice, and seek in-person care if your condition gets worse.`,
+- Follow your doctor's advice, and seek in-person care if your condition gets worse.
+- After a video consultation, your doctor may write you a prescription. You can download it from your dashboard and take it to a pharmacy; it is valid for 7 days from the day it was written, and after that it is deleted. Your doctor may cancel a prescription (for example, to correct it); a cancelled prescription must not be used. For visits at the hospital, prescriptions are given at the hospital.`,
       },
       {
         id: "account",

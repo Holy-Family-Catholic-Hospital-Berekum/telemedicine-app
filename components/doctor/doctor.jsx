@@ -13,11 +13,15 @@ import {
   MonitorX,
   Settings,
   AlarmClock,
+  FileText,
 } from "lucide-react";
 import StatTile from "./ui/statTile";
 import ConsultationCard from "./ui/consultationCard";
 import MarkDoneModal from "./ui/markDoneModal";
 import CantMakeItModal from "./ui/cantMakeItModal";
+import PrescriptionModal from "./ui/prescriptionModal";
+import PrescriptionsTab from "./docPrescriptionsTab";
+import PrescriberDetails from "./prescriberDetails";
 import ProfileTab from "./docProfileTab";
 import LogoutButton from "./logoutButton";
 import StaffAccountSettings from "../shared/staffAccountSettings.jsx";
@@ -35,6 +39,7 @@ import {
   startVideoCall,
   markConsultationDone,
   reportDoctorUnavailable,
+  issuePrescription,
 } from "./docFirestoreService";
 import { useSiteSettings } from "../../src/siteSettings";
 import VideoCallModal from "../video/videoCallModal";
@@ -46,6 +51,7 @@ import { useStaffAppManifest } from "../../src/staffApp.js";
 
 const TABS = [
   { id: "schedule", label: "Schedule", icon: CalendarDays },
+  { id: "prescriptions", label: "Prescriptions", icon: FileText },
   { id: "profile", label: "My profile", icon: UserRound },
   { id: "account", label: "Account", icon: Settings },
 ];
@@ -78,6 +84,7 @@ export default function DoctorDashboard() {
   const [startingCallId, setStartingCallId] = useState(null);
   const [markDoneTarget, setMarkDoneTarget] = useState(null);
   const [cantMakeItTarget, setCantMakeItTarget] = useState(null);
+  const [prescriptionTarget, setPrescriptionTarget] = useState(null);
   const [toast, setToast] = useState(null);
   const [activeCallConsultationId, setActiveCallConsultationId] =
     useState(null);
@@ -151,6 +158,11 @@ export default function DoctorDashboard() {
   const todayPager = usePagination(todayList, 10);
   const upcomingPager = usePagination(upcomingList, 10);
 
+  // The consultation whose call is open (for "Prescription" on the call screen).
+  const activeCallConsultation = activeCallConsultationId
+    ? consultations.find((c) => c.consultationId === activeCallConsultationId) || null
+    : null;
+
   const liveCallCount = consultations.filter(
     (c) => c.mode === "online" && c.status === "in_progress",
   ).length;
@@ -209,6 +221,24 @@ export default function DoctorDashboard() {
         : "Closed as completed — booking details deleted",
       4000,
     );
+  }
+
+  // Throws on failure, so the dialog can show the error and stay open.
+  async function handleIssuePrescription({ consultation, items, notes }) {
+    const { prescriptionId } = await issuePrescription({
+      consultationId: consultation.consultationId,
+      items,
+      notes,
+    });
+    setConsultations((prev) =>
+      prev.map((c) =>
+        c.consultationId === consultation.consultationId
+          ? { ...c, prescription: { id: prescriptionId, status: "active" } }
+          : c,
+      ),
+    );
+    setPrescriptionTarget(null);
+    showToast("Prescription issued. The patient can download it from their dashboard.", 4000);
   }
 
   async function handleCantMakeItSubmit({ consultation, reason, kind }) {
@@ -350,7 +380,7 @@ export default function DoctorDashboard() {
           />
         </div>
 
-        <nav className="mx-auto flex max-w-5xl gap-1 border-t border-[#DCE6EC] px-4 sm:px-6">
+        <nav className="mx-auto flex max-w-5xl gap-1 overflow-x-auto border-t border-[#DCE6EC] px-4 sm:px-6">
           {TABS.map((tab) => {
             const isActive = activeTab === tab.id;
             return (
@@ -358,7 +388,7 @@ export default function DoctorDashboard() {
                 key={tab.id}
                 type="button"
                 onClick={() => setActiveTab(tab.id)}
-                className="flex items-center gap-1.5 border-b-2 px-3 py-2.5 text-sm font-medium transition"
+                className="flex shrink-0 items-center gap-1.5 whitespace-nowrap border-b-2 px-3 py-2.5 text-sm font-medium transition"
                 style={
                   isActive
                     ? { borderColor: "#0095D9", color: "#0095D9" }
@@ -421,6 +451,7 @@ export default function DoctorDashboard() {
                       inRoom={Boolean(roomDevice)}
                       onMarkDone={setMarkDoneTarget}
                       onCantMakeIt={(consultation, kind) => setCantMakeItTarget({ consultation, kind })}
+                      onWritePrescription={setPrescriptionTarget}
                     />
                   ))}
                   <Pagination {...todayPager} noun="consultations" />
@@ -444,6 +475,7 @@ export default function DoctorDashboard() {
                       inRoom={Boolean(roomDevice)}
                       onMarkDone={setMarkDoneTarget}
                       onCantMakeIt={(consultation, kind) => setCantMakeItTarget({ consultation, kind })}
+                      onWritePrescription={setPrescriptionTarget}
                     />
                   ))}
                   <Pagination {...upcomingPager} noun="consultations" />
@@ -457,7 +489,15 @@ export default function DoctorDashboard() {
           <ProfileTab doctor={doctor} onToast={showToast} />
         )}
 
-        {activeTab === "account" && <StaffAccountSettings />}
+        {activeTab === "prescriptions" && (
+          <PrescriptionsTab doctorUid={doctor.uid} onToast={showToast} />
+        )}
+
+        {activeTab === "account" && (
+          <StaffAccountSettings>
+            <PrescriberDetails />
+          </StaffAccountSettings>
+        )}
       </main>
 
       {markDoneTarget && (
@@ -465,6 +505,15 @@ export default function DoctorDashboard() {
           consultation={markDoneTarget}
           onClose={() => setMarkDoneTarget(null)}
           onSubmit={handleMarkDoneSubmit}
+        />
+      )}
+
+      {prescriptionTarget && (
+        <PrescriptionModal
+          consultation={prescriptionTarget}
+          onClose={() => setPrescriptionTarget(null)}
+          onIssue={handleIssuePrescription}
+          inCall={Boolean(activeCallConsultationId)}
         />
       )}
 
@@ -483,6 +532,14 @@ export default function DoctorDashboard() {
           role="doctor"
           viewerName={doctor?.name}
           waitDeadline={callWaitDeadline}
+          prescription={
+            activeCallConsultation?.mode === "online"
+              ? activeCallConsultation.prescription?.status || "none"
+              : null
+          }
+          onWritePrescription={
+            activeCallConsultation ? () => setPrescriptionTarget(activeCallConsultation) : null
+          }
           onClose={() => {
             setActiveCallConsultationId(null);
             setCallWaitDeadline(null);

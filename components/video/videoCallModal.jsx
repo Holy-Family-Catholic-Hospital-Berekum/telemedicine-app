@@ -13,6 +13,7 @@ import {
   Timer,
   CalendarX2,
   EyeOff,
+  FileText,
 } from "lucide-react";
 import { useWebRTCCall } from "./useWebRTCCall";
 import hospitalLogo from "../../src/assets/logo.webp";
@@ -167,6 +168,10 @@ export default function VideoCallModal({
   patientSeq,
   viewerName,
   waitDeadline: initialDeadline = null,
+  // Doctor only: the consultation's prescription ("none" | "active" |
+  // "cancelled") and opening the form (shown once the two are connected).
+  prescription = null,
+  onWritePrescription = null,
   onClose,
 }) {
   const {
@@ -540,6 +545,24 @@ export default function VideoCallModal({
         >
           {cameraOn ? <Video size={20} /> : <VideoOff size={20} />}
         </button>
+        {role === "doctor" && onWritePrescription && room.met && room.state === "open" && (
+          prescription === "none" ? (
+            <button
+              type="button"
+              onClick={onWritePrescription}
+              className="flex h-12 items-center gap-2 rounded-full bg-white px-4 text-sm font-semibold text-[#12242C] lg:h-14 lg:px-5 lg:text-base"
+              title="Write prescription"
+            >
+              <FileText size={20} className="text-[#0095D9]" />
+              Prescription
+            </button>
+          ) : prescription ? (
+            <span className="flex h-12 items-center gap-2 rounded-full bg-[#2A3B44] px-4 text-sm text-white lg:h-14 lg:px-5">
+              <FileText size={18} />
+              {prescription === "cancelled" ? "Prescription cancelled" : "Prescription issued"}
+            </span>
+          ) : null
+        )}
         <button
           type="button"
           onClick={hangUp}

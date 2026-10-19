@@ -767,12 +767,11 @@ export function AuthProvider({ children }) {
     return data;
   }, []);
 
-  // Changing the sign-in email needs a fresh sign-in: the current password,
-  // and for staff also their authenticator code. It only happens once the
-  // user clicks the link Firebase sends to the NEW address; the old
-  // address gets a notice with a way to undo it.
-  const requestEmailChange = useCallback(async ({ newEmail, currentPw, totpCode }) => {
-    const { EmailAuthProvider, reauthenticateWithCredential, verifyBeforeUpdateEmail, getMultiFactorResolver, TotpMultiFactorGenerator, auth } = await loadAuthSdk();
+  // A fresh sign-in (current password, and for staff their authenticator
+  // code) before a sensitive change: a new sign-in email, or a doctor's
+  // prescription signature (the server checks the sign-in is recent).
+  const confirmIdentity = useCallback(async ({ currentPw, totpCode }) => {
+    const { EmailAuthProvider, reauthenticateWithCredential, getMultiFactorResolver, TotpMultiFactorGenerator, auth } = await loadAuthSdk();
     const u = auth.currentUser;
     if (!u?.email) throw new Error("Please sign in again and retry.");
     try {
@@ -807,6 +806,16 @@ export function AuthProvider({ children }) {
         );
       }
     }
+    return u;
+  }, []);
+
+  // Changing the sign-in email needs a fresh sign-in: the current password,
+  // and for staff also their authenticator code. It only happens once the
+  // user clicks the link Firebase sends to the NEW address; the old
+  // address gets a notice with a way to undo it.
+  const requestEmailChange = useCallback(async ({ newEmail, currentPw, totpCode }) => {
+    const u = await confirmIdentity({ currentPw, totpCode });
+    const { verifyBeforeUpdateEmail } = await loadAuthSdk();
     try {
       await verifyBeforeUpdateEmail(u, newEmail.trim(), {
         url: `${window.location.origin}/signin`,
@@ -822,7 +831,7 @@ export function AuthProvider({ children }) {
         { cause: err },
       );
     }
-  }, []);
+  }, [confirmIdentity]);
 
   // After a confirmed email change, copy the new address to the profile
   // (patients: also open bookings, where appointment emails are sent).
@@ -858,6 +867,7 @@ export function AuthProvider({ children }) {
     updatePatientName,
     updateStaffProfile,
     requestEmailChange,
+    confirmIdentity,
     completeTotpSignIn,
     startTotpEnrollment,
     finishTotpEnrollment,

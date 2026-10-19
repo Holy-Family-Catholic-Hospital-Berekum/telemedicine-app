@@ -32,6 +32,7 @@ import BookingCard from "./patientBookingCard";
 import AvailableSlots from "./patientAvailableSlots";
 import ConsultationHistory from "./consultationHistory";
 import PatientSettings from "./patientSettings";
+import PrescriptionsSection from "./prescriptionsSection";
 
 import VideoCallModal from "../../video/videoCallModal";
 import InstallAppPrompt from "./installAppPrompt";
@@ -395,6 +396,8 @@ export default function Dashboard() {
                   ))}
                 </section>
               )}
+
+              <PrescriptionsSection patientUid={user.uid} reloadKey={loadKey} />
 
               {paymentsInProgress.length > 0 && (
                 <section

@@ -8,11 +8,26 @@ import {
   History,
   Loader2,
   CalendarX2,
+  FileText,
 } from "lucide-react";
 import SensitiveDetails from "../sensitiveDetails";
 import { getCallWindow } from "../docUtils";
 import { useCallWarmup } from "../../../src/callWarmup";
 import { TYPE_LABELS, formatTime, formatDateTime } from "../../../src/constants";
+
+// A video call that took place: the doctor can write its prescription
+// (once) until 24 hours after the two were connected
+// (functions/lib/prescriptions.js ISSUE_WINDOW_HOURS).
+const PRESCRIPTION_WINDOW_MS = 24 * 3600 * 1000;
+function canWritePrescription(c) {
+  return (
+    c.mode === "online" &&
+    c.met &&
+    !c.prescription &&
+    Boolean(c.metAt) &&
+    Date.now() < c.metAt.getTime() + PRESCRIPTION_WINDOW_MS
+  );
+}
 
 const MODE_STYLE = {
   online: { spine: "#0095D9", chipText: "#0095D9", label: "Online" },
@@ -24,6 +39,7 @@ export default function ConsultationCard({
   onStartCall,
   onMarkDone,
   onCantMakeIt,
+  onWritePrescription,
   inRoom,
   // Upcoming (not today): show the date with the time.
   showDate = false,
@@ -35,6 +51,7 @@ export default function ConsultationCard({
   const { unlocked, minutesUntilUnlock } = getCallWindow(
     consultation.scheduledTime,
   );
+  const canPrescribe = canWritePrescription(consultation);
   // A video call whose room is open: keep the call server awake.
   useCallWarmup(isOnline && unlocked);
 
@@ -175,6 +192,31 @@ export default function ConsultationCard({
               <CheckSquare size={15} strokeWidth={1.75} />
               Mark done
             </button>
+          )}
+
+          {canPrescribe && (
+            <button
+              type="button"
+              onClick={() => onWritePrescription(consultation)}
+              className="flex items-center gap-2 rounded-sm border border-[#0095D9] px-3.5 py-2 text-sm font-medium text-[#0095D9] transition hover:bg-[#0095D9]/5"
+            >
+              <FileText size={15} strokeWidth={1.75} />
+              Write prescription
+            </button>
+          )}
+
+          {consultation.prescription && (
+            <span
+              className="flex items-center gap-1.5 rounded-sm px-2.5 py-2 text-sm"
+              style={
+                consultation.prescription.status === "cancelled"
+                  ? { backgroundColor: "#B23A3A14", color: "#8A2626" }
+                  : { backgroundColor: "#1E8E5A14", color: "#16683F" }
+              }
+            >
+              <FileText size={14} strokeWidth={1.75} />
+              {consultation.prescription.status === "cancelled" ? "Prescription cancelled" : "Prescription issued"}
+            </span>
           )}
 
           {consultation.met ? (

@@ -36,6 +36,9 @@ const getDoc = (r) => track(getDocUntracked(r));
 const callStartVideoCall = tracked(httpsCallable(functions, "startVideoCall"));
 const callMarkDone = tracked(httpsCallable(functions, "markConsultationDone"));
 const callReportUnavailable = tracked(httpsCallable(functions, "reportDoctorUnavailable"));
+const callIssuePrescription = tracked(httpsCallable(functions, "issuePrescription"));
+const callCancelPrescription = tracked(httpsCallable(functions, "cancelPrescription"));
+const callUpdatePrescriberDetails = tracked(httpsCallable(functions, "updatePrescriberDetails"));
 
 export async function fetchAssignedConsultations(doctorUid) {
   const snap = await getDocs(
@@ -61,6 +64,11 @@ export async function fetchAssignedConsultations(doctorUid) {
       doctorJoined: Boolean(c.doctorFirstJoinedAt),
       // Connected together in the call: the consultation has taken place.
       met: Boolean(c.metAt),
+      metAt: toDate(c.metAt),
+      // { id, status: "active" | "cancelled" } once one has been written.
+      prescription: c.prescription
+        ? { id: c.prescription.id, status: c.prescription.status }
+        : null,
       // The shared countdown: whose turn it is to be in the room, by when.
       waitDeadline: c.waitDeadline?.for
         ? { for: c.waitDeadline.for, at: toDate(c.waitDeadline.at) }
@@ -118,6 +126,71 @@ export async function markConsultationDone({ consultationId, outcome }) {
  */
 export async function reportDoctorUnavailable({ consultationId, reason, kind = "doctor_absent" }) {
   const { data } = await callReportUnavailable({ consultationId, kind, ...(reason ? { reason } : {}) });
+  return data;
+}
+
+// ---------------------------------------------------------------------------
+// Prescriptions (video consultations; functions/prescriptions.js). The
+// form itself is built on the server: components/shared/prescriptions.js.
+// ---------------------------------------------------------------------------
+
+/** The prescriptions this doctor wrote that are still within their 7 days, newest first. */
+export async function fetchMyPrescriptions(doctorUid) {
+  const snap = await getDocs(
+    query(collection(db, "prescriptions"), where("doctorUid", "==", doctorUid)),
+  );
+  const now = Date.now();
+  return snap.docs
+    .map((d) => {
+      const rx = d.data();
+      return {
+        id: d.id,
+        status: rx.status,
+        patientName: rx.patientName || "Patient",
+        guardianName: rx.guardianName || null,
+        items: rx.items || [],
+        issuedAt: toDate(rx.issuedAt),
+        expiresAt: toDate(rx.expiresAt),
+        cancelledAt: toDate(rx.cancelledAt),
+      };
+    })
+    .filter((rx) => rx.expiresAt && rx.expiresAt.getTime() > now)
+    .sort((a, b) => b.issuedAt - a.issuedAt);
+}
+
+/** { items, notes } for the doctor's own consultation. Resolves { prescriptionId }. */
+export async function issuePrescription({ consultationId, items, notes }) {
+  const { data } = await callIssuePrescription({ consultationId, items, notes });
+  return data;
+}
+
+export async function cancelPrescription({ prescriptionId, reason }) {
+  const { data } = await callCancelPrescription({ prescriptionId, ...(reason ? { reason } : {}) });
+  return data;
+}
+
+/**
+ * What the doctor's prescriptions are signed with: { mdcNumber, signature
+ * (data: URL) }, each null until set.
+ */
+export async function fetchPrescriberDetails(doctorUid) {
+  const [profile, signature] = await Promise.all([
+    getDoc(doc(db, "adminUsers", doctorUid)),
+    getDoc(doc(db, "doctorSignatures", doctorUid)),
+  ]);
+  const png = signature.exists() ? signature.data().png : null;
+  return {
+    mdcNumber: (profile.exists() && profile.data().mdcNumber) || null,
+    signature: png ? `data:image/png;base64,${png}` : null,
+  };
+}
+
+/** { mdcNumber?, signature? (PNG data: URL) }, right after confirmIdentity(). */
+export async function updatePrescriberDetails({ mdcNumber, signature }) {
+  const { data } = await callUpdatePrescriberDetails({
+    ...(mdcNumber !== undefined ? { mdcNumber } : {}),
+    ...(signature !== undefined ? { signature } : {}),
+  });
   return data;
 }
 

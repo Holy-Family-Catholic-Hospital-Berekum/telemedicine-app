@@ -32,6 +32,7 @@ const staffAuth = require("./staffAuth");
 const auditMirror = require("./auditMirror");
 const noShow = require("./noShow");
 const refundSync = require("./refundSync");
+const prescriptions = require("./prescriptions");
 
 // Staff sign-in second factor (authenticator app for admins and doctors)
 exports.confirmStaffSession = staffAuth.confirmStaffSession;
@@ -69,6 +70,13 @@ exports.getTurnCredentials = consultations.getTurnCredentials;
 exports.markConsultationDone = consultations.markConsultationDone;
 exports.reportDoctorUnavailable = consultations.reportDoctorUnavailable;
 exports.callHeartbeat = consultations.callHeartbeat;
+
+// Prescriptions after a video consultation (7 days; the record is LHIMS)
+exports.updatePrescriberDetails = prescriptions.updatePrescriberDetails;
+exports.issuePrescription = prescriptions.issuePrescription;
+exports.cancelPrescription = prescriptions.cancelPrescription;
+exports.getPrescriptionPdf = prescriptions.getPrescriptionPdf;
+exports.checkPrescription = prescriptions.checkPrescription;
 
 // No-shows: automatic marking after the waiting time, paid reschedule,
 // closing the ones left alone (noShow.js)
@@ -131,6 +139,8 @@ const TASKS = [
   maintenance.releaseSlotHolds,
   maintenance.cleanupSignalling,
   maintenance.cleanupRateLimits,
+  // Prescriptions past their 7 days
+  prescriptions.deleteExpiredPrescriptions,
   // Metrics report data nobody downloaded
   reports.cleanupReportData,
 ];

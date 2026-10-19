@@ -16,6 +16,7 @@
 //     through the same path as other payments we can't use (paymentIssues,
 //     reason "account_deleted"). A refund already requested is settled by
 //     that instead, never twice.
+//   - Their prescriptions (and the signature copies on them) are deleted.
 //   - Their profile (users/{uid}) is deleted.
 //   - Kept, as for every consultation: consultationHistory, confirmedPayments,
 //     consents, the audit log and recordings (financial/legal records).
@@ -49,7 +50,7 @@ function refundablePayments(booking) {
 async function purgePatientData(uid, { actor, meta = null }) {
   // Lazy: payments.js loads this module's callers too.
   const { recordPaymentIssue } = require("../payments");
-  const summary = { bookings: 0, refunds: 0, closed: 0 };
+  const summary = { bookings: 0, refunds: 0, closed: 0, prescriptions: 0 };
 
   // deepcode ignore Sqli: Firestore equality filter on the account's own uid (from Auth), not SQL.
   const bookings = await db.collection("bookings").where("patientUid", "==", uid).get();
@@ -147,7 +148,16 @@ async function purgePatientData(uid, { actor, meta = null }) {
     }
   }
 
-  // 4. The profile.
+  // 4. Prescriptions (they'd be deleted after 7 days anyway).
+  // deepcode ignore Sqli: Firestore equality filter on the account's own uid (from Auth), not SQL.
+  const rxs = await db.collection("prescriptions").where("patientUid", "==", uid).get();
+  for (const rx of rxs.docs) {
+    await rx.ref.delete().catch(() => {});
+    await db.collection("prescriptionSignatures").doc(rx.id).delete().catch(() => {});
+    summary.prescriptions += 1;
+  }
+
+  // 5. The profile.
   // deepcode ignore Sqli: Firestore document ID, not SQL; the account's own uid (from Auth).
   await db.collection("users").doc(uid).delete().catch(() => {});
 

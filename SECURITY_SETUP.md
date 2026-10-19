@@ -28,7 +28,8 @@ script prints the project before doing anything. That Google account must itself
 | Rate limits | Per-account limits on every function that could be abused; forged payment webhooks are audited at most 10/hour per sender. | `lib/core.js rateLimit` |
 | Backups | Point-in-time recovery (any minute, last 7 days) + daily backup kept 7 days + database delete protection. | Firestore |
 | Tamper-proof audit copy | Every audit entry is copied to the `audit-locked` log bucket (365 days). | `mirrorAuditLog` → log sink `audit-to-locked` |
-| Security alerts | Email to the security contact on: failed/refused staff sign-in steps, authenticator resets, staff sign-in email changes, screenshot attempts, forged payment webhooks, recording deletion requests and deletions, missing recordings. | Cloud Monitoring policy *Telemedicine security event* |
+| Security alerts | Email to the security contact on: failed/refused staff sign-in steps, authenticator resets, staff sign-in email changes, screenshot attempts, forged payment webhooks, recording deletion requests and deletions, missing recordings. Recommended: add `doctor.prescriber_changed` (a doctor's prescription signature or MDC number changed) to the policy's filter (see "Audit log and alerts"). | Cloud Monitoring policy *Telemedicine security event* |
+| Prescriptions | Only the patient and the doctor who wrote it can read one; signatures never reach a browser (the PDF is built on the server); changing a signature needs the password and authenticator code; deleted after 7 days. Pharmacists check the QR code at `/check-prescription` (no patient name shown). | `functions/prescriptions.js`, `firestore.rules` |
 | Least-privilege functions | Functions run as `functions-runtime@…` with only the roles listed below. | `lib/core.js` |
 | App Check | Requests carry proof they come from the real site (reCAPTCHA Enterprise). **Enforced** on Firestore, Storage, Authentication and (since 11 Oct 2026) every callable function. | Firebase console; `functions/lib/securityConfig.js` |
 | API key restriction | The public web key only works from the hospital's sites. | Google Cloud credentials |
@@ -112,6 +113,12 @@ you're finished with it.
   (keep at least two hospital staff on it). To add people: Monitoring →
   **Alerting** → *Telemedicine security event* → edit notification
   channels.
+- Which audit codes send an email: Monitoring → **Alerting** →
+  *Telemedicine security event* → **Edit** → the condition *Security audit
+  event* → the log query's `jsonPayload.code=(…)` list. To add one, put
+  ` OR "the.code"` before the closing bracket, e.g.
+  `… OR "recording.missing" OR "doctor.prescriber_changed")`, then
+  **Save policy**. Only the live project has this alert.
 
 ## Cost and error alerts
 

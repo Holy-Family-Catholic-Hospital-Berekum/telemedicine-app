@@ -93,6 +93,12 @@ export default function MarkDoneModal({ consultation, onClose, onSubmit }) {
                 scheduled.
               </p>
             )}
+            {!inPerson && !consultation.prescription && (
+              <p className="mb-4 rounded-md border border-[#0095D9]/30 bg-[#0095D9]/5 px-3.5 py-2.5 text-sm text-[#12242C]">
+                No prescription written. If the patient needs one, write it first: once this consultation is
+                closed, you can&apos;t write a prescription for it.
+              </p>
+            )}
             <div className="flex gap-3 rounded-md border border-[#DCE6EC] bg-[#F5F8FA] p-3.5">
               <ShieldAlert size={20} strokeWidth={1.75} className="mt-0.5 shrink-0" style={{ color: '#F88535' }} />
               <p className="text-sm text-[#12242C]">
