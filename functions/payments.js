@@ -46,6 +46,7 @@ const {
   requireRole,
   requireVerifiedEmail,
   requestMeta,
+  clientIp,
   str,
   oneOf,
   docId,
@@ -54,6 +55,7 @@ const {
   sha256,
   audit,
   rateLimit,
+  rateLimitIp,
   onCall,
 } = require("./lib/core");
 const { loadPrices, doctorSelectionEnabled, inPersonPaymentRequired } = require("./siteSettings");
@@ -551,6 +553,8 @@ exports.createBookingDraft = onCall({ secrets: [PAYSTACK_SECRET_KEY] }, async (r
   }
 
   await rateLimit(uid, "createBookingDraft", { max: 10, windowSeconds: 86400 });
+  // Many accounts on one address can't hold every open slot.
+  await rateLimitIp(request.rawRequest, "createBookingDraft", { max: 40, windowSeconds: 3600 });
 
   // Earlier unpaid attempts. A draft is created only when the patient taps
   // Pay, and becomes the booking itself once Paystack confirms the money.
@@ -966,11 +970,16 @@ exports.paystackWebhook = onRequest(
       return;
     }
     if (!signatureMatches(req.rawBody, req.headers["x-paystack-signature"], secretKey())) {
-      logger.warn("Rejected webhook with bad or missing signature", { ip: req.ip });
-      // Audit at most 10 forged requests per hour per sender, so a flood
-      // can't bury the audit log (the rest are still in the function logs).
-      const sender = String(req.ip || "unknown").replace(/[^A-Za-z0-9.:-]/g, "_").slice(0, 64);
-      const shouldAudit = await rateLimit(`ip-${sender}`, "webhookForgedAudit", { max: 10, windowSeconds: 3600 })
+      const ip = clientIp(req);
+      logger.warn("Rejected webhook with bad or missing signature", {
+        ip,
+        forwardedFor: String(req.headers["x-forwarded-for"] || "").slice(0, 300),
+      });
+      // Audit at most 10 forged requests per hour per sender and 30 in all,
+      // so a flood can't bury the audit log or the security alerts (the rest
+      // are still in the function logs).
+      const shouldAudit = await rateLimitIp(req, "webhookForgedAudit", { max: 10, windowSeconds: 3600 })
+        .then(() => rateLimit("all", "webhookForgedAuditAll", { max: 30, windowSeconds: 3600 }))
         .then(() => true, () => false);
       if (shouldAudit) {
         await audit(null, {
@@ -978,7 +987,7 @@ exports.paystackWebhook = onRequest(
           code: "webhook.signature_invalid",
           category: "security",
           result: "denied",
-          meta: { ip: req.ip || null, userAgent: null },
+          meta: { ip, userAgent: null },
         }).catch(() => {});
       }
       res.status(401).send("Invalid signature");

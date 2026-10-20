@@ -37,6 +37,7 @@ const {
   phoneE164,
   audit,
   rateLimit,
+  rateLimitIp,
   sha256,
 } = require("./lib/core");
 const { purgePatientData } = require("./lib/accountDeletion");
@@ -76,6 +77,8 @@ exports.registerPatient = onCall(async (request) => {
   }
 
   await rateLimit(uid, "registerPatient", { max: 5, windowSeconds: 3600 });
+  // New accounts from one address (each new account has its own counter).
+  await rateLimitIp(request.rawRequest, "registerPatient", { max: 30, windowSeconds: 3600 });
 
   const staffSnap = await db.collection("adminUsers").doc(uid).get();
   if (staffSnap.exists) {

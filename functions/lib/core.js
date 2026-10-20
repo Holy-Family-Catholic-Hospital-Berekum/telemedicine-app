@@ -206,12 +206,32 @@ function requireVerifiedEmail(caller) {
   }
 }
 
+// Addresses Google's front end appends to X-Forwarded-For (the caller's
+// address, then any of its own), counted from the right. Measured on the
+// test project; see clientIp.
+const TRUSTED_PROXY_HOPS = 1;
+
+/**
+ * The caller's address as Google received it. Not req.ip: the Functions
+ * Framework trusts proxies, so req.ip is the LEFT-most X-Forwarded-For
+ * entry, which the caller can write themselves. Google appends the real
+ * address on the right, so count from there.
+ */
+function clientIp(req) {
+  const chain = String(req?.headers?.["x-forwarded-for"] || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (chain.length >= TRUSTED_PROXY_HOPS) return chain[chain.length - TRUSTED_PROXY_HOPS];
+  return req?.ip || null;
+}
+
 /** IP and user agent as seen by the function, for consent and audit. */
 function requestMeta(request) {
   const raw = request.rawRequest;
   const ua = raw?.headers?.["user-agent"];
   return {
-    ip: raw?.ip || null,
+    ip: clientIp(raw),
     userAgent: typeof ua === "string" ? ua.slice(0, 300) : null,
   };
 }
@@ -406,6 +426,17 @@ async function rateLimit(uid, action, { max, windowSeconds }) {
   });
 }
 
+/**
+ * The same counter per caller address (hashed: no raw IP is stored), on
+ * top of the per-account limits, so new accounts or signed-out callers on
+ * one address share a limit. Keep `max` generous: mobile networks put many
+ * customers behind one address.
+ */
+function rateLimitIp(req, action, opts) {
+  const ip = clientIp(req);
+  return rateLimit(`ip-${sha256(String(ip || "unknown")).slice(0, 16)}`, action, opts);
+}
+
 /** Deletes a document and every subcollection under it. */
 function deleteTree(ref) {
   return db.recursiveDelete(ref);
@@ -437,6 +468,7 @@ module.exports = {
   requireRole,
   requireVerifiedEmail,
   requestMeta,
+  clientIp,
   str,
   oneOf,
   docId,
@@ -449,5 +481,6 @@ module.exports = {
   sha256,
   audit,
   rateLimit,
+  rateLimitIp,
   deleteTree,
 };

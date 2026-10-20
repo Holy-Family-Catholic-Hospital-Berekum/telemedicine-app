@@ -49,12 +49,17 @@ function normalizeProfile(profile) {
   };
 }
 
+// Same limits as firestore.rules (doctorProfiles tags()).
+const MAX_TAGS = 12;
+const MAX_TAG_LENGTH = 80;
+
 function TagEditor({ label, placeholder, values, onChange }) {
   const [draft, setDraft] = useState("");
+  const full = values.length >= MAX_TAGS;
 
   function commitDraft() {
     const cleaned = draft.trim();
-    if (!cleaned) return;
+    if (!cleaned || full) return;
     if (values.some((v) => v.toLowerCase() === cleaned.toLowerCase())) {
       setDraft("");
       return;
@@ -101,7 +106,9 @@ function TagEditor({ label, placeholder, values, onChange }) {
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder={placeholder}
+          maxLength={MAX_TAG_LENGTH}
+          disabled={full}
+          placeholder={full ? `Up to ${MAX_TAGS}` : placeholder}
           className="flex-1 rounded-sm border border-[#DCE6EC] px-3 py-1.5 text-sm text-[#12242C] outline-none placeholder:text-[#5C6B72]/70 focus:border-[#0095D9]"
         />
         <button

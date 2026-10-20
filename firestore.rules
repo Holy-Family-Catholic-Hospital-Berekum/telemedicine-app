@@ -75,6 +75,17 @@ service cloud.firestore {
     // presentational fields; listing, name and consultation types are
     // admin-controlled.
     match /doctorProfiles/{doctorUid} {
+      // Tag lists (specialties, languages): at most 12 short strings. Rules
+      // can't loop, so each position is checked (docProfileTab.jsx caps the
+      // same).
+      function tag(l, i) {
+        return l.size() <= i || (l[i] is string && l[i].size() <= 80);
+      }
+      function tags(l) {
+        return l is list && l.size() <= 12
+          && tag(l, 0) && tag(l, 1) && tag(l, 2) && tag(l, 3) && tag(l, 4) && tag(l, 5)
+          && tag(l, 6) && tag(l, 7) && tag(l, 8) && tag(l, 9) && tag(l, 10) && tag(l, 11);
+      }
       allow read: if true;
       allow update: if isDoctor() && myUid() == doctorUid
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(
@@ -86,19 +97,25 @@ service cloud.firestore {
             || (request.resource.data.yearsExperience is int
                 && request.resource.data.yearsExperience >= 0
                 && request.resource.data.yearsExperience <= 70))
-        && request.resource.data.specialties is list
-        && request.resource.data.specialties.size() <= 12
-        && request.resource.data.languages is list
-        && request.resource.data.languages.size() <= 12
+        && tags(request.resource.data.specialties)
+        && tags(request.resource.data.languages)
         && request.resource.data.bio is string
         && request.resource.data.bio.size() <= 1000
         && request.resource.data.focus is string
         && request.resource.data.focus.size() <= 160
         && request.resource.data.isAvailable is bool
-        && (request.resource.data.photoURL == null
+        // Only the doctor's own uploaded portrait (storage.rules
+        // doctorProfilePictures/{uid}/profile.jpg), not any other file or
+        // bucket. Checked when it changes, so an older link doesn't block
+        // saving the other fields.
+        && (!('photoURL' in request.resource.data.diff(resource.data).affectedKeys())
+            || request.resource.data.photoURL == null
             || (request.resource.data.photoURL is string
                 && request.resource.data.photoURL.size() <= 600
-                && request.resource.data.photoURL.matches('^https://firebasestorage[.]googleapis[.]com/.*')))
+                && request.resource.data.photoURL.matches(
+                     '^https://firebasestorage[.]googleapis[.]com/v0/b/'
+                     + '(telemedicine-hfch|telemedicine-hfch-test|demo-telemedicine)[.](firebasestorage[.]app|appspot[.]com)'
+                     + '/o/doctorProfilePictures%2F' + doctorUid + '%2Fprofile[.]jpg[?].*')))
         && request.resource.data.updatedAt == request.time;
       allow create, delete: if false;
     }
@@ -184,16 +201,26 @@ service cloud.firestore {
           && sdp('answer'))
       );
 
+      // One ICE candidate (RTCIceCandidate.toJSON() + the offer/answer id,
+      // signaling.firebase.js addCandidate): known fields, short strings.
+      function iceCandidate() {
+        let c = request.resource.data;
+        return c.keys().hasOnly(['candidate', 'sdpMid', 'sdpMLineIndex', 'usernameFragment', 'session'])
+          && c.candidate is string && c.candidate.size() <= 2000
+          && c.session is string && c.session.size() <= 100
+          && (!('sdpMid' in c) || c.sdpMid == null || (c.sdpMid is string && c.sdpMid.size() <= 100))
+          && (!('sdpMLineIndex' in c) || c.sdpMLineIndex == null || c.sdpMLineIndex is int)
+          && (!('usernameFragment' in c) || c.usernameFragment == null
+              || (c.usernameFragment is string && c.usernameFragment.size() <= 256));
+      }
       match /offerCandidates/{candidateId} {
         allow read: if party(callData());
-        allow create: if isDoctor() && myUid() == callData().doctorUid
-                      && request.resource.data.size() <= 6;
+        allow create: if isDoctor() && myUid() == callData().doctorUid && iceCandidate();
         allow update, delete: if false;
       }
       match /answerCandidates/{candidateId} {
         allow read: if party(callData());
-        allow create: if isPatient() && myUid() == callData().patientUid
-                      && request.resource.data.size() <= 6;
+        allow create: if isPatient() && myUid() == callData().patientUid && iceCandidate();
         allow update, delete: if false;
       }
     }

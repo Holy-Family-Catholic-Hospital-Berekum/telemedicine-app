@@ -16,7 +16,7 @@ import {
   assertSucceeds,
   initializeTestEnvironment,
 } from "@firebase/rules-unit-testing";
-import { doc, getDoc, serverTimestamp, setDoc, Timestamp, updateDoc } from "firebase/firestore";
+import { addDoc, collection, doc, getDoc, serverTimestamp, setDoc, Timestamp, updateDoc } from "firebase/firestore";
 import { ref, uploadBytes } from "firebase/storage";
 
 const PROJECT_ID = "demo-telemedicine";
@@ -287,6 +287,23 @@ describe("call signalling", () => {
   test("an outsider can't read the call", async () => {
     await assertFails(get(patient("pat2"), "calls/c1"));
   });
+
+  const candidate = {
+    candidate: "candidate:1 1 udp 2122260223 192.0.2.1 54400 typ host",
+    sdpMid: "0", sdpMLineIndex: 0, usernameFragment: "abcd", session: "o1",
+  };
+  const addCandidate = (ctx, side, data) => addDoc(collection(ctx.firestore(), `calls/c1/${side}`), data);
+  test("each side adds its own ICE candidates", async () => {
+    await assertSucceeds(addCandidate(doctor(), "offerCandidates", candidate));
+    await assertSucceeds(addCandidate(patient("pat1"), "answerCandidates", { ...candidate, sdpMid: null, usernameFragment: null }));
+    await assertFails(addCandidate(patient("pat1"), "offerCandidates", candidate));
+  });
+  test("ICE candidates with unknown fields or oversized values are refused", async () => {
+    await assertFails(addCandidate(doctor(), "offerCandidates", { ...candidate, junk: "x" }));
+    await assertFails(addCandidate(doctor(), "offerCandidates", { ...candidate, candidate: "x".repeat(2001) }));
+    await assertFails(addCandidate(patient("pat1"), "answerCandidates", { ...candidate, session: { big: "x" } }));
+    await assertFails(addCandidate(patient("pat1"), "answerCandidates", { ...candidate, sdpMLineIndex: "0" }));
+  });
 });
 
 describe("doctor profile edits", () => {
@@ -304,6 +321,28 @@ describe("doctor profile edits", () => {
     await assertFails(updateDoc(doc(doctor().firestore(), "doctorProfiles/doc1"), {
       name: "Someone else", updatedAt: serverTimestamp(),
     }));
+  });
+  const edit = (data) => updateDoc(doc(doctor().firestore(), "doctorProfiles/doc1"), { ...data, updatedAt: serverTimestamp() });
+  test("specialties and languages: up to 12 short strings", async () => {
+    await assertSucceeds(edit({ specialties: Array.from({ length: 12 }, (_, i) => `Specialty ${i}`) }));
+    await assertFails(edit({ specialties: Array.from({ length: 13 }, (_, i) => `Specialty ${i}`) }));
+    await assertFails(edit({ specialties: ["x".repeat(81)] }));
+    await assertFails(edit({ languages: ["English", { big: "x" }] }));
+  });
+  const photo = (bucket, uid) =>
+    `https://firebasestorage.googleapis.com/v0/b/${bucket}/o/doctorProfilePictures%2F${uid}%2Fprofile.jpg?alt=media&token=t`;
+  test("the photo must be the doctor's own upload in the hospital's bucket", async () => {
+    await assertSucceeds(edit({ photoURL: photo("telemedicine-hfch.firebasestorage.app", "doc1") }));
+    await assertSucceeds(edit({ photoURL: photo("telemedicine-hfch-test.firebasestorage.app", "doc1") }));
+    await assertSucceeds(edit({ photoURL: null }));
+    await assertFails(edit({ photoURL: photo("telemedicine-hfch.firebasestorage.app", "doc2") }));
+    await assertFails(edit({ photoURL: photo("someone-else.appspot.com", "doc1") }));
+    await assertFails(edit({ photoURL: "https://firebasestorage.googleapis.com/v0/b/telemedicine-hfch.firebasestorage.app/o/siteAssets%2Fhero%2Fa.jpg?alt=media" }));
+  });
+  test("an older photo link doesn't block saving other fields", async () => {
+    await env.withSecurityRulesDisabled((ctx) =>
+      updateDoc(doc(ctx.firestore(), "doctorProfiles/doc1"), { photoURL: "https://firebasestorage.googleapis.com/old" }));
+    await assertSucceeds(edit({ bio: "Hello" }));
   });
 });
 
