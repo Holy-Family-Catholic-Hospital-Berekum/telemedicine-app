@@ -56,8 +56,7 @@ export const DEFAULT_LEGAL = {
 
 We use a small number of service providers to run the platform. They process information on our behalf and only for that purpose:
 
-- Google (Firebase and Google Cloud), for sign-in, our database, file storage (including consultation recordings) and the servers that run the service.
-- Vercel, which hosts the website.
+- Google (Firebase and Google Cloud), for sign-in, our database, file storage (including consultation recordings), the servers that run the service and hosting the website.
 - Brevo, which sends our appointment emails (your email address, name and appointment details).
 - Cloudflare, which relays a video call when your device can't connect directly to the doctor's. The call stays encrypted and is not stored.
 - Paystack, for mobile money payments.

@@ -1,0 +1,102 @@
+name: Deploy website
+
+# Builds the website and publishes it to Firebase Hosting:
+#   push to main -> live project (telemedicine-hfch, https://telemedicine.hfhberekum.org)
+#   push to test -> test project (telemedicine-hfch-test, https://telemedicine-hfch-test.web.app)
+#
+# No key file anywhere: GitHub proves who it is to Google (Workload Identity
+# Federation) and Google lets ONLY this repository's main branch deploy to
+# live and its test branch deploy to test (HANDOVER.md "Website deploys").
+# The service account it acts as can only publish hosting.
+#
+# Settings come from the GitHub environment ("live" or "test", each limited
+# to its branch): variables for the public web config, a secret for the
+# hidden staff sign-in path. The repository is public: never put the staff
+# path, or anything else private, in this file.
+on:
+  push:
+    branches: [main, test]
+    paths-ignore:
+      - "functions/**"
+      - "tests/**"
+      - "e2e/**"
+      - "**/*.md"
+      - "firestore.rules"
+      - "storage.rules"
+      - "firestore.indexes.json"
+      - ".github/workflows/rules-tests.yml"
+      - ".github/workflows/e2e.yml"
+      - ".github/workflows/security-audit.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write # to sign in to Google (Workload Identity Federation)
+
+# One deploy per branch at a time, in order; never cancel one halfway.
+concurrency:
+  group: deploy-website-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.ref_name == 'main' || github.ref_name == 'test'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: ${{ github.ref_name == 'main' && 'live' || 'test' }}
+      url: ${{ vars.VITE_SITE_URL }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build the website
+        run: npm run build
+        env:
+          VITE_FIREBASE_API_KEY: ${{ vars.VITE_FIREBASE_API_KEY }}
+          VITE_FIREBASE_AUTH_DOMAIN: ${{ vars.VITE_FIREBASE_AUTH_DOMAIN }}
+          VITE_FIREBASE_PROJECT_ID: ${{ vars.VITE_FIREBASE_PROJECT_ID }}
+          VITE_FIREBASE_STORAGE_BUCKET: ${{ vars.VITE_FIREBASE_STORAGE_BUCKET }}
+          VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ vars.VITE_FIREBASE_MESSAGING_SENDER_ID }}
+          VITE_FIREBASE_APP_ID: ${{ vars.VITE_FIREBASE_APP_ID }}
+          VITE_PAYSTACK_PUBLIC_KEY: ${{ vars.VITE_PAYSTACK_PUBLIC_KEY }}
+          VITE_RECAPTCHA_ENTERPRISE_SITE_KEY: ${{ vars.VITE_RECAPTCHA_ENTERPRISE_SITE_KEY }}
+          VITE_SITE_URL: ${{ vars.VITE_SITE_URL }}
+          VITE_STAFF_LOGIN_PATH: ${{ secrets.VITE_STAFF_LOGIN_PATH }}
+          # The test website is public: keep it out of search engines.
+          VITE_SEARCH_INDEXING: ${{ github.ref_name == 'main' && 'on' || 'off' }}
+
+      # Refuse to publish a build that's missing its settings or points at
+      # the other project (the page would load but nothing would work).
+      - name: Check the build
+        env:
+          PROJECT: ${{ vars.VITE_FIREBASE_PROJECT_ID }}
+          STAFF_PATH_SET: ${{ secrets.VITE_STAFF_LOGIN_PATH != '' }}
+          TARGET: ${{ github.ref_name == 'main' && 'telemedicine-hfch' || 'telemedicine-hfch-test' }}
+        run: |
+          test "$PROJECT" = "$TARGET" || { echo "VITE_FIREBASE_PROJECT_ID is '$PROJECT', expected '$TARGET'"; exit 1; }
+          test "$STAFF_PATH_SET" = "true" || { echo "The VITE_STAFF_LOGIN_PATH secret is missing"; exit 1; }
+          test -f dist/index.html
+          if grep -q 'firebase-' dist/index.html; then echo "Firebase is in the first download (CLAUDE.md 'Weak connections')"; exit 1; fi
+
+      - name: Sign in to Google
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+
+      - name: Publish to Firebase Hosting
+        env:
+          FIREBASE_ALIAS: ${{ github.ref_name == 'main' && 'live' || 'test' }}
+        run: npx --yes firebase-tools@15.31.0 deploy --only hosting --project "$FIREBASE_ALIAS" --non-interactive --message "${GITHUB_SHA::7}"

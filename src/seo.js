@@ -15,6 +15,9 @@
 import { useEffect } from "react";
 
 const SITE_NAME = "Holy Family Catholic Hospital";
+// The test website (VITE_SEARCH_INDEXING=off) is public but must never show
+// up in search results: every page is noindex (robots.txt too, vite.config.js).
+const HIDE_FROM_SEARCH = import.meta.env.VITE_SEARCH_INDEXING === "off";
 const DEFAULT_DESCRIPTION =
   "See a Holy Family Catholic Hospital, Berekum doctor by video or in person. Book General OPD or surgical consultations online and pay with mobile money.";
 
@@ -44,7 +47,11 @@ export function usePageMeta({ title, description = DEFAULT_DESCRIPTION, path, no
     const fullTitle = title ? `${title} | ${SITE_NAME}` : document.title;
     document.title = fullTitle;
     setMeta('meta[name="description"]', "content", description);
-    setMeta('meta[name="robots"]', "content", noindex ? "noindex, nofollow" : "index, follow, max-image-preview:large");
+    setMeta(
+      'meta[name="robots"]',
+      "content",
+      noindex || HIDE_FROM_SEARCH ? "noindex, nofollow" : "index, follow, max-image-preview:large",
+    );
     setMeta('meta[property="og:title"]', "content", fullTitle);
     setMeta('meta[property="og:description"]', "content", description);
     if (path && !noindex) {

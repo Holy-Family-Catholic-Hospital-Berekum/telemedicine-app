@@ -6,7 +6,7 @@ import tailwindcss from "@tailwindcss/vite";
 import { VitePWA } from "vite-plugin-pwa";
 
 // The public address of the site, used for canonical links, social-share
-// previews, robots.txt and sitemap.xml. Set VITE_SITE_URL (Vercel env and
+// previews, robots.txt and sitemap.xml. Set VITE_SITE_URL (GitHub environment and
 // .env); defaults to the hospital's own domain.
 const DEFAULT_SITE_URL = "https://telemedicine.hfhberekum.org";
 
@@ -21,17 +21,23 @@ const PUBLIC_PAGES = [
   { path: "/terms", priority: "0.3", changefreq: "yearly" },
 ];
 
-function seoFiles(siteUrl) {
+function seoFiles(siteUrl, hideFromSearch) {
   return {
     name: "seo-files",
     // %SITE_URL% in index.html (canonical, Open Graph, structured data).
-    transformIndexHtml: (html) => html.replaceAll("%SITE_URL%", siteUrl),
+    // The test website (VITE_SEARCH_INDEXING=off) is noindex everywhere.
+    transformIndexHtml: (html) => {
+      const out = html.replaceAll("%SITE_URL%", siteUrl);
+      return hideFromSearch
+        ? out.replace(/<meta name="robots" content="[^"]*"/, '<meta name="robots" content="noindex, nofollow"')
+        : out;
+    },
     generateBundle() {
       const today = new Date().toISOString().slice(0, 10);
       this.emitFile({
         type: "asset",
         fileName: "robots.txt",
-        source: [
+        source: hideFromSearch ? "User-agent: *\nDisallow: /\n" : [
           "User-agent: *",
           "Allow: /",
           "Disallow: /dashboard",
@@ -181,11 +187,13 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "VITE_");
   const siteUrl = (env.VITE_SITE_URL || DEFAULT_SITE_URL).replace(/\/+$/, "");
   return {
-    plugins: [react(), tailwindcss(), seoFiles(siteUrl), staffAppManifest(env.VITE_STAFF_LOGIN_PATH), pwa],
+    plugins: [react(), tailwindcss(), seoFiles(siteUrl, env.VITE_SEARCH_INDEXING === "off"),staffAppManifest(env.VITE_STAFF_LOGIN_PATH), pwa],
     // Which release a browser error came from (src/errorReporting.js):
-    // the commit Vercel builds, or "local".
+    // the commit GitHub (or, until it's retired, Vercel) builds, or "local".
     define: {
-      "import.meta.env.VITE_BUILD_ID": JSON.stringify((process.env.VERCEL_GIT_COMMIT_SHA || "local").slice(0, 7)),
+      "import.meta.env.VITE_BUILD_ID": JSON.stringify(
+        (process.env.GITHUB_SHA || process.env.VERCEL_GIT_COMMIT_SHA || "local").slice(0, 7),
+      ),
     },
     build: {
       rollupOptions: {

@@ -3,7 +3,7 @@ name: Build
 # Lints and builds the website on every push to main or test and every pull
 # request, so a change that breaks the build is caught here, not by the
 # website host. No secrets needed: the build only checks the code compiles
-# (the real Firebase settings are added by the host at deploy time).
+# (the real Firebase settings are added by the Deploy website workflow).
 on:
   push:
     branches: [main, test]

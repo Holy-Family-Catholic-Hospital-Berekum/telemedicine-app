@@ -1,7 +1,7 @@
 # Security operations guide
 
 For whoever runs the hospital's telemedicine platform (Firebase project
-`telemedicine-hfch`, site on Vercel). It covers what protects the platform,
+`telemedicine-hfch`, site on Firebase Hosting). It covers what protects the platform,
 the everyday procedures (new staff, lost phones, deleting recordings,
 restoring data), and the few steps still to do.
 
@@ -33,7 +33,7 @@ script prints the project before doing anything. That Google account must itself
 | Least-privilege functions | Functions run as `functions-runtime@…` with only the roles listed below. | `lib/core.js` |
 | App Check | Requests carry proof they come from the real site (reCAPTCHA Enterprise). **Enforced** on Firestore, Storage, Authentication and (since 11 Oct 2026) every callable function. | Firebase console; `functions/lib/securityConfig.js` |
 | API key restriction | The public web key only works from the hospital's sites. | Google Cloud credentials |
-| Security headers | CSP, HSTS, no framing, etc. | `vercel.json` |
+| Security headers | CSP, HSTS, no framing, etc. | `firebase.json` → `hosting.headers` |
 | Rule tests | `npm run test:rules` checks the access rules on the emulator (needs Java 21). Also run on GitHub for every push that changes the rules. | `tests/rules/`, `.github/workflows/rules-tests.yml` |
 
 ---
@@ -216,7 +216,7 @@ dashboard. Their hospital admin account is enough.
   refuses a leaked one; a patient who signs in with one sees "Please change
   your password" on the dashboard. If the service is down, the check is
   skipped. It needs `https://api.pwnedpasswords.com` in the CSP
-  `connect-src` (`vercel.json`). Passwords chosen on Firebase's own
+  `connect-src` (`firebase.json`). Passwords chosen on Firebase's own
   password-reset page aren't checked.
 - **Scam warning.** Every patient email, the site footer, the payment step,
   the WhatsApp panel and the terms ("Fees and payment") say the hospital
@@ -280,9 +280,9 @@ Everything paid before go-live is Paystack TEST money. Do these in order.
    (paste the LIVE secret key), then redeploy:
    `firebase deploy --only functions --project live`. Never put a live key
    in the test project.
-4. **Live public key**: in Vercel, set `VITE_PAYSTACK_PUBLIC_KEY` to the
-   LIVE public key (Production only; the `test` branch keeps its test
-   key), then redeploy the site.
+4. **Live public key**: in GitHub → Settings → Environments → `live`, set the variable `VITE_PAYSTACK_PUBLIC_KEY` to the
+   LIVE public key (the `test` environment keeps its test key), then
+   redeploy the site (re-run *Deploy website* on `main` in GitHub → Actions).
 5. **Live webhook** in the Paystack dashboard, switched to Live mode:
    Settings → API Keys & Webhooks → Live Webhook URL =
    `https://europe-west1-telemedicine-hfch.cloudfunctions.net/paystackWebhook`.

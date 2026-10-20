@@ -33,7 +33,7 @@ never written in the code) with a password **and** an authenticator app.
  Patient phone / staff computer
         │  (website, installable app)
         ▼
- Vercel ── hosts the React website (static files only)
+ Firebase Hosting ── serves the React website (static files only)
         │
         ▼
  Firebase (Google Cloud, Europe)
@@ -66,7 +66,7 @@ let the browser read only what each person may see.
 | Payments | Paystack (mobile money), webhook + daily reconciliation |
 | Email | Brevo (verified domain `mail.hfhberekum.org`; Resend also supported, `MAIL_PROVIDER`) |
 | Video | WebRTC; Cloudflare TURN relay |
-| Hosting | Vercel (website), Firebase (back end) |
+| Hosting | Firebase Hosting (website), Firebase (back end) |
 | Quality / security | ESLint (+ security plugin), Husky pre-commit (TruffleHog secret scan, lint), GitHub Actions (TruffleHog, ESLint, Semgrep, Snyk, GitGuardian, rules tests) |
 
 ## Folders
@@ -91,7 +91,8 @@ functions/           Cloud Functions (the back end).
 tests/rules/         Database/storage rules tests (emulators).
 firestore.rules      Who may read what (database).
 storage.rules        Who may read what (files).
-vercel.json          Website headers (security policy) and redirects.
+firebase.json        Firebase settings, incl. website headers (security policy) and routing.
+vercel.json          Old host's copy of the headers; deleted with Vercel (~28 Oct 2026).
 ```
 
 Why both `src/` and `components/`: the project started as separate pieces
@@ -118,7 +119,8 @@ firebase deploy --only firestore,storage --project live   # rules and indexes
 ```
 
 The website deploys itself: every push to `main` on GitHub is built and
-published by Vercel. See [HANDOVER.md](HANDOVER.md) for the details and the
+published to Firebase Hosting by GitHub Actions (`test` goes to the test
+project). See [HANDOVER.md](HANDOVER.md) for the details and the
 deployment quirks.
 
 ## Documentation
