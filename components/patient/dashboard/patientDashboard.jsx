@@ -33,6 +33,7 @@ import AvailableSlots from "./patientAvailableSlots";
 import ConsultationHistory from "./consultationHistory";
 import PatientSettings from "./patientSettings";
 import PrescriptionsSection from "./prescriptionsSection";
+import PasswordWarning from "./passwordWarning";
 
 import VideoCallModal from "../../video/videoCallModal";
 import InstallAppPrompt from "./installAppPrompt";
@@ -328,6 +329,8 @@ export default function Dashboard() {
               </button>
             ))}
           </nav>
+
+          <PasswordWarning />
 
           {tab === "settings" ? (
             <div className="mt-8">

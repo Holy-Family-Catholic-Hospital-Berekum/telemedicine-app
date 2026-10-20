@@ -32,7 +32,7 @@ export const DEFAULT_LEGAL = {
 - Payment details: the amount, the payment reference and whether the payment succeeded, and for refunds, the amount and its progress. Payment is made by mobile money through Paystack, and refunds go back through Paystack to the wallet you paid from. We never see or store your mobile money PIN.
 - Prescriptions: when your doctor writes one after a video consultation, the medicines and how to take them, with the name, age and sex printed on it.
 - Consultation information: what you share with your doctor during the consultation and, when the hospital has call recording switched on, a recording of online consultations (video with sound, or sound only) (see "Consultation recording" below).
-- Basic technical data needed to keep the service working and secure, such as sign-in activity, and any attempt the call screen detects to take a screenshot of or record a video consultation.`,
+- Basic technical data needed to keep the service working and secure, such as sign-in activity (including the type of device and browser you sign in from, so we can email you when your account is used on a new one), and any attempt the call screen detects to take a screenshot of or record a video consultation.`,
       },
       {
         id: "children",
@@ -61,6 +61,8 @@ We use a small number of service providers to run the platform. They process inf
 - Brevo, which sends our appointment emails (your email address, name and appointment details).
 - Cloudflare, which relays a video call when your device can't connect directly to the doctor's. The call stays encrypted and is not stored.
 - Paystack, for mobile money payments.
+
+When you create an account or sign in, your browser checks that your password isn't on a public list of passwords leaked from other websites (Have I Been Pwned). Your password is never sent: only the first 5 characters of a scrambled version of it, which cannot be turned back into your password.
 
 Where your information is kept: our database, files and servers are in the European Union (Belgium and the Netherlands), and the other providers above may process information in other countries. This means your information is stored and processed outside Ghana. We use these providers only to run this service, and they protect it with encryption and access controls.
 
@@ -175,6 +177,7 @@ If you are not happy with how we handle your information, you can complain to Gh
         title: "Fees and payment",
         body: `- The fee is shown before you pay. It depends only on whether you see the doctor by video call or at the hospital. General OPD and surgical consultations cost the same, whichever doctor you choose.
 - You pay by mobile money through Paystack. We do not see or store your mobile money PIN.
+- We only take payment on this website (through Paystack) or at the hospital itself. Fees for rescheduling or a missed appointment are paid the same way, from your dashboard. We will never call, text or WhatsApp you to ask you to send money to a phone number or account, and we will never ask for your mobile money PIN, your password or a code sent to your phone, including to give you a refund (refunds go back automatically to the wallet you paid from). If anyone does, it is a scam: do not pay, and tell the hospital.
 - For a visit at the hospital, the hospital may let you book without paying online. Then you pay the fee at the hospital when you come, and you can have one such visit booked at a time. A missed visit of this kind has no fee and nothing to refund; you can simply book again.
 - The amount charged is decided by our system, not by your browser, and your booking is only created once the payment is confirmed.
 - If a payment fails, your booking is not created and you can try again. If money leaves your account but your booking does not appear, contact the hospital with your payment details and we will investigate.`,

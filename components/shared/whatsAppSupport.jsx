@@ -63,8 +63,9 @@ export default function WhatsAppSupport() {
             payments or joining your consultation.
           </p>
           <p className="mt-2 text-[14px] text-[#8A2626]">
-            For an emergency, call 112 or go to the nearest hospital. Never
-            share your mobile money PIN or password.
+            For an emergency, call 112 or go to the nearest hospital. We will
+            never ask you to send money on WhatsApp, or ask for your mobile
+            money PIN, password or a code sent to your phone.
           </p>
           <a
             href={href}

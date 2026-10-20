@@ -4,6 +4,8 @@
 //
 //   registerPatient     patient finishes sign-up (profile, claim, consent,
 //                       adult age declaration)
+//   noteSignIn          patient's browser after signing in: emails them
+//                       about a sign-in from a new device
 //   updatePatientProfile patient changes their name (dashboard Settings)
 //   updateStaffProfile  admin or doctor changes their name; doctors also
 //                       their department (kept in step with the public
@@ -43,6 +45,7 @@ const {
 const { purgePatientData } = require("./lib/accountDeletion");
 const { AGE_DECLARATION_TEXT, CURRENT_AGE_DECLARATION } = require("./lib/consentText");
 const { issueSetupCode } = require("./lib/staffSetup");
+const { noteDevice } = require("./lib/signInAlerts");
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -168,6 +171,38 @@ exports.registerPatient = onCall(async (request) => {
   if (existingRole !== "patient") {
     await admin.auth().setCustomUserClaims(uid, { role: "patient" });
   }
+  return { ok: true };
+});
+
+/* ------------------------------------------------------------------ */
+/* noteSignIn                                                          */
+/* ------------------------------------------------------------------ */
+
+// A sign-in this recent is the one being reported (older tokens are just
+// a page reload and are ignored).
+const SIGN_IN_FRESH_SECONDS = 10 * 60;
+
+/**
+ * data: { deviceId }. The patient's browser calls this right after signing
+ * in (and after sign-up). A browser the account hasn't used before gets
+ * the account holder a "new sign-in" email (lib/signInAlerts.js).
+ * Works before the email is verified: that's when an account is newest.
+ */
+exports.noteSignIn = onCall(async (request) => {
+  const auth = request.auth;
+  if (!auth || auth.token.role !== "patient") return { ok: true };
+  if (Date.now() / 1000 - Number(auth.token.auth_time || 0) > SIGN_IN_FRESH_SECONDS) {
+    return { ok: true };
+  }
+  await rateLimit(auth.uid, "noteSignIn", { max: 30, windowSeconds: 3600 });
+  const { userAgent } = requestMeta(request);
+  await noteDevice({
+    ref: db.collection("users").doc(auth.uid),
+    uid: auth.uid,
+    deviceId: request.data?.deviceId,
+    userAgent,
+    audience: "patient",
+  });
   return { ok: true };
 });
 

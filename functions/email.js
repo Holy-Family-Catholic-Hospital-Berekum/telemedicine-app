@@ -92,7 +92,9 @@ async function deliver(ref) {
         ? "Appointment email to a doctor couldn't be sent"
         : String(m.kind).startsWith("admin_")
           ? "Email to an admin couldn't be sent"
-          : "Appointment email couldn't be sent — contact the patient",
+          : String(m.kind).startsWith("security_")
+            ? "New sign-in email couldn't be sent"
+            : "Appointment email couldn't be sent — contact the patient",
       code: "email.failed",
       category: "booking",
       result: "failed",

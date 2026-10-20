@@ -27,6 +27,7 @@ import { functions } from "./firebase";
 export { auth, db, functions } from "./firebase";
 
 export const callRegisterPatient = httpsCallable(functions, "registerPatient");
+export const callNoteSignIn = httpsCallable(functions, "noteSignIn");
 export const callUpdatePatientProfile = httpsCallable(functions, "updatePatientProfile");
 export const callSyncAccountEmail = httpsCallable(functions, "syncAccountEmail");
 export const callUpdateStaffProfile = httpsCallable(functions, "updateStaffProfile");

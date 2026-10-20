@@ -91,6 +91,14 @@
 //    user pool, so it does not stop someone calling Firebase's sign-in
 //    endpoint directly. Real brute-force protection needs server-side
 //    controls (Identity Platform lockout, App Check).
+//
+// 9. Stolen passwords. Every sign-in sends this browser's random id
+//    (deviceId.js): noteSignIn for patients, confirmStaffSession for staff.
+//    A browser the account hasn't used before gets the holder a "new
+//    sign-in" email (functions/lib/signInAlerts.js). A patient's password
+//    is also checked against a public list of leaked passwords
+//    (passwordCheck.js, nothing but a 5-character hash prefix leaves the
+//    browser): `passwordLeaked` makes the dashboard ask them to change it.
 
 import {
   createContext,
@@ -102,6 +110,17 @@ import {
 } from "react";
 import { CURRENT_AGE_DECLARATION } from "../consentText.js";
 import { loadAuthSdk } from "../authSdkLoader.js";
+import { getDeviceId } from "../deviceId.js";
+import { passwordLeakCount } from "../passwordCheck.js";
+
+// Tells the server a patient just signed in from this browser; it emails
+// them if it's a new one (functions/lib/signInAlerts.js). Never blocks or
+// fails a sign-in.
+function noteSignIn() {
+  loadAuthSdk()
+    .then(({ callNoteSignIn }) => callNoteSignIn({ deviceId: getDeviceId() }))
+    .catch(() => {});
+}
 
 // Staff: tell the server the session is in use at most this often while
 // someone is active (the server refuses accounts idle for 35 minutes:
@@ -178,6 +197,9 @@ export function AuthProvider({ children }) {
   // The signed-in account couldn't be checked because the server couldn't
   // be reached (offline / very weak connection).
   const [connectionProblem, setConnectionProblem] = useState(false);
+  // The password just used is on a public list of leaked passwords
+  // (passwordCheck.js): the dashboard asks the patient to change it.
+  const [passwordLeaked, setPasswordLeaked] = useState(false);
   const idleTimer = useRef(null);
   // Tracks the uid whose profile is currently loaded into `profile`, so
   // signIn() can populate profile/idle-timer itself and the
@@ -267,6 +289,7 @@ export function AuthProvider({ children }) {
       if (!fbUser) {
         setFirebaseUser(null);
         setEmailVerifiedFlag(false);
+        setPasswordLeaked(false);
         setProfile(null);
         loadedProfileUidRef.current = null;
         clearIdleTimer();
@@ -418,6 +441,8 @@ export function AuthProvider({ children }) {
         loadedProfileUidRef.current = cred.user.uid;
         setProfile(p);
         scheduleIdleLogout(p.role);
+        // Records this browser as the account's first (no email).
+        noteSignIn();
         return cred.user;
       } finally {
         signingInRef.current = false;
@@ -445,7 +470,7 @@ export function AuthProvider({ children }) {
       const { signOut, auth, callConfirmStaffSession } = await loadAuthSdk();
       let status;
       try {
-        const { data } = await callConfirmStaffSession({});
+        const { data } = await callConfirmStaffSession({ deviceId: getDeviceId() });
         status = data?.status;
       } catch (err) {
         await signOut(auth).catch(() => {});
@@ -490,6 +515,9 @@ export function AuthProvider({ children }) {
       }
 
       signingInRef.current = true;
+      // Patients: is this password on a public list of leaked ones? Runs
+      // alongside the sign-in; a "yes" shows a warning on the dashboard.
+      const leakCheck = audience === "patient" ? passwordLeakCount(password) : null;
       try {
         // --- Step 1: actual authentication. Failures from THIS step
         // count against the login throttle. ---
@@ -557,7 +585,9 @@ export function AuthProvider({ children }) {
 
         if (audience === "staff") return await staffSecondStep(cred.user, p);
 
+        setPasswordLeaked(((await leakCheck) || 0) > 0);
         exposeSession(cred.user, p);
+        noteSignIn();
         return { user: cred.user, role: p.role };
       } finally {
         signingInRef.current = false;
@@ -650,7 +680,10 @@ export function AuthProvider({ children }) {
       if (!pending || !u || u.uid !== pending.uid) throw new Error("Please sign in again.");
       let data;
       try {
-        ({ data } = await callConfirmStaffSession({ setupCode: setupCode.trim() }));
+        ({ data } = await callConfirmStaffSession({
+          setupCode: setupCode.trim(),
+          deviceId: getDeviceId(),
+        }));
       } catch (err) {
         throw new Error(
           err?.code?.startsWith("functions/") && err.message
@@ -858,6 +891,8 @@ export function AuthProvider({ children }) {
     emailVerified: emailVerifiedFlag,
     initializing,
     connectionProblem,
+    passwordLeaked,
+    dismissPasswordWarning: () => setPasswordLeaked(false),
     signUpPatient,
     signIn,
     signOutUser,

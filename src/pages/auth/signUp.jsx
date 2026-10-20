@@ -40,6 +40,7 @@ import {
   passwordIssues,
   passwordStrengthLabel,
 } from "../../utils/validators.js";
+import { passwordLeakCount } from "../../passwordCheck.js";
 import "../../styles/auth.css";
 import logo from "../../assets/logo.webp";
 import { usePageMeta } from "../../seo.js";
@@ -112,6 +113,15 @@ export default function SignUp() {
 
     setSubmitting(true);
     try {
+      // A password from a data leak elsewhere is one criminals try first.
+      // (Skipped if the check can't be reached: src/passwordCheck.js.)
+      if (((await passwordLeakCount(form.password)) || 0) > 0) {
+        setFieldErrors({
+          password:
+            "This password has appeared in a data leak on another website, so criminals may try it. Please choose a different one.",
+        });
+        return;
+      }
       await signUpPatient({
         name: form.name,
         phone: form.phone,
@@ -285,6 +295,9 @@ export default function SignUp() {
                     </li>
                   ))}
                 </ul>
+              )}
+              {fieldErrors.password && pwIssues.length === 0 && (
+                <div className="auth-field-error">{fieldErrors.password}</div>
               )}
             </div>
 

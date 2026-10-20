@@ -40,6 +40,7 @@ const {
 } = require("./lib/core");
 const { SETUP_CODE_MAX_ATTEMPTS } = require("./lib/securityConfig");
 const { issueSetupCode, setupHash } = require("./lib/staffSetup");
+const { noteDevice } = require("./lib/signInAlerts");
 
 /** Signed-in staff with an active profile; no second-factor check yet. */
 async function staffBase(request) {
@@ -182,6 +183,29 @@ exports.confirmStaffSession = onCall(async (request) => {
     }
   }
   await caller.ref.update({ lastActiveAt: Timestamp.fromMillis(now) });
+  // A fresh sign-in from a browser this account hasn't used before: email
+  // the staff member (lib/signInAlerts.js), and keep a line in the audit log.
+  if (freshSignIn) {
+    const seen = await noteDevice({
+      ref: caller.ref,
+      uid: caller.uid,
+      deviceId: request.data?.deviceId,
+      userAgent: meta.userAgent,
+      audience: "staff",
+    }).catch(() => null);
+    if (seen?.isNew) {
+      await audit(null, {
+        actorId: caller.uid,
+        actorRole: caller.role,
+        action: "Staff signed in from a new device",
+        code: "staff.new_device",
+        category: "security",
+        targetType: "user",
+        targetId: caller.uid,
+        meta,
+      });
+    }
+  }
   return { status: "ok" };
 });
 

@@ -1619,6 +1619,10 @@ export default function BookConsultation() {
                       Payments are processed by Paystack. We never see or store
                       your mobile money PIN.
                     </p>
+                    <p className="mt-2 text-[15px] text-[#8A2626]">
+                      Only pay here, on this website. We will never call,
+                      text or WhatsApp you to ask you to send money.
+                    </p>
                   </div>
                 </section>
               )}

@@ -372,6 +372,38 @@ function adminContent(kind, data, when) {
   };
 }
 
+/**
+ * Account security emails (lib/signInAlerts.js). Staff get no link: the
+ * staff sign-in address is never put in emails.
+ */
+function securityContent(kind, data, when) {
+  const staff = data.audience === "staff";
+  return {
+    subject: "New sign-in to your Holy Family account",
+    intro: "Someone just signed in to your account from a device or browser it hasn't been used on before.",
+    rows: [
+      ["When", formatWhen(when)],
+      ["Device", data.device || "An unknown device"],
+    ],
+    paragraphs: staff
+      ? [
+        "If this was you, you don't need to do anything.",
+        `If it wasn't you, tell the IT team or an admin straight away (or call ${HOSPITAL_PHONE}) so they can lock the account and reset your authenticator. Then change your password.`,
+        "The hospital will never ask you for your password or your authenticator code.",
+      ]
+      : [
+        "If this was you, you don't need to do anything. (Clearing your browser's data can also make your phone look new to us.)",
+        "If it wasn't you, change your password now: go to the sign-in page, enter your email and tap \"Forgot password?\". Then sign in with the new password.",
+        `If you need help, call us on ${HOSPITAL_PHONE}.`,
+      ],
+  };
+}
+
+// Added to every patient email: the most common scams pretend to be the
+// hospital and ask for money or a code.
+const SCAM_WARNING =
+  "Stay safe from scams: we only take payment on our website, through Paystack, or at the hospital itself. We will never call, text or WhatsApp you to ask you to send money, and we will never ask for your mobile money PIN, your password or a code sent to your phone.";
+
 /* ------------------------------------------------------------------ */
 /* rendering                                                           */
 /* ------------------------------------------------------------------ */
@@ -382,7 +414,9 @@ function adminContent(kind, data, when) {
  *       "patient_no_show" | "patient_doctor_unavailable" |
  *       "doctor_assigned" | "doctor_rescheduled" | "doctor_unassigned" |
  *       "doctor_reminder" | "doctor_not_joined" | "doctor_missed" |
- *       "admin_doctor_unavailable" | "admin_new_booking"
+ *       "admin_doctor_unavailable" | "admin_new_booking" |
+ *       "security_new_sign_in" (data: { scheduledAt = sign-in time, name,
+ *       device, audience: "patient" | "staff" })
  * data: { scheduledAt (ms), type, mode, doctorName, patientName?,
  *         consultationId? (patients only), lead? ("24h" | "1h"),
  *         otherJoined?, noShow? (policy), afterDoctorUnavailable?,
@@ -391,33 +425,50 @@ function adminContent(kind, data, when) {
  */
 function renderEmail(kind, data) {
   const when = new Date(data.scheduledAt);
+  const forSecurity = kind.startsWith("security_");
+  const forStaffSecurity = forSecurity && data.audience === "staff";
   const forDoctor = kind.startsWith("doctor_");
   const forAdmin = kind.startsWith("admin_");
-  const { subject, intro, rows, paragraphs } = forAdmin
-    ? adminContent(kind, data, when)
-    : forDoctor
-      ? doctorContent(kind, data, when)
-      : patientContent(kind, data, when);
+  const forPatient = !forSecurity && !forDoctor && !forAdmin;
+  const content = forSecurity
+    ? securityContent(kind, data, when)
+    : forAdmin
+      ? adminContent(kind, data, when)
+      : forDoctor
+        ? doctorContent(kind, data, when)
+        : patientContent(kind, data, when);
+  const { subject, intro, rows } = content;
+  // Patients (and patient security emails): how to spot a scam.
+  const paragraphs = forPatient || (forSecurity && !forStaffSecurity)
+    ? [...content.paragraphs, SCAM_WARNING]
+    : content.paragraphs;
   const hello = forAdmin
     ? "Hello,"
     : forDoctor
       ? `Hello ${data.doctorName ? String(data.doctorName).trim() : "Doctor"},`
-      : `Hello ${firstName(data.patientName, "there")},`;
-  // Admins: no link (the staff sign-in address is never put in emails).
-  const link = forAdmin
+      : forSecurity
+        ? `Hello ${firstName(data.name, "there")},`
+        : `Hello ${firstName(data.patientName, "there")},`;
+  // Admins and staff: no link (the staff sign-in address is never put in
+  // emails).
+  const link = forAdmin || forStaffSecurity
     ? null
     : forDoctor
       ? { href: `${SITE_URL}/doctor`, label: "Open the doctor portal" }
-      : { href: `${SITE_URL}/dashboard`, label: "Open your dashboard" };
+      : forSecurity
+        ? { href: `${SITE_URL}/signin`, label: "Go to the sign-in page" }
+        : { href: `${SITE_URL}/dashboard`, label: "Open your dashboard" };
   // No-reply sender (lib/mailConfig.js): say so, and where to get help.
   const noReply = forAdmin
     ? "This is an automated email; replies to it aren't read."
     : `This is an automated email; replies to it aren't read. Questions? Call ${HOSPITAL_PHONE}.`;
-  const footer = forAdmin
-    ? "You are receiving this email because you are an administrator of the hospital's telemedicine service."
-    : forDoctor
-      ? "You are receiving this email because you are a doctor on the hospital's telemedicine service."
-      : "You are receiving this email because you booked a consultation with us.";
+  const footer = forSecurity
+    ? "You are receiving this email to keep your Holy Family telemedicine account safe."
+    : forAdmin
+      ? "You are receiving this email because you are an administrator of the hospital's telemedicine service."
+      : forDoctor
+        ? "You are receiving this email because you are a doctor on the hospital's telemedicine service."
+        : "You are receiving this email because you booked a consultation with us.";
 
   const text = [
     hello,

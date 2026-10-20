@@ -322,6 +322,17 @@ export default function Footer() {
           </div>
         </div>
 
+        {/* Scam warning: fraudsters pretend to be the hospital and ask for money. */}
+        <div className="border-t border-white/15 py-5">
+          <p className="max-w-3xl text-[15px] leading-6 text-white/90">
+            <strong className="font-semibold text-white">Beware of scams.</strong>{" "}
+            We only take payment on this website or at the hospital. We will
+            never call, text or WhatsApp you to ask you to send money, and we
+            will never ask for your mobile money PIN, your password or a code
+            sent to your phone.
+          </p>
+        </div>
+
         {/* Bottom bar */}
         <div className="border-t border-white/15 py-5">
           <div className="flex flex-col gap-4 text-[14px] text-white/90 sm:flex-row sm:items-center sm:justify-between">

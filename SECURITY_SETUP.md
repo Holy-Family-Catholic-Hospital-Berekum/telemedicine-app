@@ -198,6 +198,38 @@ dashboard. Their hospital admin account is enough.
 
 ---
 
+## Stolen passwords and scams
+
+- **New-device emails.** Every browser keeps a random id
+  (`src/deviceId.js`). A sign-in from a browser the account hasn't used
+  before emails the account holder: patients through `noteSignIn`, staff
+  through `confirmStaffSession` (staff also get the audit line
+  `staff.new_device`). The first browser an account is seen on is recorded
+  silently, and at most 5 emails go to one account a day
+  (`functions/lib/signInAlerts.js`). If a staff member says "that wasn't
+  me": deactivate the account (Users tab), reset their authenticator
+  (doctors: Users tab; admins: `staffAdmin.js reset-mfa`), and have them
+  choose a new password.
+- **Leaked passwords.** At sign-up and at patient sign-in, the browser
+  checks the password against Have I Been Pwned's list of leaked passwords
+  (`src/passwordCheck.js`; only a 5-character hash prefix is sent). Sign-up
+  refuses a leaked one; a patient who signs in with one sees "Please change
+  your password" on the dashboard. If the service is down, the check is
+  skipped. It needs `https://api.pwnedpasswords.com` in the CSP
+  `connect-src` (`vercel.json`). Passwords chosen on Firebase's own
+  password-reset page aren't checked.
+- **Scam warning.** Every patient email, the site footer, the payment step,
+  the WhatsApp panel and the terms ("Fees and payment") say the hospital
+  only takes payment on the website or at the hospital, and never asks for
+  money, a MoMo PIN, a password or a code by call, text or WhatsApp. Keep
+  that true: never ask patients to pay any other way.
+- **Email domain** (checked 20 Oct 2026): `hfhberekum.org` has SPF (Google)
+  and DMARC `p=quarantine; sp=reject`; `mail.hfhberekum.org` (Brevo, our
+  sender) has DKIM `brevo1`/`brevo2`. Missing: DKIM for the hospital's own
+  Google mail (`google._domainkey`). Once that's on and the DMARC reports
+  to `report@hfhberekum.org` look clean for a few weeks, change DMARC to
+  `p=reject`.
+
 ## Still to do
 
 1. **Sign-in reCAPTCHA stays in audit mode** (it scores sign-ins but

@@ -302,6 +302,14 @@ export default function SignIn({ audience = "patient" }) {
               No account yet? <Link to="/signup">Create one here</Link>
             </p>
           )}
+          {isStaff && (
+            // Fake sign-in pages are the main way staff accounts get taken
+            // over, even with an authenticator.
+            <p className="auth-switch">
+              Only sign in from your saved bookmark. Nobody from the hospital
+              will ever ask for your password or authenticator code.
+            </p>
+          )}
           </>
           )}
         </div>
