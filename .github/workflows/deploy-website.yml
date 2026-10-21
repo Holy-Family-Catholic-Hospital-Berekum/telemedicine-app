@@ -58,8 +58,16 @@ jobs:
           node-version: 24
           cache: "npm"
 
+      # No install scripts: the build doesn't need them, and a hijacked
+      # package's install script is the usual way supply-chain attacks run.
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      # The Firebase CLI from its own lockfile (.github/firebase-cli), so
+      # every one of its dependencies is pinned and integrity-checked; this
+      # is the code that runs with the deploy credential.
+      - name: Install the Firebase CLI
+        run: npm ci --prefix .github/firebase-cli --ignore-scripts --no-audit --no-fund
 
       - name: Build the website
         run: npm run build
@@ -76,6 +84,9 @@ jobs:
           VITE_STAFF_LOGIN_PATH: ${{ secrets.VITE_STAFF_LOGIN_PATH }}
           # The test website is public: keep it out of search engines.
           VITE_SEARCH_INDEXING: ${{ github.ref_name == 'main' && 'on' || 'off' }}
+          # Live, once its domain points at Firebase: send visits to the
+          # web.app / firebaseapp.com addresses to it (src/canonicalHost.js).
+          VITE_CANONICAL_REDIRECT: ${{ vars.VITE_CANONICAL_REDIRECT }}
 
       # Refuse to publish a build that's missing its settings or points at
       # the other project (the page would load but nothing would work).
@@ -89,6 +100,9 @@ jobs:
           test "$STAFF_PATH_SET" = "true" || { echo "The VITE_STAFF_LOGIN_PATH secret is missing"; exit 1; }
           test -f dist/index.html
           if grep -q 'firebase-' dist/index.html; then echo "Firebase is in the first download (CLAUDE.md 'Weak connections')"; exit 1; fi
+          # Development-only switches must never reach a published site.
+          if grep -rqE 'FIREBASE_APPCHECK_DEBUG_TOKEN=[^=]|127\.0\.0\.1:(9099|8080|5001|9199)' dist; then echo "App Check debug token or emulator settings in the build"; exit 1; fi
+          if find dist -name '*.map' | grep -q .; then echo "Source maps in the build"; exit 1; fi
 
       - name: Sign in to Google
         uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
@@ -99,4 +113,4 @@ jobs:
       - name: Publish to Firebase Hosting
         env:
           FIREBASE_ALIAS: ${{ github.ref_name == 'main' && 'live' || 'test' }}
-        run: npx --yes firebase-tools@15.31.0 deploy --only hosting --project "$FIREBASE_ALIAS" --non-interactive --message "${GITHUB_SHA::7}"
+        run: .github/firebase-cli/node_modules/.bin/firebase deploy --only hosting --project "$FIREBASE_ALIAS" --non-interactive --message "${GITHUB_SHA::7}"

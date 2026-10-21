@@ -234,6 +234,60 @@ to `main` (live) and `test` (test). No key file exists anywhere:
   authorised domains. Adding a new address means all three.
 - To roll back: Firebase console → Hosting → release history → *Rollback*
   on the previous release (instant), then fix and push.
+- **Never from a computer:** `firebase.json` → `hosting.predeploy`
+  (`scripts/hostingPredeploy.cjs`) refuses a hosting deploy outside GitHub
+  Actions, so `firebase deploy --project live` typed by mistake can't
+  publish a local build (test settings). Always name what you deploy:
+  `--only functions`, `--only firestore,storage`.
+- **Supply chain:** the job installs with `--ignore-scripts`, and the
+  Firebase CLI comes from its own lockfile (`.github/firebase-cli`; to
+  update: change the version in its `package.json`, run
+  `npm install --package-lock-only --ignore-scripts` there, commit both).
+  Actions are pinned to commit SHAs. The build is refused if it contains an
+  App Check debug token, emulator addresses or source maps.
+- **Who can deploy live = who can push to `main`.** Keep write access to
+  the repository to the people who need it, require two-factor sign-in in
+  the GitHub organisation, and protect `main` and `test` (Settings → Rules
+  → Rulesets: block force pushes and deletion).
+
+#### Switching the domain to Firebase (once)
+
+1. Check the live build at https://telemedicine-hfch.web.app (sign in as a
+   patient and as staff, book, pay with a Paystack test card if still on
+   test keys).
+2. Firebase console (live) → Hosting → **Add custom domain** →
+   `telemedicine.hfhberekum.org`, and choose the setup that issues the
+   certificate **before** traffic moves (an `_acme-challenge` record).
+   The site sends HSTS, so browsers that have visited refuse to open it at
+   all while a certificate is missing: getting the certificate first
+   avoids an outage.
+3. In Cloudflare, replace the Vercel record (`CNAME …vercel-dns…`) with
+   Firebase's records, **DNS only** (grey cloud). Keep Firebase's
+   ownership TXT record.
+4. When https://telemedicine.hfhberekum.org serves the Firebase version
+   (Hosting shows the domain *Connected*): in GitHub environment `live` add
+   the variable `VITE_CANONICAL_REDIRECT` = `on` and re-run *Deploy
+   website*, so the `web.app` / `firebaseapp.com` addresses send visitors
+   to the real one (`src/canonicalHost.js`). Then remove
+   `telemedicine-hfch.web.app` from live's reCAPTCHA key (App Check) and
+   browser API key, so a copy of the site there can't use the back end.
+
+#### Retiring Vercel (about a week later), in this order
+
+1. Confirm no DNS record in Cloudflare still points at Vercel
+   (`vercel-dns`, `76.76.21.21`, `cname.vercel-dns.com`).
+2. Vercel → project → Settings → Domains: remove
+   `telemedicine.hfhberekum.org`. (Deleting the project while DNS still
+   pointed there would let anyone claim the domain on Vercel.)
+3. Delete the Vercel project (its environment variables, including the
+   staff paths, go with it).
+4. GitHub organisation → Settings → GitHub Apps: uninstall **Vercel**, so
+   it no longer has access to the repository. Delete the GitHub
+   environments `Preview` and `Production` it created.
+5. Remove the Vercel addresses from both projects' reCAPTCHA keys,
+   browser API keys and (test) Authentication authorised domains, delete
+   `vercel.json`, and remove the Vercel fallback from `vite.config.js`
+   (`VERCEL_GIT_COMMIT_SHA`).
 
 ### Staff app on a desktop
 

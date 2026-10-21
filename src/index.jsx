@@ -1,3 +1,5 @@
+// First: a visit to Firebase's own address goes to the real one.
+import "./canonicalHost";
 import { createRoot } from "react-dom/client";
 // Self-hosted fonts (variable weights, latin subset loaded on demand).
 import "@fontsource-variable/inter";
