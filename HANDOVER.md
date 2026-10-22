@@ -16,7 +16,6 @@ developer adds the new one and then removes themselves.
 | **GitHub** organisation `Holy-Family-Catholic-Hospital-Berekum`, repo `telemedicine-app` | Source code, CI | Member with write access (owner: hospital IT) |
 | **Google Cloud / Firebase** project `telemedicine-hfch` | Back end, database, auth, logs, alerts, budget | IAM role *Owner* or *Editor* (Owner is needed for the staffAdmin script and IAM changes) |
 | **Google Cloud billing** account (Firebase Payment) | Pays for Firebase; budget alerts | *Billing account viewer* at least |
-| **Vercel** project | Old website host, kept as a fallback until about 28 Oct 2026, then deleted | Team member |
 | **Paystack** dashboard | Payments, refunds, webhook URL, API keys | Developer role |
 | **Brevo** | Emails (since 13 Oct 2026; free plan 300/day); API keys `telemedicine-live` / `telemedicine-test`; domain `mail.hfhberekum.org` authenticated; **Authorised IPs must stay off** (Google's servers change address) | Team member |
 | **Resend** | Previous email service, kept for a few days as a fallback; remove its keys and DNS records once Brevo has run without problems | Team member |
@@ -157,7 +156,7 @@ FUNCTIONS_DISCOVERY_TIMEOUT=60 firebase deploy --only functions --project test
   test project's web config (`firebase apps:sdkconfig WEB --project test`),
   the Paystack **test** public key, its own staff path and its own
   reCAPTCHA site key. **The test site is public** (Firebase Hosting has no
-  password protection; on Vercel it was team-only): it's kept out of search
+  password protection): it's kept out of search
   engines (`VITE_SEARCH_INDEXING=off`: robots.txt and every page noindex),
   and only ever holds test data and test payments.
 - **Same security as live:** App Check is enforced on the test database,
@@ -198,8 +197,7 @@ exist or the CLI refuses to deploy anything.
 
 ### Website deploys
 
-The website is on **Firebase Hosting** (since Oct 2026; before that,
-Vercel): live `telemedicine-hfch` at https://telemedicine.hfhberekum.org
+The website is on **Firebase Hosting** (since 22 Oct 2026; Vercel before): live `telemedicine-hfch` at https://telemedicine.hfhberekum.org
 (also `telemedicine-hfch.web.app`), test at
 https://telemedicine-hfch-test.web.app. Headers (CSP, caching), the
 page routing and the files served are in `firebase.json` → `hosting`.
@@ -250,44 +248,27 @@ to `main` (live) and `test` (test). No key file exists anywhere:
   the GitHub organisation, and protect `main` and `test` (Settings → Rules
   → Rulesets: block force pushes and deletion).
 
-#### Switching the domain to Firebase (once)
+#### The hospital domain
 
-1. Check the live build at https://telemedicine-hfch.web.app (sign in as a
-   patient and as staff, book, pay with a Paystack test card if still on
-   test keys).
-2. Firebase console (live) → Hosting → **Add custom domain** →
-   `telemedicine.hfhberekum.org`, and choose the setup that issues the
-   certificate **before** traffic moves (an `_acme-challenge` record).
-   The site sends HSTS, so browsers that have visited refuse to open it at
-   all while a certificate is missing: getting the certificate first
-   avoids an outage.
-3. In Cloudflare, replace the Vercel record (`CNAME …vercel-dns…`) with
-   Firebase's records, **DNS only** (grey cloud). Keep Firebase's
-   ownership TXT record.
-4. When https://telemedicine.hfhberekum.org serves the Firebase version
-   (Hosting shows the domain *Connected*): in GitHub environment `live` add
-   the variable `VITE_CANONICAL_REDIRECT` = `on` and re-run *Deploy
-   website*, so the `web.app` / `firebaseapp.com` addresses send visitors
-   to the real one (`src/canonicalHost.js`). Then remove
-   `telemedicine-hfch.web.app` from live's reCAPTCHA key (App Check) and
-   browser API key, so a copy of the site there can't use the back end.
+`telemedicine.hfhberekum.org` moved from Vercel to Firebase Hosting on
+22 Oct 2026 (Vercel was then deleted, its GitHub app removed). In
+Cloudflare: `telemedicine` is a CNAME to `telemedicine-hfch.web.app`,
+**DNS only** (grey cloud; the orange-cloud proxy stops Firebase renewing
+the certificate), plus the TXT record `_acme-challenge.telemedicine`,
+which Firebase uses to renew the certificate: keep both. The GitHub `live`
+environment has `VITE_CANONICAL_REDIRECT` = `on`, so Firebase's own
+addresses (`telemedicine-hfch.web.app`, `.firebaseapp.com`) send visitors
+to the real one, and live's reCAPTCHA key and browser key accept only the
+hospital domain (plus `firebaseapp.com` on the key, which Firebase sign-in
+pages use).
 
-#### Retiring Vercel (about a week later), in this order
-
-1. Confirm no DNS record in Cloudflare still points at Vercel
-   (`vercel-dns`, `76.76.21.21`, `cname.vercel-dns.com`).
-2. Vercel → project → Settings → Domains: remove
-   `telemedicine.hfhberekum.org`. (Deleting the project while DNS still
-   pointed there would let anyone claim the domain on Vercel.)
-3. Delete the Vercel project (its environment variables, including the
-   staff paths, go with it).
-4. GitHub organisation → Settings → GitHub Apps: uninstall **Vercel**, so
-   it no longer has access to the repository. Delete the GitHub
-   environments `Preview` and `Production` it created.
-5. Remove the Vercel addresses from both projects' reCAPTCHA keys,
-   browser API keys and (test) Authentication authorised domains, delete
-   `vercel.json`, and remove the Vercel fallback from `vite.config.js`
-   (`VERCEL_GIT_COMMIT_SHA`).
+If the domain ever changes: get the new certificate issued **before**
+moving traffic (Firebase's `_acme-challenge` TXT record; the site sends
+HSTS, so a missing certificate makes it unreachable, not just insecure);
+add the new address to the reCAPTCHA key, the browser key and
+Authentication → authorised domains; set `VITE_SITE_URL`; and remove the
+old domain from the old host before deleting anything there, so nobody can
+claim it.
 
 ### Staff app on a desktop
 

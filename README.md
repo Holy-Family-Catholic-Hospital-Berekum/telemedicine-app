@@ -92,7 +92,6 @@ tests/rules/         Database/storage rules tests (emulators).
 firestore.rules      Who may read what (database).
 storage.rules        Who may read what (files).
 firebase.json        Firebase settings, incl. website headers (security policy) and routing.
-vercel.json          Old host's copy of the headers; deleted with Vercel (~28 Oct 2026).
 ```
 
 Why both `src/` and `components/`: the project started as separate pieces

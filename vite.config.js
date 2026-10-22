@@ -189,10 +189,10 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [react(), tailwindcss(), seoFiles(siteUrl, env.VITE_SEARCH_INDEXING === "off"),staffAppManifest(env.VITE_STAFF_LOGIN_PATH), pwa],
     // Which release a browser error came from (src/errorReporting.js):
-    // the commit GitHub (or, until it's retired, Vercel) builds, or "local".
+    // the commit GitHub Actions builds, or "local".
     define: {
       "import.meta.env.VITE_BUILD_ID": JSON.stringify(
-        (process.env.GITHUB_SHA || process.env.VERCEL_GIT_COMMIT_SHA || "local").slice(0, 7),
+        (process.env.GITHUB_SHA || "local").slice(0, 7),
       ),
     },
     build: {
