@@ -9,7 +9,7 @@
 // written to functions/.secret.local (git-ignored) for the run.
 
 import { spawnSync } from "node:child_process";
-import { writeFileSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
@@ -36,11 +36,34 @@ if (unsafe) {
   process.exit(2);
 }
 const extra = extraArgs.join(" ");
+// emulators:exec runs this one string as its own command line (hence
+// SAFE_ARG above).
 const inner = `npx playwright test -c e2e/playwright.config.mjs ${extra}`.trim();
-// One command line (the inner command quoted as one argument) for every OS.
-const command =
-  "npx --yes firebase-tools@15.31.0 emulators:exec --only auth,firestore,functions,storage " +
-  `--project demo-telemedicine "${inner}"`;
-// deepcode ignore IndirectCommandInjection: the only input is the developer's own arguments, limited to SAFE_ARG above.
-const result = spawnSync(command, { cwd: root, stdio: "inherit", shell: true });
+
+// npx without a shell: Node runs npm's own npx script, with the arguments
+// as a list. (On Windows npx is a .cmd file, which can't be started
+// without a shell.)
+const npxCli = [
+  process.env.npm_execpath && path.join(path.dirname(process.env.npm_execpath), "npx-cli.js"),
+  path.join(path.dirname(process.execPath), "node_modules", "npm", "bin", "npx-cli.js"),
+].find((p) => p && existsSync(p));
+if (!npxCli) {
+  console.error("Couldn't find npm's npx: run this with `npm run test:e2e`.");
+  process.exit(2);
+}
+const result = spawnSync(
+  process.execPath,
+  [
+    npxCli,
+    "--yes",
+    "firebase-tools@15.31.0",
+    "emulators:exec",
+    "--only",
+    "auth,firestore,functions,storage",
+    "--project",
+    "demo-telemedicine",
+    inner,
+  ],
+  { cwd: root, stdio: "inherit" },
+);
 process.exit(result.status ?? 1);

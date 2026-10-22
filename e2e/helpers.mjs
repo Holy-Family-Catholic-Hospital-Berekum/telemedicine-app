@@ -39,6 +39,8 @@ export async function verifyEmail(email) {
  */
 export async function stubPaystack(page) {
   await page.exposeFunction("__e2eRecordPayment", async (p) => {
+    // Plain http is fine: the fake Paystack runs on this computer (127.0.0.1).
+    // nosemgrep: typescript.react.security.react-insecure-request.react-insecure-request
     await fetch("http://127.0.0.1:4599/__paid", { method: "POST", body: JSON.stringify(p) });
   });
   await page.addInitScript(() => {
@@ -201,6 +203,8 @@ export async function createPaidBooking(patient) {
     consentVersion: consent.CURRENT_BOOKING_CONSENT,
   });
   const pay = await callAs(patient, "initializePayment", { bookingId: draft.bookingId });
+  // Plain http is fine: the fake Paystack runs on this computer (127.0.0.1).
+  // nosemgrep: typescript.react.security.react-insecure-request.react-insecure-request
   await fetch("http://127.0.0.1:4599/__paid", {
     method: "POST",
     body: JSON.stringify({ reference: pay.reference, amount: pay.amount * 100, currency: pay.currency, email: patient.email }),

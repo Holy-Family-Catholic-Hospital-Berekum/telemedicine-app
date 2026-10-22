@@ -161,10 +161,19 @@ function main() {
   console.log(`> npx ${args.join(" ")}`);
   if (DRY) return console.log("(dry run: nothing deployed)");
 
-  const run = spawnSync(process.platform === "win32" ? "npx.cmd" : "npx", args, {
+  // No shell: Node runs npm's own npx script with the arguments as a list
+  // (on Windows npx is a .cmd file, which can't be started without one).
+  const npxCli = [
+    process.env.npm_execpath && path.join(path.dirname(process.env.npm_execpath), "npx-cli.js"),
+    path.join(path.dirname(process.execPath), "node_modules", "npm", "bin", "npx-cli.js"),
+  ].find((p) => p && fs.existsSync(p));
+  if (!npxCli) {
+    console.error("Couldn't find npm's npx: run this with `npm run deploy:functions`.");
+    process.exit(2);
+  }
+  const run = spawnSync(process.execPath, [npxCli, ...args], {
     cwd: REPO,
     stdio: "inherit",
-    shell: process.platform === "win32",
     env: { ...process.env, FUNCTIONS_DISCOVERY_TIMEOUT: process.env.FUNCTIONS_DISCOVERY_TIMEOUT || "60" },
   });
   if (run.status !== 0) {

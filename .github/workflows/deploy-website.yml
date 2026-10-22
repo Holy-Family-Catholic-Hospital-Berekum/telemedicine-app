@@ -47,7 +47,10 @@ jobs:
   security:
     if: github.ref_name == 'main' || github.ref_name == 'test'
     uses: ./.github/workflows/security-audit.yml
-    secrets: inherit
+    # Only the scanners' keys (never `inherit`: that would hand it every secret).
+    secrets:
+      SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+      GITGUARDIAN_API_KEY: ${{ secrets.GITGUARDIAN_API_KEY }}
 
   deploy:
     needs: security

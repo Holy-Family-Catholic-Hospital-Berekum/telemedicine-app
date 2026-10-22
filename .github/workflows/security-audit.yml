@@ -8,6 +8,11 @@ on:
   pull_request:
     branches: [main, test]
   workflow_call:
+    secrets:
+      SNYK_TOKEN:
+        required: true
+      GITGUARDIAN_API_KEY:
+        required: true
 
 # Least privilege: the job only needs to read the repo.
 permissions:
