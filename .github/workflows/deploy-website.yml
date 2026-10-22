@@ -4,6 +4,9 @@ name: Deploy website
 #   push to main -> live project (telemedicine-hfch, https://telemedicine.hfhberekum.org)
 #   push to test -> test project (telemedicine-hfch-test, https://telemedicine-hfch-test.web.app)
 #
+# First it runs the security pipeline (security-audit.yml: TruffleHog,
+# ESLint, Semgrep, Snyk, GitGuardian); the deploy only starts if that passes.
+#
 # No key file anywhere: GitHub proves who it is to Google (Workload Identity
 # Federation) and Google lets ONLY this repository's main branch deploy to
 # live and its test branch deploy to test (HANDOVER.md "Website deploys").
@@ -31,7 +34,6 @@ on:
 
 permissions:
   contents: read
-  id-token: write # to sign in to Google (Workload Identity Federation)
 
 # One deploy per branch at a time, in order; never cancel one halfway.
 concurrency:
@@ -39,8 +41,20 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  deploy:
+  # The security pipeline (secret scans, lint, Semgrep, Snyk) must pass
+  # before anything is published: if it fails, the deploy job never runs
+  # and the site stays as it was.
+  security:
     if: github.ref_name == 'main' || github.ref_name == 'test'
+    uses: ./.github/workflows/security-audit.yml
+    secrets: inherit
+
+  deploy:
+    needs: security
+    if: github.ref_name == 'main' || github.ref_name == 'test'
+    permissions:
+      contents: read
+      id-token: write # only this job may sign in to Google (Workload Identity Federation)
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment:

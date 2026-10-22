@@ -1,10 +1,13 @@
 name: Secure AI Vibe Coding Pipeline
 
+# Also called by "Deploy website" as its first job (workflow_call): the
+# website is only published when this passes.
 on:
   push:
-    branches: [main, develop]
+    branches: [main, test, develop]
   pull_request:
-    branches: [main]
+    branches: [main, test]
+  workflow_call:
 
 # Least privilege: the job only needs to read the repo.
 permissions:

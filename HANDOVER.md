@@ -203,7 +203,10 @@ https://telemedicine-hfch-test.web.app. Headers (CSP, caching), the
 page routing and the files served are in `firebase.json` → `hosting`.
 
 `.github/workflows/deploy-website.yml` builds and publishes on every push
-to `main` (live) and `test` (test). No key file exists anywhere:
+to `main` (live) and `test` (test), **only after the security pipeline
+passes**: its first job runs `security-audit.yml` (TruffleHog, ESLint,
+Semgrep, Snyk, GitGuardian), and if that fails nothing is published. No
+key file exists anywhere:
 
 - GitHub proves who it is to Google (**Workload Identity Federation**). In
   each project: pool `github`, provider `telemedicine-app`, which only
