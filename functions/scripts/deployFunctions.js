@@ -157,7 +157,7 @@ function main() {
   }
   const only = p.all ? "functions" : p.names.map((n) => `functions:${n}`).join(",");
   console.log(p.all ? `Deploying ALL functions (${p.reason}).` : `Deploying ${p.names.length} function(s): ${p.names.join(", ")}`);
-  const args = ["--yes", "firebase-tools@15.31.0", "deploy", "--only", only, "--project", alias];
+  const args = ["--yes", "firebase-tools@15.34.1", "deploy", "--only", only, "--project", alias];
   console.log(`> npx ${args.join(" ")}`);
   if (DRY) return console.log("(dry run: nothing deployed)");
 

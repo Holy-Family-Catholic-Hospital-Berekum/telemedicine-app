@@ -3,6 +3,6 @@
   "private": true,
   "description": "The Firebase CLI used by .github/workflows/deploy-website.yml, with a lockfile so every dependency is pinned and integrity-checked in the job that holds the deploy credential.",
   "dependencies": {
-    "firebase-tools": "15.31.0"
+    "firebase-tools": "15.34.1"
   }
 }

@@ -73,12 +73,12 @@ jobs:
       # Same Firebase CLI version the project deploys with.
       - name: Rules tests (emulators)
         run: >
-          npx --yes firebase-tools@15.31.0 emulators:exec
+          npx --yes firebase-tools@15.34.1 emulators:exec
           --only firestore,storage --project demo-telemedicine
           "node --test tests/rules/rules.test.mjs"
 
       - name: Server tests against the database (emulator)
         run: >
-          npx --yes firebase-tools@15.31.0 emulators:exec
+          npx --yes firebase-tools@15.34.1 emulators:exec
           --only firestore --project demo-telemedicine
           "cd functions && node --test --test-concurrency=1 test/emulator/*.test.js"
