@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Loader2, X } from "lucide-react";
 import { requestRefund } from "./patientFirestoreService";
 import { callableMessage, toDate } from "../../../src/constants";
+import { formatGhs as money } from "./patientUtils";
 
 // "Request a refund" for a consultation the patient didn't attend: a
 // no-show straight away (anyTime), otherwise once its scheduled day has
@@ -19,8 +20,6 @@ const STATUS_TEXT = {
   refunded: "Refunded to your mobile money wallet",
   declined: "Refund declined",
 };
-
-const money = (n) => `GHS ${Number(n || 0).toFixed(2).replace(/\.00$/, "")}`;
 
 /** Ghana is UTC+0: compare calendar days in UTC. */
 function scheduledDayHasPassed(scheduledTime) {

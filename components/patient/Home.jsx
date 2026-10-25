@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import Header from "../shared/header";
 import Footer from "../shared/footer";
@@ -6,48 +6,43 @@ import { HOSPITAL_PHONE_TEL } from "../shared/contact";
 import landingImage from "../../src/assets/landingImage.webp";
 import { useAuth } from "../../src/context/authContext.jsx";
 import HealthcarePreloader from "../../src/components/common/healthcarePreloader.jsx";
-
-// Live public doctor directory (doctorProfiles), shared with the booking
-// page's doctor picker.
-import { useListedDoctors } from "../../src/doctorDirectory";
-import { DoctorCardSummary } from "./doctorProfileDetails";
 import EmergencyNotice from "./emergencyNotice";
 import heroDefault from "../../src/assets/hero-consult.webp";
 import { useSiteSettings } from "../../src/siteSettings";
-import { TYPE_LABELS, MODE_LABELS, formatDateTime } from "../../src/constants";
 import { usePageMeta } from "../../src/seo.js";
+import BookingCta from "./home/bookingCta";
+import DoctorsSlider from "./home/doctorsSlider";
+import HeroSection from "./home/heroSection";
+import OpenSlots from "./home/openSlots";
 /**
  * Home.jsx
  * Public landing page for Holy Family Catholic Hospital's telemedicine platform.
- * Lives at the "/" route. Admin has a separate, unlinked entry point at "/admin".
+ * Lives at the "/" route. Its larger sections are in ./home/ (hero, doctors
+ * slider, open appointment times, the booking button).
  *
- * Design concept: the app's real booking flow is a MoMo reference code that
- * gets manually confirmed by hospital staff, then a consultation ID shared
- * by phone or WhatsApp — closer to a hospital appointment slip than a
- * generic "video call a doctor" product. That slip/ticket is the page's
- * throughline: it "floats" over a real photo in the hero, appears again
- * (unfilled) for each consultation type, structures the booking steps, and
- * is shown "closed" in the privacy section to represent the booking
- * details being erased after a visit.
+ * Design concept: a hospital appointment slip rather than a generic "video
+ * call a doctor" product. The slip (BookingSlip) appears, unfilled, for
+ * each consultation type, and "closed" in the privacy section to represent
+ * the booking details being erased after a visit.
  *
  * DOCTOR SELECTION: each doctor card in "Our doctors" carries a
- * "Select this doctor" link to `/book?doctor=<id>`. bookConsultation.jsx
- * reads that query param on arrival and pre-selects the doctor there (its
- * own doctor picker stays closed in that case, since there's nothing left
- * to choose) — see the doctor-selection notes at the top of that file.
+ * "Book this doctor" link to `/book?doctor=<id>` (when the admin allows
+ * choosing a doctor). bookConsultation.jsx reads that query param on
+ * arrival and pre-selects the doctor there (its own doctor picker stays
+ * closed in that case, since there's nothing left to choose) — see the
+ * doctor-selection notes at the top of that file.
  *
- * CTA system:
- * - Hero: a calm white pill. It sits on the dark forest hero, so plain white
- *   is already the highest-contrast thing on screen — no gradient or shimmer
- *   needed to be found.
+ * CTA system (home/bookingCta.jsx):
+ * - Hero: the warm gold pill, with a shimmer sweep.
  * - Floating mobile bar: the page's one loud moment. A thin rotating
  *   multi-colour light runs around the pill, with a few tiny bright crystals
  *   twinkling in the bar behind it, so the action stays noticeable after the
  *   hero has scrolled away.
- * - CTA banner: the warm gold pill, quieter than the floating one.
+ * - Services and CTA banner: the gold pill.
  *
- * Images needed:
- * - src/assets/hero-consult.webp (hero photo, see the import note above)
+ * Images:
+ * - Hero photo: siteSettings.heroImage (admin-editable), falling back to
+ *   src/assets/hero-consult.webp.
  * - Doctor portraits come from each doctor's profile photo (doctor portal).
  *   Missing photos degrade to an initials tile, they don't break.
  *
@@ -60,13 +55,7 @@ import { usePageMeta } from "../../src/seo.js";
  *
  * Palette is scoped locally to <main> via CSS custom properties so it
  * doesn't touch the --ink / --teal / --brand-orange / --tint variables
- * Header/Footer already rely on globally.
- *
- * Notes on setup:
- * - Assumes Tailwind CSS is installed and configured (tailwind.config.js
- *   content paths pointing at src/**\/*.{js,jsx}).
- * - Assumes react-router-dom v6. If not installed: npm install react-router-dom
- * - No other dependencies required. Icons are hand-drawn inline SVG.
+ * Header/Footer already rely on globally. Icons are hand-drawn inline SVG.
  */
 
 // The two ways to be seen. The hospital's services are listed separately
@@ -167,29 +156,6 @@ const crystals = [
   { left: "93%", top: "72%", size: 3, color: "#C4B5FD", delay: 2000 },
 ];
 
-// Small calendar-with-checkmark glyph shared by every "Book a consultation"
-// entry point, so the action is recognisable by silhouette alone.
-function BookingGlyph({ className = "" }) {
-  return (
-    <svg
-      width="18"
-      height="18"
-      viewBox="0 0 20 20"
-      fill="none"
-      aria-hidden="true"
-      className={className}
-    >
-      <path
-        d="M6 3v2M14 3v2M4 7.5h12M5 5h10a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1Z M7.7 11.2l1.5 1.5L13 9"
-        stroke="currentColor"
-        strokeWidth="1.4"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
 // Small check glyph used on the sub-service pills under each consultation
 // type, so each item reads as "included" at a glance rather than a plain
 // bullet.
@@ -215,211 +181,32 @@ function CheckGlyph({ className = "" }) {
   );
 }
 
-/**
- * Every "Book a consultation" entry point, in three weights:
- *
- *   variant="white"  — hero. Plain white pill on the dark hero; the calmest
- *                      of the three, and still the brightest thing there.
- *   variant="gold"   — CTA banner and anywhere inline. Warm gold pill.
- *   variant="aurora" — the floating mobile bar. A thin multi-colour light
- *                      rotates around the pill edge; the white face stays
- *                      readable, only the 2px rim moves.
- */
-function BookingCta({
-  to = "/book",
-  children = "Book Consultation",
-  size = "md",
-  variant = "gold",
-  className = "",
-}) {
-  const sizing =
-    size === "lg"
-      ? "pl-7 pr-7 py-4 text-[16px] gap-3"
-      : "pl-6 pr-6 py-3.5 text-[16px] gap-2.5";
-
-  const base = `group relative inline-flex items-center justify-center ${sizing} rounded-full font-semibold
-                transition active:scale-[0.97]
-                focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2`;
-
-  if (variant === "white") {
-    return (
-      <Link
-        to={to}
-        className={`${base} bg-white text-[var(--forest)]
-                    shadow-[0_10px_26px_-12px_rgba(0,0,0,0.45)]
-                    hover:bg-[var(--parchment)] hover:shadow-[0_14px_30px_-12px_rgba(0,0,0,0.5)]
-                    focus-visible:outline-[#F48732] ${className}`}
-      >
-        <BookingGlyph className="shrink-0" />
-        <span>{children}</span>
-      </Link>
-    );
-  }
-
-  if (variant === "aurora") {
-    return (
-      // p-[2px] leaves exactly the rim the rotating light shows through.
-      <span
-        className={`relative isolate inline-flex rounded-full p-[2px] overflow-hidden ${className}`}
-      >
-        <span
-          aria-hidden="true"
-          className="absolute left-1/2 top-1/2 -z-10 aspect-square w-[240%] -translate-x-1/2 -translate-y-1/2
-                     motion-safe:[animation:auroraSpin_6s_linear_infinite]"
-          style={{
-            background:
-              "conic-gradient(from 0deg, #F8C15C, #6EE7B7, #7DD3FC, #C4B5FD, #FDA4AF, #F8C15C)",
-          }}
-        />
-        <Link
-          to={to}
-          className={`${base} w-full bg-white text-[var(--forest,#1F3D33)]
-                      hover:bg-[#FDFBF5]
-                      focus-visible:outline-[#7DD3FC]`}
-        >
-          <BookingGlyph className="shrink-0" />
-          <span>{children}</span>
-        </Link>
-      </span>
-    );
-  }
-
-  return (
-    <Link
-      to={to}
-      className={`${base}
-                  bg-gradient-to-r from-[var(--gold)] via-[#E8935A] to-[var(--brand-orange,#F88535)]
-                  text-[var(--ink2)]
-                  shadow-[0_16px_34px_-10px_rgba(199,122,60,0.55)]
-                  hover:brightness-105 hover:shadow-[0_20px_42px_-10px_rgba(199,122,60,0.65)]
-                  focus-visible:outline-[var(--gold)] ${className}`}
-    >
-      <BookingGlyph className="shrink-0" />
-      <span>{children}</span>
-    </Link>
-  );
-}
-
-// The recurring visual device: a booking slip. `code` renders as a
-// staggered mono reveal on the hero instance; `voided` renders a stamped
-// overlay for the privacy section, representing erasure after a visit.
-// `compact` shrinks the type-scale/paddings for the hero, where the slip
-// sits over a photo and shouldn't eat too much of it.
-function BookingSlip({
-  type,
-  mode,
-  code,
-  placeholder,
-  reassurance,
-  voided = false,
-  tilt = false,
-  animateCode = false,
-  compact = false,
-  className = "",
-}) {
+// The recurring visual device: a booking slip, one for each consultation
+// type; `voided` renders a stamped overlay for the privacy section,
+// representing erasure after a visit.
+function BookingSlip({ type, mode, voided = false, className = "" }) {
   return (
     <div
-      className={`relative w-full max-w-[300px] rounded-2xl bg-[var(--parchment)] text-[var(--ink2)] ${
-        tilt ? "rotate-[-2.5deg]" : ""
-      } ${className}`}
+      className={`relative w-full max-w-[300px] rounded-2xl bg-[var(--parchment)] text-[var(--ink2)] ${className}`}
       style={{ boxShadow: "0 30px 60px -24px rgba(15,20,17,0.5)" }}
     >
-      <div className={compact ? "px-5 pt-4 pb-4" : "px-6 pt-6 pb-5"}>
+      <div className="px-6 pt-6 pb-5">
         <p className="text-[14px] text-[var(--forest-2)]">
           Holy Family Catholic Hospital
         </p>
-        <div
-          className={`flex flex-wrap items-start justify-between gap-x-3 gap-y-2 ${
-            compact ? "mt-2" : "mt-3"
-          }`}
-        >
+        <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2 mt-3">
           {/* The mode badge drops under the title when the card is too
               narrow for both on one line (phones). */}
-          <span
-            className={`min-w-0 font-display font-medium leading-tight ${
-              compact
-                ? "text-[16px] sm:text-[17px]"
-                : "text-[19px] sm:text-[20px]"
-            }`}
-          >
+          <span className="min-w-0 font-display font-medium leading-tight text-[19px] sm:text-[20px]">
             {type}
           </span>
           <span className="max-w-full rounded-full bg-[var(--forest)] px-3 py-1 text-[14px] font-medium text-[var(--parchment)]">
             {mode}
           </span>
         </div>
-        <div
-          className={`border-t border-dashed border-[#16211b30] ${
-            compact ? "mt-3 pt-3" : "mt-5 pt-4"
-          }`}
-        >
-          {reassurance ? (
-            <div className="flex items-start gap-2.5">
-              <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--forest)]/10">
-                <svg
-                  width="13"
-                  height="13"
-                  viewBox="0 0 16 16"
-                  fill="none"
-                  aria-hidden="true"
-                >
-                  <path
-                    d="M8 1.5c2.2 1.2 3.7 1.5 5.5 1.5 0 6-2.4 9.3-5.5 11.5C4.9 12.3 2.5 9 2.5 3c1.8 0 3.3-.3 5.5-1.5Z"
-                    stroke="var(--forest)"
-                    strokeWidth="1.3"
-                    strokeLinejoin="round"
-                  />
-                  <path
-                    d="M5.6 8.1l1.6 1.6 3.2-3.4"
-                    stroke="var(--forest)"
-                    strokeWidth="1.3"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-              </span>
-              <div>
-                <p className="text-[15px] font-medium text-[var(--forest-2)]">
-                  {reassurance.label}
-                </p>
-                <p className="mt-0.5 text-[15px] leading-snug text-[#16211b8a]">
-                  {reassurance.text}
-                </p>
-              </div>
-            </div>
-          ) : (
-            <>
-              {code ? (
-                <p
-                  className={`mt-1 flex font-mono tracking-[0.06em] ${
-                    compact ? "text-[20px]" : "text-[25px]"
-                  }`}
-                >
-                  {code.split("").map((char, i) => (
-                    <span
-                      key={i}
-                      className={
-                        animateCode
-                          ? "motion-safe:animate-[slipReveal_0.5s_ease-out_both]"
-                          : ""
-                      }
-                      style={
-                        animateCode
-                          ? { animationDelay: `${300 + i * 70}ms` }
-                          : undefined
-                      }
-                    >
-                      {char}
-                    </span>
-                  ))}
-                </p>
-              ) : (
-                <p className="mt-1 font-mono text-[16px] text-[#16211b70]">
-                  {placeholder}
-                </p>
-              )}
-            </>
-          )}
+        <div className="border-t border-dashed border-[#16211b30] mt-5 pt-4">
+          {/* An empty line, like the blank reference box on a paper slip. */}
+          <p className="mt-1 font-mono text-[16px] text-[#16211b70]" />
         </div>
       </div>
       {voided && (
@@ -436,385 +223,6 @@ function BookingSlip({
           </span>
         </div>
       )}
-    </div>
-  );
-}
-
-// Doctor portrait that survives a missing file: if the image 404s (or no
-// path is set yet) it falls back to an initials tile, so the slider still
-// looks finished while photos are being collected.
-function DoctorPortrait({ doctor }) {
-  const [failed, setFailed] = useState(false);
-  const showImage = Boolean(doctor.image) && !failed;
-
-  return (
-    <div className="relative aspect-[3/4] w-full overflow-hidden rounded-2xl bg-[var(--forest)]">
-      {showImage ? (
-        <img
-          src={doctor.image}
-          alt={`${doctor.name}, ${doctor.role} at Holy Family Catholic Hospital`}
-          loading="lazy"
-          onError={() => setFailed(true)}
-          className="h-full w-full object-cover"
-        />
-      ) : (
-        <div
-          className="flex h-full w-full items-center justify-center"
-          style={{
-            backgroundImage:
-              "radial-gradient(120% 90% at 50% 0%, #2F5D4C 0%, #1F3D33 70%)",
-          }}
-        >
-          <span className="font-display text-[34px] font-medium text-[var(--gold)]">
-            {doctor.initials}
-          </span>
-        </div>
-      )}
-      <div
-        aria-hidden="true"
-        className="absolute inset-0 bg-gradient-to-t from-[var(--ink2)]/75 via-transparent to-transparent"
-      />
-      <span className="absolute bottom-3 left-3 rounded-full bg-[var(--parchment)]/90 px-3 py-1 text-[14px] font-medium text-[var(--ink2)]">
-        {doctor.availability}
-      </span>
-    </div>
-  );
-}
-
-/**
- * Doctors slider.
- * 4 cards in frame on large screens, 2 on tablets, exactly 1 on phones.
- * Advances on its own every 5s, pauses on hover, on focus within, and when
- * the tab is hidden. Reduced-motion visitors get no auto-advance and no
- * sliding transition — the arrows and dots still work.
- *
- * `index` is the raw stored position; `safeIndex` is what's actually
- * rendered. When the viewport changes and maxIndex shrinks, safeIndex is
- * clamped during render, so no effect is needed to "fix up" state.
- */
-/**
- * OpenSlots: appointment times admins have opened, listed under "Meet your
- * doctors". Firestore rules make open slots public (doctor, type, mode and
- * time only). "Book this time" opens /book with the slot pre-filled; a
- * visitor who isn't signed in is sent to sign in first. Hidden when there
- * are none.
- */
-const SLOTS_SHOWN = 6;
-
-function OpenSlots() {
-  const [slots, setSlots] = useState([]);
-  const [showAll, setShowAll] = useState(false);
-
-  // Loaded once (Firebase on demand, after the page shows), and again when
-  // the visitor comes back to the page after a minute or more.
-  useEffect(() => {
-    let active = true;
-    let lastLoaded = 0;
-    const load = () => {
-      lastLoaded = Date.now();
-      import("./dashboard/patientFirestoreService")
-        .then((m) => m.fetchAvailableSlots())
-        .then((data) => active && setSlots(data ?? []))
-        .catch(() => {}); // the section just stays hidden
-    };
-    const onVisible = () => {
-      if (document.visibilityState === "visible" && Date.now() - lastLoaded > 60 * 1000) load();
-    };
-    load();
-    document.addEventListener("visibilitychange", onVisible);
-    return () => {
-      active = false;
-      document.removeEventListener("visibilitychange", onVisible);
-    };
-  }, []);
-
-  if (slots.length === 0) return null;
-  const shown = showAll ? slots : slots.slice(0, SLOTS_SHOWN);
-
-  return (
-    <section id="open-slots" className="pb-16 sm:pb-24">
-      <div className="mx-auto max-w-6xl px-5 sm:px-8">
-        <h2 className="font-display text-[26px] sm:text-[30px] font-medium text-[var(--ink2)]">
-          Open appointment times
-        </h2>
-        <p className="mt-3 max-w-xl text-[17px] text-[#142138]">
-          Pick a time that suits you and book it straight away.
-        </p>
-        <ul className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {shown.map((slot) => {
-            const params = new URLSearchParams({
-              slotId: slot.slotId,
-              type: slot.type,
-              mode: slot.mode,
-            });
-            if (slot.doctorUid) params.set("doctor", slot.doctorUid);
-            return (
-              <li
-                key={slot.slotId}
-                className="flex flex-col justify-between gap-4 rounded-2xl border border-black/10 bg-white p-5 shadow-[0_8px_24px_-18px_rgba(0,0,0,0.35)]"
-              >
-                <div>
-                  <p className="text-[18px] font-semibold text-[#142138]">
-                    {formatDateTime(slot.startAt)}
-                  </p>
-                  <p className="mt-1 text-[17px] text-[#142138]">
-                    {slot.doctorName || "Hospital doctor"}
-                  </p>
-                  <p className="mt-1 text-[16px] text-[#142138cc]">
-                    {TYPE_LABELS[slot.type] ?? slot.type} ·{" "}
-                    {MODE_LABELS[slot.mode] ?? slot.mode}
-                  </p>
-                </div>
-                <Link
-                  to={`/book?${params.toString()}`}
-                  className="inline-flex items-center justify-center rounded-full bg-[#0095D9] px-5 py-3 text-[16px] font-semibold text-white transition hover:bg-[#0083c0]"
-                >
-                  Book this time
-                </Link>
-              </li>
-            );
-          })}
-        </ul>
-        {slots.length > SLOTS_SHOWN && (
-          <button
-            type="button"
-            onClick={() => setShowAll((v) => !v)}
-            className="mt-6 text-[16px] font-medium text-[#0095D9] underline underline-offset-4"
-          >
-            {showAll ? "Show fewer times" : `Show all ${slots.length} times`}
-          </button>
-        )}
-      </div>
-    </section>
-  );
-}
-
-function DoctorsSlider() {
-  const { doctors, loading, error } = useListedDoctors();
-  const { doctorSelectionEnabled } = useSiteSettings().settings;
-  const [perView, setPerView] = useState(1);
-  const [index, setIndex] = useState(0);
-  const [paused, setPaused] = useState(false);
-  const [reduceMotion, setReduceMotion] = useState(false);
-  const touchStartX = useRef(null);
-
-  useEffect(() => {
-    const large = window.matchMedia("(min-width: 1024px)");
-    const medium = window.matchMedia("(min-width: 640px)");
-    const motion = window.matchMedia("(prefers-reduced-motion: reduce)");
-
-    const apply = () => {
-      setPerView(large.matches ? 4 : medium.matches ? 2 : 1);
-      setReduceMotion(motion.matches);
-    };
-    apply();
-
-    const watched = [large, medium, motion];
-    watched.forEach((mq) => mq.addEventListener("change", apply));
-    return () =>
-      watched.forEach((mq) => mq.removeEventListener("change", apply));
-  }, []);
-
-  const maxIndex = Math.max(0, doctors.length - perView);
-  const safeIndex = Math.min(index, maxIndex);
-
-  const next = useCallback(
-    () =>
-      setIndex((current) =>
-        Math.min(current, maxIndex) >= maxIndex
-          ? 0
-          : Math.min(current, maxIndex) + 1,
-      ),
-    [maxIndex],
-  );
-  const prev = useCallback(
-    () =>
-      setIndex((current) =>
-        Math.min(current, maxIndex) <= 0
-          ? maxIndex
-          : Math.min(current, maxIndex) - 1,
-      ),
-    [maxIndex],
-  );
-
-  useEffect(() => {
-    if (paused || reduceMotion || maxIndex === 0) return;
-    const id = window.setInterval(next, 5000);
-    return () => window.clearInterval(id);
-  }, [paused, reduceMotion, maxIndex, next]);
-
-  useEffect(() => {
-    const onVisibility = () => setPaused(document.hidden);
-    document.addEventListener("visibilitychange", onVisibility);
-    return () => document.removeEventListener("visibilitychange", onVisibility);
-  }, []);
-
-  const onTouchStart = (e) => {
-    touchStartX.current = e.touches[0].clientX;
-  };
-
-  // Still reading the list (first visit): placeholder cards, same size as
-  // the real ones, so nothing jumps when the doctors arrive.
-  if (loading && doctors.length === 0) {
-    return (
-      <div className="mt-10 sm:mt-12 flex" role="status" aria-label="Loading our doctors">
-        {Array.from({ length: perView }).map((_, i) => (
-          <div key={i} className="shrink-0 px-2 sm:px-3" style={{ flexBasis: `${100 / perView}%` }}>
-            <div className="h-full rounded-3xl border border-[#14213814] bg-white p-3 shadow-[0_18px_40px_-28px_rgba(15,20,17,0.6)]">
-              <div className="aspect-[3/4] w-full animate-pulse rounded-2xl bg-[#14213810]" />
-              <div className="px-1.5 pb-1 pt-4">
-                <div className="h-4 w-3/5 animate-pulse rounded bg-[#14213814]" />
-                <div className="mt-3 h-3.5 w-2/5 animate-pulse rounded bg-[#1421380d]" />
-                <div className="mt-2 h-3.5 w-4/5 animate-pulse rounded bg-[#1421380d]" />
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-    );
-  }
-  if (doctors.length === 0) {
-    return (
-      <p className="mt-8 px-2 sm:px-3 text-[16px] text-[#142138cc]">
-        {error
-          ? "We couldn't load our doctors just now. Check your internet connection and open this page again."
-          : "Our doctors' profiles will appear here soon."}
-      </p>
-    );
-  }
-  const onTouchEnd = (e) => {
-    if (touchStartX.current === null) return;
-    const delta = e.changedTouches[0].clientX - touchStartX.current;
-    if (Math.abs(delta) > 45) (delta < 0 ? next : prev)();
-    touchStartX.current = null;
-  };
-
-  return (
-    <div
-      className="mt-10 sm:mt-12"
-      onMouseEnter={() => setPaused(true)}
-      onMouseLeave={() => setPaused(false)}
-      onFocusCapture={() => setPaused(true)}
-      onBlurCapture={() => setPaused(false)}
-    >
-      <div
-        className="overflow-hidden"
-        role="region"
-        aria-roledescription="carousel"
-        aria-label="Our doctors"
-        onTouchStart={onTouchStart}
-        onTouchEnd={onTouchEnd}
-      >
-        <div
-          className={`flex ${reduceMotion ? "" : "transition-transform duration-700 ease-out"}`}
-          style={{ transform: `translateX(-${safeIndex * (100 / perView)}%)` }}
-        >
-          {doctors.map((doctor, i) => {
-            const visible = i >= safeIndex && i < safeIndex + perView;
-            return (
-              <div
-                key={doctor.id}
-                className="shrink-0 px-2 sm:px-3"
-                style={{ flexBasis: `${100 / perView}%` }}
-                aria-hidden={visible ? undefined : true}
-              >
-                <article className="h-full rounded-3xl border border-[#14213814] bg-white p-3 shadow-[0_18px_40px_-28px_rgba(15,20,17,0.6)]">
-                  <DoctorPortrait doctor={doctor} />
-                  <div className="px-1.5 pb-1 pt-4">
-                    <h3 className="font-display text-[17px] font-medium leading-tight text-[var(--ink2)]">
-                      {doctor.name}
-                    </h3>
-                    <DoctorCardSummary doctor={doctor} />
-                    {/* Sends the patient straight into the booking flow with
-                        this doctor pre-selected. Hidden when the admin has
-                        switched doctor choice off. */}
-                    {doctorSelectionEnabled && (
-                      <Link
-                        to={`/book?doctor=${doctor.id}`}
-                        className="mt-4 inline-flex items-center gap-1.5 rounded-full border border-[var(--forest)]/20 px-3.5 py-2 text-[15px] font-medium text-[var(--forest-2)]
-                                 transition hover:border-[var(--forest)] hover:bg-[var(--forest)] hover:text-white
-                                 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--forest)]"
-                      >
-                        <BookingGlyph className="shrink-0" />
-                        Book this doctor
-                      </Link>
-                    )}
-                  </div>
-                </article>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      <div className="mt-7 flex items-center justify-center gap-5">
-        <button
-          type="button"
-          onClick={prev}
-          aria-label="Previous doctors"
-          className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[#14213826] text-[var(--forest)]
-                     transition hover:border-[var(--forest)] hover:bg-[var(--forest)] hover:text-white
-                     focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--forest)]"
-        >
-          <svg
-            width="16"
-            height="16"
-            viewBox="0 0 20 20"
-            fill="none"
-            aria-hidden="true"
-          >
-            <path
-              d="M12 5l-6 5 6 5"
-              stroke="currentColor"
-              strokeWidth="1.6"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        </button>
-
-        <div className="flex items-center gap-2">
-          {Array.from({ length: maxIndex + 1 }).map((_, i) => (
-            <button
-              key={i}
-              type="button"
-              onClick={() => setIndex(i)}
-              aria-label={`Show doctors ${i + 1} of ${maxIndex + 1}`}
-              aria-current={i === safeIndex}
-              className={`h-2 rounded-full transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--forest)] ${
-                i === safeIndex
-                  ? "w-6 bg-[var(--forest)]"
-                  : "w-2 bg-[#14213833] hover:bg-[#14213866]"
-              }`}
-            />
-          ))}
-        </div>
-
-        <button
-          type="button"
-          onClick={next}
-          aria-label="Next doctors"
-          className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[#14213826] text-[var(--forest)]
-                     transition hover:border-[var(--forest)] hover:bg-[var(--forest)] hover:text-white
-                     focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--forest)]"
-        >
-          <svg
-            width="16"
-            height="16"
-            viewBox="0 0 20 20"
-            fill="none"
-            aria-hidden="true"
-          >
-            <path
-              d="M8 5l6 5-6 5"
-              stroke="currentColor"
-              strokeWidth="1.6"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        </button>
-      </div>
     </div>
   );
 }
@@ -849,385 +257,6 @@ function useStampOnce() {
   return { ref, ready };
 }
 
-/**
- * HeroSection: drop-in replacement for the "Hero" <section> in Home.jsx.
- *
- * HOW TO INSTALL
- * 1. Paste this whole function into Home.jsx, above HomeContent
- *    (it uses BookingCta, HOSPITAL_PHONE_TEL, useState-free, no new imports).
- * 2. In HomeContent, delete everything from `{/* ---------- Hero ---------- *\/}`
- *    down to the closing </section> of the hero, and put this in its place:
- *
- *        <HeroSection heroImage={heroImage} />
- *
- * LAYOUT IDEA
- * - Phones / tablets: photo on top (full-bleed), fading into white at its
- *   bottom edge. The copy is pulled up over that fade, so photo + headline +
- *   CTA all sit in the first screen.
- * - Desktop (lg+): photo is full-bleed to the right edge of the screen, about
- *   62% wide, fading into the copy on its left. No boxed frame, no hard edges.
- *
- * MOTION (all switched off for prefers-reduced-motion)
- * - slow "breathing" zoom on the photo
- * - ECG line that draws itself across the photo
- * - gradient that slides through "at your doorstep."
- * - floating glass chips, drifting colour glows, shimmer sweep on the CTA
- */
-function HeroSection({ heroImage }) {
-  return (
-    <section className="hero relative isolate overflow-hidden bg-white">
-      <style>{`
-        @keyframes heroRise {
-          from { opacity: 0; transform: translateY(18px); }
-          to   { opacity: 1; transform: translateY(0); }
-        }
-        @keyframes heroPhotoIn {
-          from { opacity: 0; transform: scale(1.06); }
-          to   { opacity: 1; transform: scale(1); }
-        }
-        @keyframes heroBreathe {
-          0%, 100% { transform: scale(1); }
-          50%      { transform: scale(1.045); }
-        }
-        @keyframes heroFloat {
-          0%, 100% { transform: translateY(0); }
-          50%      { transform: translateY(-9px); }
-        }
-        @keyframes heroGradient {
-          0%   { background-position: 0% 50%; }
-          100% { background-position: 200% 50%; }
-        }
-        @keyframes heroDrift {
-          0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
-          50%      { transform: translate3d(26px, -20px, 0) scale(1.08); }
-        }
-        @keyframes heroEcg {
-          0%   { stroke-dashoffset: 1; opacity: 0; }
-          8%   { opacity: 1; }
-          55%  { stroke-dashoffset: 0; opacity: 1; }
-          85%  { stroke-dashoffset: 0; opacity: 0; }
-          100% { stroke-dashoffset: 1; opacity: 0; }
-        }
-        @keyframes heroShimmer {
-          0%, 55% { transform: translateX(-130%) skewX(-18deg); }
-          100%    { transform: translateX(330%) skewX(-18deg); }
-        }
-        @keyframes heroPing {
-          0%   { transform: scale(1); opacity: .55; }
-          80%, 100% { transform: scale(2.3); opacity: 0; }
-        }
-
-        .hero-rise    { animation: heroRise .8s cubic-bezier(.2,.8,.2,1) both; }
-        .hero-photo   { animation: heroPhotoIn 1.1s ease-out both; }
-        .hero-breathe { animation: heroBreathe 18s ease-in-out infinite; }
-        .hero-float   { animation: heroFloat 6s ease-in-out infinite; }
-        .hero-drift   { animation: heroDrift 14s ease-in-out infinite; }
-        .hero-ecg     { stroke-dasharray: 1; animation: heroEcg 5.5s ease-in-out infinite; }
-        .hero-shimmer { animation: heroShimmer 4.5s ease-in-out infinite; }
-        .hero-ping    { animation: heroPing 2.2s ease-out infinite; }
-        .hero-gradient-text {
-          background-image: linear-gradient(100deg, #0095D9 0%, #0095D9 30%, #2CC5C0 48%, #F88535 66%, #0095D9 84%, #0095D9 100%);
-          background-size: 200% 100%;
-          -webkit-background-clip: text;
-          background-clip: text;
-          color: transparent;
-          -webkit-text-fill-color: transparent;
-          animation: heroGradient 7s linear infinite;
-        }
-        @media (prefers-reduced-motion: reduce) {
-          .hero-rise, .hero-photo, .hero-breathe, .hero-float, .hero-drift,
-          .hero-ecg, .hero-shimmer, .hero-ping, .hero-gradient-text { animation: none !important; }
-          .hero-ecg { stroke-dashoffset: 0; }
-          .hero-gradient-text { background-position: 0% 50%; }
-        }
-      `}</style>
-
-      {/* Colour glows: sit behind everything, drift slowly. */}
-      <div
-        aria-hidden="true"
-        className="hero-drift pointer-events-none absolute -right-24 -top-32 -z-10 h-[420px] w-[420px] rounded-full blur-3xl sm:h-[560px] sm:w-[560px]"
-        style={{
-          background:
-            "radial-gradient(circle, rgba(0,149,217,0.22) 0%, rgba(0,149,217,0.07) 45%, transparent 72%)",
-        }}
-      />
-      <div
-        aria-hidden="true"
-        className="hero-drift pointer-events-none absolute -bottom-40 -left-24 -z-10 h-[380px] w-[380px] rounded-full blur-3xl sm:h-[520px] sm:w-[520px]"
-        style={{
-          animationDelay: "-6s",
-          background:
-            "radial-gradient(circle, rgba(248,133,53,0.20) 0%, rgba(248,133,53,0.06) 48%, transparent 72%)",
-        }}
-      />
-
-      {/* ---------- Photo ----------
-          Mobile: normal block on top, height tied to the screen so the CTA
-          stays in view. lg+: absolutely positioned, full-bleed to the right. */}
-      <div
-        className="hero-photo relative h-[44svh] min-h-[300px] max-h-[520px]
-                   lg:absolute lg:inset-y-0 lg:right-0 lg:h-auto lg:max-h-none lg:min-h-0 lg:w-[62%]"
-      >
-        <div className="absolute inset-0 overflow-hidden">
-          <img
-            src={heroImage}
-            alt="A doctor at Holy Family Catholic Hospital speaking warmly with a patient"
-            className="hero-breathe h-full w-full object-cover object-[72%_22%] lg:object-[64%_center]"
-            fetchPriority="high"
-          />
-        </div>
-
-        {/* Blend layers. Plain white gradients on a white section: the photo
-            melts into the page on every side that meets content. */}
-        {/* Mobile: bottom fade, plus a light top fade under the header. */}
-        <div
-          aria-hidden="true"
-          className="absolute inset-0 lg:hidden"
-          style={{
-            background:
-              "linear-gradient(180deg, rgba(255,255,255,.75) 0%, rgba(255,255,255,0) 14%, rgba(255,255,255,0) 52%, rgba(255,255,255,.9) 84%, #FFFFFF 100%)",
-          }}
-        />
-        {/* Mobile: soften the left/right edges so no hard rectangle shows. */}
-        <div
-          aria-hidden="true"
-          className="absolute inset-0 lg:hidden"
-          style={{
-            background:
-              "linear-gradient(90deg, rgba(255,255,255,.85) 0%, rgba(255,255,255,0) 9%, rgba(255,255,255,0) 91%, rgba(255,255,255,.85) 100%)",
-          }}
-        />
-        {/* Desktop: fade into the copy on the left. */}
-        <div
-          aria-hidden="true"
-          className="absolute inset-0 hidden lg:block"
-          style={{
-            background:
-              "linear-gradient(90deg, #FFFFFF 0%, rgba(255,255,255,.92) 9%, rgba(255,255,255,.55) 22%, rgba(255,255,255,0) 46%)",
-          }}
-        />
-        {/* Desktop: top + bottom fades so the photo never has a hard edge. */}
-        <div
-          aria-hidden="true"
-          className="absolute inset-0 hidden lg:block"
-          style={{
-            background:
-              "linear-gradient(180deg, rgba(255,255,255,.85) 0%, rgba(255,255,255,0) 16%, rgba(255,255,255,0) 80%, #FFFFFF 100%)",
-          }}
-        />
-
-        {/* ECG line that draws itself across the photo: the one "wow"
-            moment, and it says "hospital" without a word. */}
-        <svg
-          aria-hidden="true"
-          viewBox="0 0 600 90"
-          preserveAspectRatio="none"
-          className="pointer-events-none absolute inset-x-0 bottom-[30%] h-16 w-full sm:h-20 lg:bottom-[22%]"
-          fill="none"
-        >
-          <defs>
-            <linearGradient id="heroEcgGrad" x1="0" x2="1" y1="0" y2="0">
-              <stop offset="0" stopColor="#0095D9" stopOpacity="0" />
-              <stop offset="0.35" stopColor="#0095D9" />
-              <stop offset="0.75" stopColor="#F88535" />
-              <stop offset="1" stopColor="#F88535" stopOpacity="0" />
-            </linearGradient>
-          </defs>
-          <path
-            pathLength="1"
-            className="hero-ecg"
-            d="M0 48 H150 L172 48 L190 16 L214 82 L234 48 H330 L346 48 L362 28 L378 62 L392 48 H600"
-            stroke="url(#heroEcgGrad)"
-            strokeWidth="3"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            vectorEffect="non-scaling-stroke"
-          />
-        </svg>
-
-        {/* Floating glass chips. Only facts the page already states. */}
-
-        <div
-          className="hero-float absolute bottom-[30%] left-[4%] hidden items-center gap-2.5 rounded-2xl border border-white/70 bg-white/85 px-3.5 py-2.5 text-[15px] font-semibold text-[#142138] shadow-[0_18px_40px_-22px_rgba(20,33,56,0.45)] backdrop-blur-md sm:flex lg:bottom-[14%] lg:left-[16%]"
-          style={{ animationDelay: "-2.5s" }}
-        >
-          <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#F88535] text-white">
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 16 16"
-              fill="none"
-              aria-hidden="true"
-            >
-              <path
-                d="M6 3v2M14 3v2M3.5 7.5h11M4.5 5h9a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1h-9a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1Z"
-                stroke="currentColor"
-                strokeWidth="1.3"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                transform="translate(-1 -1) scale(.95)"
-              />
-            </svg>
-          </span>
-          Book in 4 simple steps
-        </div>
-
-        <div
-          className="hero-float absolute bottom-[8%] right-[5%] hidden items-center gap-2.5 rounded-full border border-white/70 bg-white/85 px-4 py-2.5 text-[14px] font-semibold text-[#142138] shadow-[0_18px_45px_-24px_rgba(20,33,56,0.4)] backdrop-blur-md lg:flex"
-          style={{ animationDelay: "-4.5s" }}
-        >
-          <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#0095D9] text-white">
-            <svg
-              width="13"
-              height="13"
-              viewBox="0 0 16 16"
-              fill="none"
-              aria-hidden="true"
-            >
-              <path
-                d="M8 1.5c2.2 1.2 3.7 1.5 5.5 1.5 0 6-2.4 9.3-5.5 11.5C4.9 12.3 2.5 9 2.5 3c1.8 0 3.3-.3 5.5-1.5Z"
-                stroke="currentColor"
-                strokeWidth="1.3"
-                strokeLinejoin="round"
-              />
-              <path
-                d="m5.6 8.1 1.6 1.6 3.2-3.4"
-                stroke="currentColor"
-                strokeWidth="1.3"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-          </span>
-          Trusted hospital care
-        </div>
-      </div>
-
-      {/* ---------- Copy ----------
-          Negative top margin pulls the text up over the photo's fade on
-          phones; on lg+ it is vertically centred against the full-bleed photo. */}
-      <div className="relative z-10 mx-auto max-w-7xl px-5 pb-12 sm:px-8 lg:flex lg:min-h-[calc(100svh-80px)] lg:items-center lg:px-10 lg:py-16">
-        <div className="-mt-24 text-center sm:-mt-32 lg:mt-0 lg:max-w-[560px] lg:text-left xl:max-w-[600px]">
-          <div
-            className="hero-rise inline-flex items-center gap-2 rounded-full border border-[#0095D9]/15 bg-white/80 px-3.5 py-2 text-[14px] font-semibold text-[#0079B2] shadow-[0_10px_30px_-22px_rgba(0,149,217,0.6)] backdrop-blur-sm"
-            style={{ animationDelay: "0.05s" }}
-          >
-            <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white shadow-sm ring-1 ring-[#0095D9]/10">
-              <svg
-                width="12"
-                height="12"
-                viewBox="0 0 16 16"
-                fill="none"
-                aria-hidden="true"
-              >
-                <path
-                  d="M8 14S1.8 10.2 1.8 5.6A3.8 3.8 0 0 1 8 3a3.8 3.8 0 0 1 6.2 2.6C14.2 10.2 8 14 8 14Z"
-                  fill="#F88535"
-                />
-              </svg>
-            </span>
-            Care and compassion redefined
-          </div>
-
-          <h1
-            className="hero-rise mt-5 font-display text-[clamp(38px,9.4vw,74px)] font-medium leading-[1.03] tracking-[-0.045em] text-[var(--ink2)] sm:mt-6 lg:text-[clamp(44px,4.4vw,66px)]"
-            style={{ animationDelay: "0.15s" }}
-          >
-            Quality healthcare{" "}
-            <span className="relative inline-block">
-              <span className="hero-gradient-text">at your doorstep.</span>
-              <span
-                aria-hidden="true"
-                className="absolute -bottom-1.5 left-0 h-[5px] w-1/2 rounded-full bg-gradient-to-r from-[#F88535] to-[#F88535]/0 sm:-bottom-2"
-              />
-            </span>
-          </h1>
-
-          <p
-            className="hero-rise mx-auto mt-6 max-w-md text-[clamp(15px,2vw,18px)] leading-[1.7] text-[#142138C7] lg:mx-0 lg:max-w-lg"
-            style={{ animationDelay: "0.25s" }}
-          >
-            See a hospital doctor by video call on your phone, or book a
-                visit at the hospital. Pay with mobile money.
-          </p>
-
-          <div
-            className="hero-rise mt-7 flex flex-col items-stretch gap-3.5 sm:mt-8 sm:flex-row sm:items-center sm:justify-center lg:justify-start"
-            style={{ animationDelay: "0.35s" }}
-          >
-            {/* Primary CTA with a shimmer sweep. Wrapper clips the light. */}
-            <span className="relative inline-flex overflow-hidden rounded-full">
-              <BookingCta
-                size="lg"
-                variant="gold"
-                className="w-full shadow-[0_18px_38px_-16px_rgba(248,133,53,0.65)] hover:-translate-y-0.5 sm:w-auto"
-              />
-              <span
-                aria-hidden="true"
-                className="hero-shimmer pointer-events-none absolute inset-y-0 left-0 w-1/4 bg-gradient-to-r from-transparent via-white/45 to-transparent"
-              />
-            </span>
-            <a
-              href={HOSPITAL_PHONE_TEL}
-              className="inline-flex items-center justify-center gap-2 rounded-full border border-[#14213820] bg-white/90 px-5 py-3.5 text-[16px] font-semibold text-[var(--ink2)] shadow-[0_12px_30px_-24px_rgba(20,33,56,0.45)] backdrop-blur transition hover:-translate-y-0.5 hover:border-[#0095D9]/40 hover:text-[#0095D9] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0095D9]"
-            >
-              <svg
-                width="16"
-                height="16"
-                viewBox="0 0 20 20"
-                fill="none"
-                aria-hidden="true"
-              >
-                <path
-                  d="M4.5 3.5h2.7c.5 0 .9.3 1 .8l.7 2.6c.1.4 0 .9-.3 1.2L7.3 9.4c1 2.1 2.7 3.8 4.8 4.8l1.3-1.3c.3-.3.8-.4 1.2-.3l2.6.7c.5.1.8.5.8 1v2.7c0 .6-.5 1-1 1-6.9 0-12.5-5.6-12.5-12.5 0-.5.4-1 1-1z"
-                  stroke="currentColor"
-                  strokeWidth="1.4"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-              Or call the hospital directly
-            </a>
-          </div>
-
-          <ul
-            className="hero-rise mt-7 flex flex-wrap items-center justify-center gap-x-6 gap-y-2.5 lg:justify-start"
-            style={{ animationDelay: "0.45s" }}
-          >
-            {["Same doctors as our hospital"].map((item) => (
-              <li
-                key={item}
-                className="flex items-center gap-2 text-[15px] font-medium text-[#142138B0]"
-              >
-                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#0095D9]/[0.1] text-[#0095D9]">
-                  <svg
-                    width="12"
-                    height="12"
-                    viewBox="0 0 16 16"
-                    fill="none"
-                    aria-hidden="true"
-                  >
-                    <path
-                      d="M3.5 8.4l3 3 6-6.8"
-                      stroke="currentColor"
-                      strokeWidth="1.8"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                  </svg>
-                </span>
-                {item}
-              </li>
-            ))}
-          </ul>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-// The page itself. Only mounted once auth has resolved (see Home below), so
-// useStampOnce's ref is attached to a real DOM node on its first effect run.
 /** The hospital's services; the list is edited in the admin Control panel. */
 function ServicesSection({ services }) {
   if (!services?.length) return null;
@@ -1262,6 +291,8 @@ function ServicesSection({ services }) {
   );
 }
 
+// The page itself. Only mounted once auth has resolved (see Home below), so
+// useStampOnce's ref is attached to a real DOM node on its first effect run.
 function HomeContent({ isLoggedIn }) {
   const { ref: privacyRef, ready: stampReady } = useStampOnce();
   const { settings } = useSiteSettings();
@@ -1287,26 +318,6 @@ function HomeContent({ isLoggedIn }) {
         }}
       >
         <style>{`
-          @keyframes heroTextRise {
-            from { opacity: 0; transform: translateY(16px); }
-            to { opacity: 1; transform: translateY(0); }
-          }
-          @keyframes heroImageIn {
-            from { opacity: 0; transform: translateY(14px) scale(0.985); }
-            to { opacity: 1; transform: translateY(0) scale(1); }
-          }
-          @keyframes pulseDraw {
-            from { stroke-dashoffset: 1; }
-            to { stroke-dashoffset: 0; }
-          }
-          @keyframes slipFloat {
-            0%, 100% { transform: translateY(0); }
-            50% { transform: translateY(-8px); }
-          }
-          @keyframes slipReveal {
-            from { opacity: 0; transform: translateY(6px); }
-            to { opacity: 1; transform: translateY(0); }
-          }
           @keyframes stampIn {
             from { opacity: 0; transform: rotate(-8deg) scale(1.4); }
             to { opacity: 1; transform: rotate(-8deg) scale(1); }
@@ -1322,9 +333,6 @@ function HomeContent({ isLoggedIn }) {
           [data-stamp] { animation: none; }
           .stamp-ready [data-stamp] {
             animation: stampIn 0.6s cubic-bezier(0.2,0.9,0.3,1) both;
-          }
-          @media (prefers-reduced-motion: reduce) {
-            [class*="animate-["] { animation: none !important; opacity: 1 !important; }
           }
         `}</style>
 
@@ -1382,7 +390,6 @@ function HomeContent({ isLoggedIn }) {
                       <BookingSlip
                         type={service.title}
                         mode={service.mode}
-                        placeholder=""
                         className="max-w-none mx-auto sm:mx-0 transition duration-300 group-hover:shadow-[0_36px_70px_-24px_rgba(15,20,17,0.55)]"
                       />
                     </div>
@@ -1511,23 +518,22 @@ function HomeContent({ isLoggedIn }) {
                 only keep a short note of the visit: the doctor, the date and
                 what you paid. Video calls may be recorded by the hospital.
                 You will see a red REC sign when this happens, and only a few
-                hospital managers can watch recordings.
-              </p>{" "}
-              Read our{" "}
-              <Link
-                to="/privacy"
-                rel="opener"
-                target="_blank"
-                className="underline text-white hover:text-[#0077ad]"
-              >
-                privacy policy
-              </Link>
+                hospital managers can watch recordings. Read our{" "}
+                <Link
+                  to="/privacy"
+                  rel="noopener noreferrer"
+                  target="_blank"
+                  className="underline text-white hover:no-underline"
+                >
+                  privacy policy
+                </Link>
+                .
+              </p>
             </div>
             <div className="flex justify-center md:justify-end">
               <BookingSlip
                 type="Telemedicine"
                 mode="Online"
-                code=""
                 voided
                 className="opacity-90"
               />

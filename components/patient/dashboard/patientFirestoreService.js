@@ -20,6 +20,7 @@ import { track, tracked } from "../../../src/networkStatus";
 
 import { db, functions } from "../../../src/firebase";
 import { toDate } from "../../../src/constants";
+import { displayState } from "./patientUtils";
 
 // Reads people wait on show "Your connection is slow" when late (src/networkStatus.js).
 const getDocs = (q) => track(getDocsUntracked(q));
@@ -81,21 +82,6 @@ export async function requestRefund({ source, id, reason, refundPhone }) {
 export async function checkPaymentStatus(bookingId) {
   const { data } = await callGetBookingStatus({ bookingId });
   return data; // { status: "confirmed" | "pending" | "failed", message? }
-}
-
-// Dashboard display state, derived from the stored booking status.
-//   awaiting_payment -> "awaiting_payment" (draft; deleted if never paid)
-//   paid             -> "pending_assignment"
-//   scheduled        -> "scheduled", or "in_progress" once the patient
-//                       has joined the call
-//   no_show          -> "no_show" (missed; held for a paid reschedule or a
-//                       refund until noShowExpiresAt)
-function displayState(b) {
-  if (b.status === "awaiting_payment") return "awaiting_payment";
-  if (b.status === "paid") return "pending_assignment";
-  if (b.status === "no_show") return "no_show";
-  if (b.patientJoinedAt) return "in_progress";
-  return "scheduled";
 }
 
 // ---------------------------------------------------------------------
@@ -215,6 +201,23 @@ export async function startNoShowReschedule({ bookingId, preferredTime, reason }
 export async function getNoShowFeeStatus(bookingId) {
   const { data } = await callGetNoShowFeeStatus({ bookingId });
   return data; // { status: "confirmed" | "pending" | "failed" }
+}
+
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * After the Paystack popup for a no-show or late reschedule fee: its answer
+ * is only a hint, so ask the server until it has decided (~30 s at most).
+ * Resolves "confirmed" | "failed", or "pending" if it still hasn't.
+ */
+export async function waitForFeeStatus(bookingId) {
+  let status = "pending";
+  for (let i = 0; i < 10; i++) {
+    ({ status } = await getNoShowFeeStatus(bookingId));
+    if (status !== "pending") break;
+    await wait(3000);
+  }
+  return status;
 }
 
 /** Server checks ownership and the time window, then opens the call. */

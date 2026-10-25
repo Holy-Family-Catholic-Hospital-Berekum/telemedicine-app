@@ -1,10 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { httpsCallable } from "firebase/functions";
-import { tracked } from "../../src/networkStatus";
-import { collection, getDocs, query, where } from "firebase/firestore";
+import { collection, doc, getDoc, getDocs, query, where } from "firebase/firestore";
 
-import { db, functions } from "../../src/firebase";
+import { db } from "../../src/firebase";
 import { useAuth } from "../../src/context/authContext.jsx";
 import Header from "../shared/header";
 import Footer from "../shared/footer";
@@ -13,29 +11,29 @@ import BrandAside from "../shared/brandAside";
 import { useSiteSettings } from "../../src/siteSettings";
 import { useListedDoctors } from "../../src/doctorDirectory";
 import { callableMessage } from "../../src/constants";
-import {
-  BOOKING_CONSENT_TEXT,
-  CURRENT_BOOKING_CONSENT,
-  GUARDIAN_CONSENT_TEXT,
-  CURRENT_GUARDIAN_CONSENT,
-} from "../../src/consentText";
 import { usePageMeta } from "../../src/seo.js";
 import { openPaystackCheckout } from "../../src/paystackCheckout";
-
-/** "+233241234567" -> "0241234567"; other numbers as stored; none -> "". */
-function localPhone(e164) {
-  if (typeof e164 !== "string") return "";
-  const m = e164.match(/^\+233(\d{9})$/);
-  return m ? `0${m[1]}` : e164;
-}
-
-/** Whole years typed in the age box, or null if it isn't 0-120. */
-function parseYears(value) {
-  const t = String(value).trim();
-  if (!/^\d{1,3}$/.test(t)) return null;
-  const n = Number(t);
-  return n <= 120 ? n : null;
-}
+import {
+  bookingPayload,
+  detailsError,
+  localPhone,
+  needsAgeMonths,
+  parseYears,
+} from "./bookingForm";
+import {
+  createBookingDraft,
+  fetchBookingStatus,
+  initializePayment,
+  waitForConfirmation,
+} from "./booking/bookingService";
+import { ErrorMessage } from "./booking/bookingUi";
+import StepIndicator from "./booking/stepIndicator";
+import ChoiceCards from "./booking/choiceCards";
+import DoctorPicker from "./booking/doctorPicker";
+import OnTimeNotice from "./booking/onTimeNotice";
+import ConsentFields from "./booking/consentFields";
+import PaymentStep from "./booking/paymentStep";
+import BookingDone from "./booking/bookingDone";
 
 /**
  * bookConsultation.jsx
@@ -82,8 +80,8 @@ function parseYears(value) {
  * live there; nothing sensitive is in this file. Checkout is Paystack's
  * Inline popup, loaded on demand from inline.js.
  *
- * MIGRATION NOTE (Flutterwave → Paystack), the one line that matters
- * most in this whole file: Paystack takes amounts in the smallest
+ * AMOUNTS, the one line that matters most in this whole file: Paystack
+ * takes amounts in the smallest
  * currency unit — pesewas for GHS, not whole cedis. `booking.amount`
  * everywhere in this file is whole GHS (matching the server); the ×100
  * conversion happens at exactly one place, inside
@@ -111,13 +109,13 @@ function parseYears(value) {
  * aside. No manual header-height offset is needed anywhere else.
  *
  * Uses Header with variant="minimal" — a focused-task header (logo, a
- * "Back to home" link, and Sign out when logged in). Header reads real
- * auth state internally (Firebase's onAuthStateChanged) and handles its
- * own sign-out, so this page doesn't manage that state itself.
+ * "Back to home" link, and Sign out when logged in). Header reads auth
+ * state itself (useAuth()) and handles its own sign-out, so this page
+ * doesn't manage that state itself.
  *
- * Placeholder values to update before shipping:
- * - Consultation prices come from useSiteSettings() (live, admin-editable)
- * - PAYSTACK_PUBLIC_KEY (keep the SECRET key server-side only)
+ * Consultation prices come from useSiteSettings() (live, admin-editable);
+ * the Paystack public key from VITE_PAYSTACK_PUBLIC_KEY (the SECRET key
+ * stays server-side only).
  *
  * Defaults: General OPD + Online are pre-selected on step 0, since
  * that's the most common path through this flow.
@@ -153,197 +151,32 @@ const CURRENCY = "GHS";
 
 const STEP_LABELS = ["Your details", "Pay", "Done"];
 
-/* ===================================================================
-   BACKEND CALLS
+const TYPE_OPTIONS = [
+  {
+    key: "OPD",
+    title: "General OPD",
+    desc: "Everyday health concerns and check-ups.",
+  },
+  {
+    key: "SURGICAL",
+    title: "Surgical",
+    desc: "Before or after an operation.",
+  },
+];
 
-   Note what is NOT here: no amount is ever sent up to the server, and
-   nothing in this file can mark a booking as paid. The server reads the
-   fee from its own table and decides, on its own, whether money arrived.
-   =================================================================== */
+const MODE_OPTIONS = [
+  {
+    key: "online",
+    title: "Video call",
+    desc: "Talk to the doctor on your phone or computer.",
+  },
+  {
+    key: "in_person",
+    title: "At the hospital",
+    desc: "Come to the hospital to see the doctor.",
+  },
+];
 
-const callCreateBookingDraft = tracked(httpsCallable(functions, "createBookingDraft"));
-const callInitializePayment = tracked(httpsCallable(functions, "initializePayment"));
-const callGetBookingStatus = tracked(httpsCallable(functions, "getBookingStatus"));
-
-// Creates an unpaid booking draft. The server computes the fee — we only
-// send what the patient actually chose (including which doctor, if any).
-// Resolves: { bookingId, amount, currency, type, mode }
-async function createBookingDraft(payload) {
-  const { data } = await callCreateBookingDraft(payload);
-  return data;
-}
-
-// Mints a fresh, single-use payment reference for this booking and
-// returns what the popup needs. A new reference per attempt is what
-// makes retries after a failed payment safe.
-// Resolves: { reference, amount, currency, customer }
-async function initializePayment({ bookingId }) {
-  const { data } = await callInitializePayment({ bookingId });
-  return data;
-}
-
-// Asks the server where this booking stands. The server re-verifies with
-// Paystack when it hasn't heard from the webhook yet, so this is a real
-// check and not just a database read.
-// Resolves: { status: "confirmed" | "pending" | "failed", message? }
-async function fetchBookingStatus(bookingId) {
-  const { data } = await callGetBookingStatus({ bookingId });
-  return data;
-}
-
-/**
- * Polls for a verdict after the popup closes.
- *
- * Why polling: MoMo confirmations are asynchronous. The charge can be
- * approved on the patient's handset seconds before Paystack finishes
- * settling it and calls our webhook. Rather than making the patient press
- * a button into an empty result, we check every few seconds for about a
- * minute, then hand over to the manual "Check my payment" state.
- */
-async function waitForConfirmation(
-  bookingId,
-  { tries = 20, delayMs = 3000 } = {},
-) {
-  let last = { status: "pending" };
-  for (let i = 0; i < tries; i += 1) {
-    try {
-      last = await fetchBookingStatus(bookingId);
-      if (last.status === "confirmed" || last.status === "failed") return last;
-    } catch {
-      // Transient network error — keep trying, the payment is unaffected.
-    }
-    await new Promise((r) => setTimeout(r, delayMs));
-  }
-  return last;
-}
-
-/* =================================================================== */
-
-// Back arrow between steps. Only step 1 renders this — step 0 has
-// nothing behind it (the header's "Back to home" covers leaving), and
-// step 2 is a completed state.
-function BackButton({ onClick, children = "Back" }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="inline-flex items-center gap-1.5 mb-6 text-[16px] font-medium text-black/75
-                 hover:text-[#0095D9] transition-colors
-                 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0095D9] rounded"
-    >
-      <svg
-        width="16"
-        height="16"
-        viewBox="0 0 20 20"
-        fill="none"
-        aria-hidden="true"
-      >
-        <path
-          d="M12.5 5L7 10l5.5 5"
-          stroke="currentColor"
-          strokeWidth="1.8"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </svg>
-      {children}
-    </button>
-  );
-}
-
-/**
- * The error banner. Rendered *next to the control that failed*, not at
- * the top of the page — that was the whole problem. It takes the ref so
- * the page can scroll it into view and focus it (see the effect in
- * BookConsultation).
- */
-function ErrorMessage({ error, innerRef }) {
-  if (!error) return null;
-  return (
-    <div
-      ref={innerRef}
-      role="alert"
-      aria-live="assertive"
-      tabIndex={-1}
-      className="mb-5 flex items-start gap-3 rounded-xl bg-[#F88535]/10 border border-[#F88535]/40 text-[#A85420] text-[16px] px-4 py-3
-                 scroll-mt-24 focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F88535]"
-    >
-      <svg
-        width="18"
-        height="18"
-        viewBox="0 0 20 20"
-        fill="none"
-        aria-hidden="true"
-        className="mt-0.5 shrink-0"
-      >
-        <circle cx="10" cy="10" r="8" stroke="currentColor" strokeWidth="1.6" />
-        <path
-          d="M10 6v5"
-          stroke="currentColor"
-          strokeWidth="1.8"
-          strokeLinecap="round"
-        />
-        <circle cx="10" cy="14" r="1" fill="currentColor" />
-      </svg>
-      <span>{error.message}</span>
-    </div>
-  );
-}
-
-// Small spinner for in-flight payment states.
-function Spinner() {
-  return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 20 20"
-      fill="none"
-      aria-hidden="true"
-      className="motion-safe:animate-spin"
-    >
-      <circle
-        cx="10"
-        cy="10"
-        r="7.5"
-        stroke="currentColor"
-        strokeOpacity="0.3"
-        strokeWidth="2"
-      />
-      <path
-        d="M17.5 10A7.5 7.5 0 0 0 10 2.5"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-      />
-    </svg>
-  );
-}
-
-// Small round doctor portrait used in the "current selection" summary and
-// in each row of the picker. Falls back to initials, same idea as
-// DoctorPortrait on the home page, just circular and smaller.
-function DoctorAvatar({ doctor, size = 44 }) {
-  const [failed, setFailed] = useState(false);
-  const showImage = Boolean(doctor.image) && !failed;
-
-  return (
-    <div
-      className="shrink-0 overflow-hidden rounded-full bg-[#0095D9] flex items-center justify-center text-white font-medium"
-      style={{ width: size, height: size, fontSize: size * 0.36 }}
-    >
-      {showImage ? (
-        <img
-          src={doctor.image}
-          alt=""
-          onError={() => setFailed(true)}
-          className="h-full w-full object-cover"
-        />
-      ) : (
-        doctor.initials
-      )}
-    </div>
-  );
-}
 
 export default function BookConsultation() {
   usePageMeta({ title: "Book a consultation", noindex: true });
@@ -442,8 +275,7 @@ export default function BookConsultation() {
   // child under 2 (doctors need it for babies).
   const [ageYears, setAgeYears] = useState("");
   const [ageMonths, setAgeMonths] = useState("");
-  const parsedYears = parseYears(ageYears);
-  const needsMonths = parsedYears !== null && parsedYears < 2;
+  const needsMonths = needsAgeMonths(parseYears(ageYears));
   const [sex, setSex] = useState("");
   const [town, setTown] = useState("");
   const [area, setArea] = useState("");
@@ -483,8 +315,9 @@ export default function BookConsultation() {
   useEffect(() => {
     if (!slotId) return undefined;
     let active = true;
-    Promise.all([import("../../src/firebase"), import("firebase/firestore")])
-      .then(([{ db }, { doc, getDoc }]) => getDoc(doc(db, "availableSlots", slotId)))
+    // Inside the promise: a malformed slotId from the link throws in doc().
+    Promise.resolve()
+      .then(() => getDoc(doc(db, "availableSlots", slotId)))
       .then((snap) => {
         if (!active) return;
         const slot = snap.exists() ? snap.data() : null;
@@ -537,13 +370,11 @@ export default function BookConsultation() {
     );
   }, [doctorsForType, doctorSearch]);
 
-  // What we ask for depends on how they'll see the doctor (medical
-  // director): a video call needs date of birth, sex and location; a
-  // hospital visit needs none of that. Every booking asks for a phone
-  // number, used only to contact the patient (Paystack's own window asks
-  // for the mobile money number). When the admin has switched in-person
-  // payment off, a hospital visit is booked without paying. The server
-  // applies the same rules.
+  // What we ask for depends on how they'll see the doctor (bookingForm.js).
+  // Every booking asks for a phone number, used only to contact the patient
+  // (Paystack's own window asks for the mobile money number). When the
+  // admin has switched in-person payment off, a hospital visit is booked
+  // without paying. The server applies the same rules.
   const online = mode === "online";
   const payAtHospital = mode === "in_person" && !settings.inPersonPaymentRequired;
   const stepLabels = payAtHospital
@@ -557,7 +388,7 @@ export default function BookConsultation() {
   const [paymentState, setPaymentState] = useState("idle");
 
   // Live estimate before a booking draft exists: the site's price for this
-  // type. Once a booking exists, its server-returned amount is authoritative.
+  // mode. Once a booking exists, its server-returned amount is authoritative.
   const liveFee = prices[mode];
   const fee = booking?.amount ?? liveFee;
   const paying =
@@ -570,94 +401,29 @@ export default function BookConsultation() {
     setStep(n);
   }
 
-  // What createBookingDraft receives (the server re-checks all of it).
-  function buildPayload() {
-    return {
-      type,
-      mode,
-      ...(online
-        ? {
-            ageYears: parsedYears,
-            ...(needsMonths ? { ageMonths: Number(ageMonths) } : {}),
-            sex,
-            town: town.trim(),
-            area: area.trim(),
-          }
-        : {}),
-      phone: phone.trim(),
-      doctorUid: selectedDoctor?.id || null,
-      slotId: slotId || null,
-      consentVersion: CURRENT_BOOKING_CONSENT,
-      ...(forChild
-        ? {
-            forChild: true,
-            childName: childName.trim(),
-            guardianConsentVersion: CURRENT_GUARDIAN_CONSENT,
-          }
-        : {}),
-    };
-  }
+  // The details form, as bookingForm.js checks and sends it.
+  const form = {
+    type,
+    mode,
+    forChild,
+    childName,
+    ageYears,
+    ageMonths,
+    sex,
+    town,
+    area,
+    phone,
+    consent,
+    guardianConsent,
+    doctorUid: selectedDoctor?.id,
+    slotId,
+  };
+  const buildPayload = () => bookingPayload(form);
 
   async function handleContinueFromDetails() {
-    if (!type || !mode) {
-      showError("Choose a consultation type and a mode to continue.");
-      return;
-    }
-    if (forChild && childName.trim().length < 2) {
-      showError("Enter your child's full name to continue.");
-      return;
-    }
-    if (online && parsedYears === null) {
-      showError(
-        forChild
-          ? "Enter your child's age in years to continue."
-          : "Enter your age in years to continue.",
-      );
-      return;
-    }
-    if (online && needsMonths && ageMonths === "") {
-      showError("For a child under 2, also choose their age in months.");
-      return;
-    }
-    const age = online ? parsedYears : null;
-    if (online && !forChild && age < 18) {
-      showError(
-        "You must be 18 or older to book for yourself. If this consultation is for your child, choose \"My child (under 18)\" above.",
-      );
-      return;
-    }
-    if (online && forChild && age >= 18) {
-      showError(
-        "This age is 18 or over. Adults need to book from their own account.",
-      );
-      return;
-    }
-    if (online && !sex) {
-      showError("Select your sex to continue.");
-      return;
-    }
-    if (online && !town.trim()) {
-      showError("Enter your town or city to continue.");
-      return;
-    }
-    if (online && !area.trim()) {
-      showError("Enter your area, or a place near you, to continue.");
-      return;
-    }
-    if (phone.replace(/\D/g, "").length < 9) {
-      showError("Enter a phone number we can call you on.");
-      return;
-    }
-    if (!consent) {
-      showError(
-        "Please confirm you agree to how we use your information before continuing.",
-      );
-      return;
-    }
-    if (forChild && !guardianConsent) {
-      showError(
-        "Please confirm you are the child's parent or guardian and give consent for them.",
-      );
+    const problem = detailsError(form);
+    if (problem) {
+      showError(problem);
       return;
     }
     clearError();
@@ -690,6 +456,12 @@ export default function BookConsultation() {
     }
   }
 
+  // Only ever called on the SERVER's "confirmed".
+  function paymentConfirmed() {
+    setPaymentState("confirmed");
+    setStep(2);
+  }
+
   /**
    * The whole payment path: mint a reference, open the popup, then wait
    * for the SERVER to say the money arrived. The patient only reaches
@@ -710,8 +482,7 @@ export default function BookConsultation() {
       const session = await initializePayment({ bookingId: current.bookingId });
       // An earlier attempt on this booking turned out to have succeeded.
       if (session.status === "confirmed") {
-        setPaymentState("confirmed");
-        setStep(2);
+        paymentConfirmed();
         return;
       }
 
@@ -730,8 +501,7 @@ export default function BookConsultation() {
         setPaymentState("verifying");
         const check = await fetchBookingStatus(current.bookingId);
         if (check.status === "confirmed") {
-          setPaymentState("confirmed");
-          setStep(2);
+          paymentConfirmed();
           return;
         }
         setPaymentState("idle");
@@ -745,8 +515,7 @@ export default function BookConsultation() {
       const verdict = await waitForConfirmation(current.bookingId);
 
       if (verdict.status === "confirmed") {
-        setPaymentState("confirmed");
-        setStep(2);
+        paymentConfirmed();
         return;
       }
       if (verdict.status === "pending") {
@@ -782,8 +551,7 @@ export default function BookConsultation() {
       const verdict = await fetchBookingStatus(booking.bookingId);
 
       if (verdict.status === "confirmed") {
-        setPaymentState("confirmed");
-        setStep(2);
+        paymentConfirmed();
         return;
       }
       if (verdict.status === "pending") {
@@ -869,64 +637,7 @@ export default function BookConsultation() {
           </div>
 
           <main className="mx-auto max-w-3xl px-5 sm:px-8 py-8 sm:py-12 w-full">
-            {/* ---------- Step indicator ---------- */}
-            <ol className="flex items-center gap-2 sm:gap-3 mb-3 sm:mb-12">
-              {stepLabels.map((label, i) => (
-                <li
-                  key={label}
-                  className="flex items-center flex-1 last:flex-none"
-                >
-                  <div className="flex items-center gap-2 sm:gap-2.5">
-                    <span
-                      className={
-                        "flex items-center justify-center h-7 w-7 sm:h-8 sm:w-8 rounded-full text-[16px] font-medium shrink-0 " +
-                        (i < step
-                          ? "bg-[#0095D9] text-white"
-                          : i === step
-                            ? "bg-[#F88535] text-white"
-                            : "bg-black/10 text-black/75")
-                      }
-                    >
-                      {i < step ? (
-                        <svg
-                          width="13"
-                          height="13"
-                          viewBox="0 0 20 20"
-                          fill="none"
-                        >
-                          <path
-                            d="M4 10l4 4l8-8"
-                            stroke="white"
-                            strokeWidth="2.4"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          />
-                        </svg>
-                      ) : (
-                        i + 1
-                      )}
-                    </span>
-                    <span
-                      className={
-                        "hidden sm:inline text-[16px] " +
-                        (i === step
-                          ? "text-black font-medium"
-                          : "text-black/75")
-                      }
-                    >
-                      {label}
-                    </span>
-                  </div>
-                  {i < stepLabels.length - 1 && (
-                    <span className="flex-1 h-px bg-black/10 mx-2 sm:mx-3" />
-                  )}
-                </li>
-              ))}
-            </ol>
-            {/* Mobile equivalent of the desktop step labels. */}
-            <p className="sm:hidden mb-9 text-[16px] text-black/75">
-              Step {step + 1} of {stepLabels.length} — {stepLabels[step]}
-            </p>
+            <StepIndicator stepLabels={stepLabels} step={step} />
 
             <div
               key={step}
@@ -957,10 +668,13 @@ export default function BookConsultation() {
                     you.
                   </p>
 
-                  <fieldset className="mt-8">
-                    <legend className="text-[16px] font-medium mb-3">
-                      Consultation type
-                    </legend>
+                  <ChoiceCards
+                    legend="Consultation type"
+                    options={TYPE_OPTIONS}
+                    value={type}
+                    onChange={handleTypeChange}
+                    locked={slotLocked}
+                  >
                     {slotLocked && (
                       <p className="-mt-1 mb-3 text-[15px] text-black/75">
                         You chose an appointment time, so the type, the way you
@@ -972,203 +686,27 @@ export default function BookConsultation() {
                         {slotProblem}
                       </p>
                     )}
-                    <div className="grid sm:grid-cols-2 gap-3">
-                      {[
-                        {
-                          key: "OPD",
-                          title: "General OPD",
-                          desc: "Everyday health concerns and check-ups.",
-                        },
-                        {
-                          key: "SURGICAL",
-                          title: "Surgical",
-                          desc: "Before or after an operation."
-                        },
-                      ].map((opt) => (
-                        <button
-                          key={opt.key}
-                          type="button"
-                          onClick={() => handleTypeChange(opt.key)}
-                          disabled={slotLocked && type !== opt.key}
-                          aria-pressed={type === opt.key}
-                          className={
-                            "text-left rounded-2xl p-5 border-2 transition-colors disabled:opacity-40 disabled:cursor-not-allowed " +
-                            (type === opt.key
-                              ? "border-[#F88535] bg-[#F88535]/10"
-                              : "border-black/10 hover:border-black/30")
-                          }
-                        >
-                          <span className="block font-medium text-[16px]">
-                            {opt.title}
-                          </span>
-                          <span className="block mt-1 text-[16px] text-black/80">
-                            {opt.desc}
-                          </span>
-                        </button>
-                      ))}
-                    </div>
-                  </fieldset>
+                  </ChoiceCards>
 
-                  <fieldset className="mt-8">
-                    <legend className="text-[16px] font-medium mb-3">
-                      How do you want to see the doctor?
-                    </legend>
-                    <div className="grid sm:grid-cols-2 gap-3">
-                      {[
-                        {
-                          key: "online",
-                                                    title: "Video call",
-                          desc: "Talk to the doctor on your phone or computer.",
-                        },
-                        {
-                          key: "in_person",
-                                                    title: "At the hospital",
-                          desc: "Come to the hospital to see the doctor.",
-                        },
-                      ].map((opt) => (
-                        <button
-                          key={opt.key}
-                          type="button"
-                          onClick={() => setMode(opt.key)}
-                          disabled={slotLocked && mode !== opt.key}
-                          aria-pressed={mode === opt.key}
-                          className={
-                            "text-left rounded-2xl p-5 border-2 transition-colors disabled:opacity-40 disabled:cursor-not-allowed " +
-                            (mode === opt.key
-                              ? "border-[#F88535] bg-[#F88535]/10"
-                              : "border-black/10 hover:border-black/30")
-                          }
-                        >
-                          <span className="block font-medium text-[16px]">
-                            {opt.title}
-                          </span>
-                          <span className="block mt-1 text-[16px] text-black/80">
-                            {opt.desc}
-                          </span>
-                        </button>
-                      ))}
-                    </div>
-                  </fieldset>
+                  <ChoiceCards
+                    legend="How do you want to see the doctor?"
+                    options={MODE_OPTIONS}
+                    value={mode}
+                    onChange={setMode}
+                    locked={slotLocked}
+                  />
 
-                  {/* ---------- Doctor (optional; admin can switch off) ---------- */}
                   {doctorChoiceAllowed && (
-                  <fieldset className="mt-8">
-                    <legend className="text-[16px] font-medium mb-3">
-                      Doctor
-                    </legend>
-
-                    {!doctorPickerOpen && (
-                      <div className="rounded-2xl border-2 border-[#0095D9] p-5 flex items-center justify-between gap-4 flex-wrap">
-                        {selectedDoctor ? (
-                          <div className="flex items-center gap-3">
-                            <DoctorAvatar doctor={selectedDoctor} />
-                            <div>
-                              <p className="font-medium text-[16px]">
-                                {selectedDoctor.name}
-                              </p>
-                              <p className="text-[15px] text-black/75">
-                                {selectedDoctor.role}
-                              </p>
-                            </div>
-                          </div>
-                        ) : (
-                          <p className="text-[16px] text-black/70 max-w-sm">
-                            The hospital will choose a doctor for you. Or you can
-                            choose one yourself.
-                          </p>
-                        )}
-                        {slotLocked ? (
-                          <p className="text-[15px] text-black/75 max-w-xs">
-                            This appointment time is with this doctor. To see a
-                            different doctor, go back and choose another time.
-                          </p>
-                        ) : (
-                        <div className="flex items-center gap-4">
-                          {selectedDoctor && (
-                            <button
-                              type="button"
-                              onClick={() => setSelectedDoctorId(null)}
-                              className="text-[15px] font-medium text-black/70 hover:text-black/70"
-                            >
-                              Remove
-                            </button>
-                          )}
-                          <button
-                            type="button"
-                            onClick={() => setDoctorPickerOpen(true)}
-                            className="text-[16px] bg-[#F88535] cursor-pointer p-2 rounded-full font-medium text-white hover:underline"
-                          >
-                            {selectedDoctor
-                              ? "Change doctor"
-                                                            : "Choose a doctor"}
-                          </button>
-                        </div>
-                        )}
-                      </div>
-                    )}
-
-                    {doctorPickerOpen && (
-                      <div className="rounded-2xl border-2 border-[#F88535]/40 p-5">
-                        <div className="flex items-center gap-3">
-                          <label htmlFor="doctorSearch" className="sr-only">
-                            Search by name or specialty
-                          </label>
-                          <input
-                            id="doctorSearch"
-                            type="text"
-                            value={doctorSearch}
-                            onChange={(e) => setDoctorSearch(e.target.value)}
-                            placeholder="Search by name or specialty"
-                            className="flex-1 rounded-xl border border-black/20 px-4 py-2.5 text-[16px]
-                                       focus:outline-none focus:border-[#F88535] focus:ring-1 focus:ring-[#F88535]"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => setDoctorPickerOpen(false)}
-                            className="text-[15px] font-medium text-black/70 hover:text-black/70 shrink-0"
-                          >
-                            Close
-                          </button>
-                        </div>
-
-                        <div className="mt-4 grid sm:grid-cols-2 gap-3 max-h-[420px] overflow-y-auto pr-1">
-                          {filteredDoctors.map((doc) => (
-                            <button
-                              key={doc.id}
-                              type="button"
-                              onClick={() => {
-                                setSelectedDoctorId(doc.id);
-                                setDoctorPickerOpen(false);
-                                setDoctorSearch("");
-                              }}
-                              className="text-left rounded-xl border border-black/10 p-4 hover:border-[#F88535] transition"
-                            >
-                              <div className="flex items-center gap-3">
-                                <DoctorAvatar doctor={doc} />
-                                <div className="min-w-0">
-                                  <p className="font-medium text-[16px] truncate">
-                                    {doc.name}
-                                  </p>
-                                  <p className="text-[15px] text-black/75 truncate">
-                                    {doc.role}
-                                  </p>
-                                </div>
-                              </div>
-                              <p className="mt-2 text-[15px] text-black/75">
-                                {doc.specialties.join(" · ")}
-                              </p>
-                            </button>
-                          ))}
-                          {filteredDoctors.length === 0 && (
-                            <p className="col-span-full text-[16px] text-black/75 py-4 text-center">
-                              No doctors match "{doctorSearch}" for this
-                              consultation type.
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                  </fieldset>
+                    <DoctorPicker
+                      doctorPickerOpen={doctorPickerOpen}
+                      setDoctorPickerOpen={setDoctorPickerOpen}
+                      selectedDoctor={selectedDoctor}
+                      setSelectedDoctorId={setSelectedDoctorId}
+                      slotLocked={slotLocked}
+                      doctorSearch={doctorSearch}
+                      setDoctorSearch={setDoctorSearch}
+                      filteredDoctors={filteredDoctors}
+                    />
                   )}
 
                   <fieldset className="mt-8">
@@ -1393,89 +931,15 @@ export default function BookConsultation() {
                     </div>
                   )}
 
-                  {/* ---------- Missed appointments (no-show policy, admin-set) ---------- */}
-                  <div className="mt-8 rounded-2xl border border-[#F88535]/40 bg-[#F88535]/5 p-5">
-                    <p className="text-[16px] font-medium">Please be on time</p>
-                    {payAtHospital ? (
-                      <p className="mt-1.5 text-[16px] text-black/80">
-                        If you don't arrive within {settings.noShow.waitMinutes} minutes
-                        of the start, the visit may be marked as missed and you
-                        will need to book again. If you can't make it, change
-                        the time from your dashboard before the visit.
-                      </p>
-                    ) : (
-                    <p className="mt-1.5 text-[16px] text-black/80">
-                      {online
-                        ? `Whoever is in the video room first waits up to ${settings.noShow.waitMinutes} minutes for the other (from the start time, or from when they joined if later). If your doctor is waiting and you don't join in that time, the consultation is marked as missed. If your doctor doesn't join in time, you get a new time at no cost or a full refund.`
-                        : `If you don't arrive within ${settings.noShow.waitMinutes} minutes of the start, the visit may be marked as missed.`}
-                      {settings.noShow.rescheduleFee > 0
-                        ? ` To book a new time after that, you pay an extra GHS ${settings.noShow.rescheduleFee}`
-                        : " You can then book a new time"}
-                      {`, or you can ask for a refund minus ${settings.noShow.forfeitPercent}% of what you paid.`}{" "}
-                      {settings.noShow.rescheduleFee > 0
-                        ? `If you can't make it, change the time from your dashboard: free up to 24 hours before the appointment, GHS ${settings.noShow.rescheduleFee} after that.`
-                        : "If you can't make it, change the time free of charge from your dashboard before the appointment."}
-                    </p>
-                    )}
-                  </div>
+                  <OnTimeNotice settings={settings} online={online} payAtHospital={payAtHospital} />
 
-                  {/* ---------- Data consent ---------- */}
-                  <fieldset className="mt-8 rounded-2xl border border-black/10 p-5">
-                    <legend className="text-[16px] font-medium mb-2 px-1">
-                      Your information
-                    </legend>
-                    {/* Versioned wording: the server records which version
-                        was agreed to (see src/consentText.js). */}
-                    <p className="text-[16px] text-black/90">
-                      {BOOKING_CONSENT_TEXT}
-                    </p>
-                    <label className="mt-4 flex items-start gap-3 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={consent}
-                        onChange={(e) => setConsent(e.target.checked)}
-                        className="mt-1 h-4 w-4 shrink-0 rounded border-black/30 text-[#F88535] focus:ring-[#F88535]"
-                      />
-                      <span className="text-[16px] text-black/80">
-                        I agree to Holy Family Catholic Hospital collecting and
-                        using my information as described above to provide this
-                        consultation. Read our {" "}
-                        <Link
-                          to="/privacy"
-                          rel="opener"
-                          target="_blank"
-                          className="underline text-[#0095D9] hover:text-[#0077ad]"
-                        >
-                          privacy policy
-                        </Link>
-                        {" "}
-                        and
-                        {" "}
-                        <Link
-                          to="/terms"
-                          rel="opener"
-                          target="_blank"
-                          className="underline text-[#0095D9] hover:text-[#0077ad]"
-                        >
-                          terms of service
-                        </Link>
-                        .
-                      </span>
-                    </label>
-                    {forChild && (
-                      <label className="mt-4 flex items-start gap-3 cursor-pointer border-t border-black/10 pt-4">
-                        <input
-                          type="checkbox"
-                          checked={guardianConsent}
-                          onChange={(e) => setGuardianConsent(e.target.checked)}
-                          className="mt-1 h-4 w-4 shrink-0 rounded border-black/30 text-[#F88535] focus:ring-[#F88535]"
-                        />
-                        <span className="text-[16px] text-black/85">
-                          {GUARDIAN_CONSENT_TEXT}
-                        </span>
-                      </label>
-                    )}
-                  </fieldset>
+                  <ConsentFields
+                    consent={consent}
+                    setConsent={setConsent}
+                    forChild={forChild}
+                    guardianConsent={guardianConsent}
+                    setGuardianConsent={setGuardianConsent}
+                  />
 
                   {/* Error sits with the button that produced it. */}
                   <div className="mt-10">
@@ -1501,209 +965,32 @@ export default function BookConsultation() {
 
               {/* ---------- Step 1: pay online via Paystack ---------- */}
               {step === 1 && (
-                <section>
-                  {!paying && paymentState !== "pending" && (
-                    <BackButton
-                      onClick={() => {
-                        // Details may change: the next Pay starts afresh.
-                        setBooking(null);
-                        setPaymentState("idle");
-                        goToStep(0);
-                      }}
-                    >
-                      Back to consultation details
-                    </BackButton>
-                  )}
-
-                  <h2 className="font-display text-[22px] sm:text-[24px] font-medium">
-                    Pay for your consultation
-                  </h2>
-                  <p className="mt-2 text-[16px] text-black/80">
-                    You pay with mobile money. A message will pop up on your
-                    phone: enter your MoMo PIN there to approve the payment.
-                  </p>
-
-                  <div className="mt-7 rounded-2xl border border-black/10 p-6 sm:p-7 space-y-5">
-                    <div className="flex items-center justify-between gap-4">
-                      <span className="text-[16px] text-black/80">
-                        Consultation
-                      </span>
-                      <span className="text-right text-[16px] font-medium">
-                        {type === "OPD" ? "General OPD" : "Surgical"}
-                        <span className="block text-[16px] font-normal text-black/75">
-                          {mode === "online" ? "Video call" : "At the hospital"}
-                        </span>
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between gap-4 border-t border-black/10 pt-5">
-                      <span className="text-[16px] text-black/80">Doctor</span>
-                      {selectedDoctor ? (
-                        <span className="flex items-center gap-2.5 text-right">
-                          <DoctorAvatar doctor={selectedDoctor} size={32} />
-                          <span className="text-[16px] font-medium">
-                            {selectedDoctor.name}
-                          </span>
-                        </span>
-                      ) : (
-                        <span className="text-[16px] text-black/75">
-                          To be assigned
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex items-center justify-between gap-4 border-t border-black/10 pt-5">
-                      <span className="text-[16px] text-black/80">
-                        Amount due
-                      </span>
-                      <span className="font-display text-[20px] font-medium">
-                        {booking?.currency ?? CURRENCY} {fee}
-                      </span>
-                    </div>
-                  </div>
-
-                  <p className="mt-5 text-[16px] bg-[#0095D9] px-4 py-2.5 rounded text-white leading-relaxed">
-                    Please keep this page open until the payment is done.
-                  </p>
-
-                  {/* Awaiting-network state: payment left the phone but the
-                      server hasn't confirmed it yet. No booking yet. */}
-                  {paymentState === "pending" && (
-                    <div
-                      role="status"
-                      className="mt-6 rounded-2xl border border-[#0095D9]/40 bg-[#0095D9]/5 px-5 py-4 text-[16px] text-black/80"
-                    >
-                      <span className="font-medium text-black">
-                        We are waiting for your payment to go through.
-                      </span>{" "}
-                      This can take a few minutes. Please keep this page open.
-                    </div>
-                  )}
-
-                  <div className="mt-8">
-                    <ErrorMessage error={error} innerRef={errorRef} />
-
-                    <div className="flex flex-wrap items-center gap-3">
-                      {paymentState === "pending" ? (
-                        <button
-                          type="button"
-                          onClick={handleCheckPaymentStatus}
-                          disabled={paying}
-                          className="inline-flex items-center gap-2 rounded-full bg-[#F88535] text-white text-[16px] font-medium px-7 py-3.5
-                                     hover:brightness-95 active:brightness-90 transition disabled:opacity-60"
-                        >
-                          {paying && <Spinner />}
-                          {paying
-                            ? "Checking payment…"
-                            : "Check my payment"}
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={handlePay}
-                          disabled={paying}
-                          className="inline-flex items-center gap-2 rounded-full bg-[#F88535] text-white text-[16px] font-medium px-7 py-3.5
-                                     hover:brightness-95 active:brightness-90 transition disabled:opacity-60"
-                        >
-                          {paying && <Spinner />}
-                          {payButtonLabel}
-                        </button>
-                      )}
-
-                      {paymentState === "checkout" && (
-                        <span className="text-[16px] text-black/75">
-                          Check your phone and enter your MoMo PIN to approve.
-                        </span>
-                      )}
-                    </div>
-
-                    <p className="mt-4 text-[15px] text-black/75">
-                      Payments are processed by Paystack. We never see or store
-                      your mobile money PIN.
-                    </p>
-                    <p className="mt-2 text-[15px] text-[#8A2626]">
-                      Only pay here, on this website. We will never call,
-                      text or WhatsApp you to ask you to send money.
-                    </p>
-                  </div>
-                </section>
+                <PaymentStep
+                  paying={paying}
+                  paymentState={paymentState}
+                  onBack={() => {
+                    // Details may change: the next Pay starts afresh.
+                    setBooking(null);
+                    setPaymentState("idle");
+                    goToStep(0);
+                  }}
+                  type={type}
+                  mode={mode}
+                  selectedDoctor={selectedDoctor}
+                  booking={booking}
+                  fee={fee}
+                  currency={CURRENCY}
+                  error={error}
+                  errorRef={errorRef}
+                  handleCheckPaymentStatus={handleCheckPaymentStatus}
+                  handlePay={handlePay}
+                  payButtonLabel={payButtonLabel}
+                />
               )}
 
               {/* ---------- Step 2: payment confirmed ---------- */}
               {step === 2 && booking && (
-                <section className="text-center sm:text-left">
-                  <div className="mx-auto sm:mx-0 h-14 w-14 rounded-full bg-[#0095D9]/10 flex items-center justify-center">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-                      <path
-                        d="M5 13l4 4l10-10"
-                        stroke="#0095D9"
-                        strokeWidth="2.4"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
-                  </div>
-                  <h2 className="mt-5 font-display text-[22px] sm:text-[24px] font-medium">
-                    {booking.payAtHospital
-                      ? "Your visit is booked"
-                      : "Payment received. Your booking is done"}
-                  </h2>
-                  <p className="mt-2 text-[16px] text-black/80 max-w-md mx-auto sm:mx-0">
-                    {booking.payAtHospital
-                      ? `You pay ${booking.currency} ${booking.amount} at the hospital when you come. `
-                      : `We've received ${booking.currency} ${booking.amount}. `}
-                    You will receive an email with your appointment time
-                    {selectedDoctor ? "" : " and doctor"} as soon as it is set.
-                  </p>
-
-                  <div className="mt-7 rounded-2xl border border-black/10 px-5 py-4 max-w-md mx-auto sm:mx-0 text-left space-y-3">
-                    <div>
-                      <span className="block text-[16px] text-black/75">
-                        {booking.payAtHospital ? "To pay at the hospital" : "Paid"}
-                      </span>
-                      <span className="mt-0.5 block font-display text-[19px] font-medium">
-                        {booking.currency} {booking.amount}
-                        {booking.payAtHospital ? "" : " by mobile money"}
-                      </span>
-                    </div>
-                    {selectedDoctor && (
-                      <div className="border-t border-black/10 pt-3 flex items-center gap-3">
-                        <DoctorAvatar doctor={selectedDoctor} />
-                        <div>
-                          <span className="block text-[16px] font-medium">
-                            {selectedDoctor.name}
-                          </span>
-                          <span className="block text-[15px] text-black/75">
-                            {selectedDoctor.role}
-                          </span>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  <p className="mt-6 text-[16px] text-black/75 max-w-md mx-auto sm:mx-0">
-                    We'll email you your appointment time
-                    once{" "}
-                    {selectedDoctor ? "a time is" : "a doctor and time are"}{" "}
-                    assigned. You can see this booking any time from your
-                    Dashboard.
-                  </p>
-
-                  <div className="mt-8 flex flex-wrap justify-center sm:justify-start gap-3">
-                    <Link
-                      to="/"
-                      className="rounded-full border border-black/20 text-[16px] font-medium px-6 py-3
-                                 hover:border-black/40 transition"
-                    >
-                      Back to home
-                    </Link>
-                    <Link
-                      to={"/dashboard"}
-                      className="rounded-full bg-[#F88535] text-white text-[16px] font-medium px-6 py-3
-                                 hover:brightness-95 active:brightness-90 transition"
-                    >
-                      Go to my appointments
-                    </Link>
-                  </div>
-                </section>
+                <BookingDone booking={booking} selectedDoctor={selectedDoctor} />
               )}
             </div>
           </main>

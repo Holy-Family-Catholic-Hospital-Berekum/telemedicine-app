@@ -14,7 +14,7 @@ import {
 import { useAuth } from "../../../src/context/authContext.jsx";
 import HealthcarePreloader from "../../../src/components/common/healthcarePreloader.jsx";
 
-import { callableMessage, CALL_UNLOCK_MINUTES, CALL_CLOSES_HOURS } from "../../../src/constants";
+import { callableMessage } from "../../../src/constants";
 import { CURRENT_CALL_CONSENT } from "../../../src/consentText";
 import CallConsentDialog from "./callConsentDialog";
 import {
@@ -26,7 +26,7 @@ import {
   fetchMyRefundRequests,
 } from "./patientFirestoreService";
 
-import { getCallWindow } from "./patientUtils";
+import { getCallWindow, groupBookings, liveBookings, paymentsInProgress } from "./patientUtils";
 import CheckPaymentPanel from "./checkPaymentPanel";
 import BookingCard from "./patientBookingCard";
 import AvailableSlots from "./patientAvailableSlots";
@@ -72,7 +72,9 @@ export default function Dashboard() {
 
     Promise.all([
       fetchMyBookings(user.uid),
-      fetchAvailableSlots(),
+      // Open times are extra: if they can't be read the section is just
+      // left out, as on the home page, not the whole dashboard.
+      fetchAvailableSlots().catch(() => []),
       fetchConsultationHistory(user.uid),
       fetchMyRefundRequests(user.uid).catch(() => ({})),
     ])
@@ -105,10 +107,9 @@ export default function Dashboard() {
     if (!user || activeCall) return undefined;
     const roomOpen = () =>
       (bookings ?? []).some((b) => {
-        const start = b.scheduledTime?.getTime?.();
-        if (b.mode !== "online" || b.status !== "scheduled" || !start || b.metAt) return false;
-        const now = Date.now();
-        return now > start - CALL_UNLOCK_MINUTES * 60000 && now < start + CALL_CLOSES_HOURS * 3600000;
+        if (b.mode !== "online" || b.status !== "scheduled" || !b.scheduledTime || b.metAt) return false;
+        const { unlocked, closed } = getCallWindow(b.scheduledTime);
+        return unlocked && !closed;
       });
     const id = setInterval(() => {
       if (!roomOpen()) return;
@@ -208,53 +209,41 @@ export default function Dashboard() {
   const safeBookings = bookings ?? [];
 
   // Bookings grouped by where they are, most important first.
-  const sortByTime = (a, b) =>
-    (a.scheduledTime?.getTime?.() ?? 0) - (b.scheduledTime?.getTime?.() ?? 0);
+  const grouped = groupBookings(safeBookings);
   const groups = [
     {
       key: "scheduled",
       title: "Scheduled appointments",
       help: "Your appointments with a doctor and a time. Join video calls from here.",
       icon: CalendarCheck,
-      items: safeBookings
-        .filter((b) => b.state === "scheduled" || b.state === "in_progress")
-        .sort(sortByTime),
+      items: grouped.scheduled,
     },
     {
       key: "missed",
       title: "Missed appointments",
       help: "You didn't join in time. You can pay a fee to book a new time, or ask for some of your money back, before the date shown.",
       icon: CalendarX2,
-      items: safeBookings.filter((b) => b.state === "no_show"),
+      items: grouped.missed,
     },
     {
       key: "waiting",
       title: "Waiting to be scheduled",
       help: "Paid. We're choosing your doctor and time, and will email you when it's set.",
       icon: Hourglass,
-      items: safeBookings.filter((b) => b.state === "pending_assignment"),
+      items: grouped.waiting,
     },
   ].filter((g) => g.items.length > 0);
 
-  // No confirmed payment, no booking: an unpaid attempt is never shown as a
-  // booking. While a payment is being checked (the patient tapped Pay and a
-  // prompt may still go through), a notice explains why they can't book
-  // again yet and lets them check it.
-  const paymentsInProgress = safeBookings.filter(
-    (b) => b.state === "awaiting_payment" && (b.txRefs?.length ?? 0) > 0,
-  );
+  // While a payment is being checked, a notice explains why they can't
+  // book again yet and lets them check it.
+  const checkingPayments = paymentsInProgress(safeBookings);
 
   const activeCallBooking = safeBookings.find(
     (booking) => booking.bookingId === activeCall?.bookingId,
   );
 
   // Calls the patient has been in: one click to go back in.
-  const liveBookings = safeBookings.filter(
-    (booking) =>
-      booking.mode === "online" &&
-      Boolean(booking.patientJoinedAt) &&
-      !getCallWindow(booking.scheduledTime).closed,
-  );
+  const liveCalls = liveBookings(safeBookings);
 
   const firstName = (profile?.name || user.displayName || "there").split(" ")[0];
 
@@ -372,11 +361,11 @@ export default function Dashboard() {
             </section>
           ) : (
             <div className="mt-8 space-y-10">
-              {liveBookings.length > 0 && (
+              {liveCalls.length > 0 && (
                 <section className="space-y-3">
                   <h2 className="text-xl font-semibold">Your consultation is live</h2>
                   {rejoinError && <p className="text-sm text-[#B23A3A]">{rejoinError}</p>}
-                  {liveBookings.map((booking) => (
+                  {liveCalls.map((booking) => (
                     <div
                       key={booking.bookingId}
                       className="flex flex-wrap items-center justify-between gap-3 rounded-xl border-2 border-[#1E8E5A]/40 bg-[#1E8E5A]/5 px-4 py-4"
@@ -402,7 +391,7 @@ export default function Dashboard() {
 
               <PrescriptionsSection patientUid={user.uid} reloadKey={loadKey} />
 
-              {paymentsInProgress.length > 0 && (
+              {checkingPayments.length > 0 && (
                 <section
                   aria-labelledby="payments-in-progress"
                   className="rounded-xl border border-[#0095D9]/30 bg-[#0095D9]/5 px-4 py-4"
@@ -410,7 +399,7 @@ export default function Dashboard() {
                   <h2 id="payments-in-progress" className="text-lg font-semibold text-[#12242C]">
                     We're checking a payment
                   </h2>
-                  {paymentsInProgress.map((b) => (
+                  {checkingPayments.map((b) => (
                     <div key={b.bookingId} className="mt-2">
                       <CheckPaymentPanel booking={b} onConfirmed={reloadBookings} onFailed={reloadBookings} />
                     </div>

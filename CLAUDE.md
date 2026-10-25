@@ -4,7 +4,7 @@ Telemedicine web app for a hospital in Ghana (GHS currency, Paystack payments). 
 
 ## Stack & commands
 
-- React 19 + Vite 8 + React Router 7, Tailwind v4 (via `@tailwindcss/vite`, imported in `src/index.css`) plus plain per-area CSS files (`admin.css`, `auth.css`, …). Plain JS/JSX, no TypeScript. Tests: server unit (`functions/test/unit`), emulator (`functions/test/emulator`, `tests/rules`) and end-to-end (`e2e/`, Playwright).
+- React 19 + Vite 8 + React Router 7, Tailwind v4 (via `@tailwindcss/vite`, imported in `src/index.css`) plus plain per-area CSS files (`admin.css`, `auth.css`, …). Plain JS/JSX, no TypeScript. Tests: server unit (`functions/test/unit`), emulator (`functions/test/emulator`, `tests/rules`), patient-page logic (`components/patient/tests`, Node's test runner: pure `.js` modules only, imported with `.js` extensions) and end-to-end (`e2e/`, Playwright).
 - Firebase (Blaze): Auth, Firestore (`eur3`), Storage, Cloud Functions v2 (Node 24, CommonJS, all in `europe-west1`) in `functions/`.
 - Website on Firebase Hosting as an SPA (`firebase.json` → `hosting`: rewrites everything to `index.html`, headers, caching), published by GitHub Actions `deploy-website.yml` on push (main → live, test → test project) only after the security pipeline passes (it calls `security-audit.yml`: TruffleHog, ESLint, Semgrep, Snyk, GitGuardian, as its first job) with keyless Workload Identity Federation (HANDOVER.md "Website deploys"). Hosting is never deployed from a computer (`hosting.predeploy` → `scripts/hostingPredeploy.cjs` refuses outside GitHub Actions: always `firebase deploy --only …`); the workflow installs with `--ignore-scripts`, uses the lockfile-pinned CLI in `.github/firebase-cli`, and refuses builds with a debug token, emulator hosts or source maps. `src/canonicalHost.js` (`VITE_CANONICAL_REDIRECT=on`, live only after the domain switch) sends `*.web.app`/`*.firebaseapp.com` visits to `VITE_SITE_URL`. The hospital domain points at Firebase since 22 Oct 2026 (Cloudflare CNAME, DNS only, plus `_acme-challenge` TXT for renewals); Vercel is deleted.
 
@@ -17,6 +17,7 @@ npm run test:rules   # Firestore/Storage rules tests on the emulators (needs Jav
 npm run test:functions  # server tests (functions/test/unit + emulator) on the emulators
 cd functions && npm test   # server unit tests only, no emulator
 npm run test:e2e         # end-to-end robot tests (e2e/, Playwright 1.63) on the emulators
+npm run test:patient     # patient-page logic (booking form, reschedule fees, dashboard grouping), no emulator
 npm run deploy:functions -- --project live   # only the changed functions (default: test)
 firebase deploy --only firestore,storage --project live   # or --project test
 ```
@@ -39,7 +40,7 @@ The code is split across two top-level folders. Both import from each other with
 
 - `src/` holds the app shell: `index.jsx` and `App.jsx` (all routes); `firebase.js` (exports `app`, `db`, `auth`, `functions` (europe-west1) — never call `getFunctions`/`getStorage` elsewhere); `firebaseStorage.js` (exports `storage`, kept separate so the Storage SDK only loads with pages that upload); `seo.js` (`usePageMeta`); `constants.js` (enum labels, `toDate`, Africa/Accra formatting, `callableMessage`); `consentText.js` (versioned booking consent — must match `functions/lib/consentText.js`); `doctorDirectory.js` (live listed `doctorProfiles`); `context/authContext.jsx`; `protectedRoutes.jsx`; auth pages; `siteSettings.js`; `legalDocs.js`.
 - `components/` holds the feature areas:
-  - `patient/`: `Home.jsx` (public landing, incl. open appointment slots under "Meet your doctors"), `bookConsultation.jsx` (booking + Paystack; "Myself" / "My child (under 18)"), `dashboard/` (tabs "My appointments" — bookings grouped Scheduled / Missed / Waiting to be scheduled, a "We're checking a payment" notice while a payment is in progress, open slots, history — and "Settings" (`patientSettings.jsx`: name, email); `patientFirestoreService.js`).
+  - `patient/`: `Home.jsx` (public landing, incl. open appointment slots under "Meet your doctors"; sections in `home/`), `bookConsultation.jsx` (booking + Paystack; "Myself" / "My child (under 18)"; checks and request in `bookingForm.js`, steps and callables in `booking/`), `dashboard/` (fee rules in `rescheduleRules.js`, grouping in `patientUtils.js`; tabs "My appointments" — bookings grouped Scheduled / Missed / Waiting to be scheduled, a "We're checking a payment" notice while a payment is in progress, open slots, history — and "Settings" (`patientSettings.jsx`: name, email); `patientFirestoreService.js`).
   - Doctor cards on Home show only photo, name, specialty, languages and "Sees patients for" (`doctorProfileDetails.jsx`): Ghana doesn't allow advertising doctors (medical director), so no bio, qualifications, experience or full-profile page. Patient-facing words are plain for lay readers ("Video call" / "At the hospital" = `MODE_LABELS`, "Booking reference", "Change appointment time"); keep new patient text that simple. Default mouse pointer (no custom cursor).
   - Patient pages are wrapped in `.patient-ui` (`PatientPage` in `App.jsx`), which raises Tailwind's `text-xs/sm/base` sizes (`src/index.css`) for readers of all ages. Keep patient text ≥14px and dark (`#3E4E56`, `black/70+`); staff pages keep defaults.
   - `doctor/`: `doctor.jsx` dashboard, `docFirestoreService.js`, profile tab, Prescriptions tab (`docPrescriptionsTab.jsx`), `prescriberDetails.jsx` + `signaturePad.jsx` (Account tab), `ui/` (incl. `prescriptionModal.jsx`).
@@ -117,3 +118,14 @@ Routes in `src/App.jsx`: public `/`, `/privacy`, `/terms`; `PublicOnlyRoute` for
 - **Scale / ops:** `autoMarkNoShows` and `sendAppointmentReminders` page through their windows (indexes `consultations` mode+status+scheduledTime and status+scheduledTime) instead of one capped read. `startVideoCall` has no always-on instance (hospital decision: no fixed cost); the patient join panel / camera check and the doctor's card send `{ warmup: true }` (`src/callWarmup.js`, at most every 4 min while the room is open) so it's awake when someone joins. Function-error alert policy and a USD 50 monthly budget ($20/$50/forecast) email the owner channel (SECURITY_SETUP.md "Cost and error alerts"). Retention of `auditLog`, `consultationHistory` and `recordings` is undecided: nothing is deleted automatically. Functions deploy can time out loading source on a busy machine: `FUNCTIONS_DISCOVERY_TIMEOUT=60 firebase deploy --only functions --project live`.
 - `src/siteSettings.js` and `src/legalDocs.js` fall back to bundled defaults (images in `src/assets`/`images/`, legal text in `components/admin/legalDefaults.js`) so public pages render before Firestore responds. Keep that fallback.
 - Human-facing docs: `README.md` (overview), `HANDOVER.md` (setup, access, deploying), `SECURITY_SETUP.md` (operations), `GO_LIVE_TEST_CHECKLIST.md`, `.env.example`. Keep them in step with behaviour changes.
+
+## Quality gate for code changes
+
+Make a change only if the answer to all four is yes. If one fails or the trade-off is unclear, skip the change and say why (naming the check).
+
+1. **Secure:** no new injection/XSS risks, no secrets in code, inputs still validated, auth/permission checks unchanged or stronger (see Security model), error handling not weakened.
+2. **Efficient:** removes real waste or keeps performance equal. No micro-optimisations that hurt readability for negligible gain.
+3. **Maintainable:** a new developer would find it easier to understand and modify than before. No abstraction "just in case" (YAGNI); only consolidate duplication that is the same concept.
+4. **Standards-compliant:** follows SOLID/DRY/KISS, the language's idioms, the project's lint rules and existing conventions (style, folder structure, patterns).
+
+In a refactor, behaviour stays the same: report suspected bugs rather than fixing them silently, and ask before changing behaviour, public interfaces (callables, routes, data formats) or anything out of scope.

@@ -3,7 +3,8 @@ import { CalendarX2, Loader2, RefreshCw } from "lucide-react";
 
 import { callableMessage, formatDateTime } from "../../../src/constants";
 import { openPaystackCheckout } from "../../../src/paystackCheckout";
-import { startNoShowReschedule, getNoShowFeeStatus } from "./patientFirestoreService";
+import { startNoShowReschedule, waitForFeeStatus } from "./patientFirestoreService";
+import { formatGhs as money } from "./patientUtils";
 import RefundRequest from "./refundRequest";
 
 // A missed consultation (booking status "no_show", functions/noShow.js).
@@ -14,9 +15,6 @@ import RefundRequest from "./refundRequest";
 //     the hospital to set the new time. No fee: reopened straight away.
 //   - ask for a refund, minus the share kept (noShowTerms.forfeitPercent).
 // Rescheduling is the big button; the refund is a small link.
-
-const money = (n) => `GHS ${Number(n || 0).toFixed(2).replace(/\.00$/, "")}`;
-const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export default function NoShowPanel({ booking, refund, defaultPhone, onRefundRequested, onRescheduled }) {
   const terms = booking.noShowTerms ?? {};
@@ -40,20 +38,17 @@ export default function NoShowPanel({ booking, refund, defaultPhone, onRefundReq
     setBusy("checking");
     setError(null);
     try {
-      for (let i = 0; i < 10; i++) {
-        const { status } = await getNoShowFeeStatus(booking.bookingId);
-        if (status === "confirmed") {
-          setPending(false);
-          setDone(true);
-          onRescheduled?.();
-          return;
-        }
-        if (status === "failed") {
-          setPending(false);
-          setError("The payment didn't go through. You weren't charged; try again.");
-          return;
-        }
-        await wait(3000);
+      const status = await waitForFeeStatus(booking.bookingId);
+      if (status === "confirmed") {
+        setPending(false);
+        setDone(true);
+        onRescheduled?.();
+        return;
+      }
+      if (status === "failed") {
+        setPending(false);
+        setError("The payment didn't go through. You weren't charged; try again.");
+        return;
       }
       setPending(true);
     } catch (err) {

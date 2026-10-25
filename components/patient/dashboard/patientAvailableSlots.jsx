@@ -3,6 +3,7 @@ import { CalendarPlus } from "lucide-react";
 import { TYPE_LABELS, MODE_LABELS, formatDateTime } from "../../../src/constants";
 import { Pagination } from "../../shared/pagination.jsx";
 import { usePagination } from "../../shared/usePagination.js";
+import { slotBookingPath } from "./patientUtils";
 
 /**
  * AvailableSlots
@@ -35,13 +36,6 @@ export default function AvailableSlots({ slots }) {
       </h3>
       <div className="mt-2 space-y-2">
         {pager.pageItems.map((slot) => {
-          const params = new URLSearchParams({
-            slotId: slot.slotId,
-            type: slot.type,
-            mode: slot.mode,
-          });
-          if (slot.doctorUid) params.set("doctor", slot.doctorUid);
-
           return (
             <div
               key={slot.slotId}
@@ -56,7 +50,7 @@ export default function AvailableSlots({ slots }) {
                 </p>
               </div>
               <Link
-                to={`/book?${params.toString()}`}
+                to={slotBookingPath(slot)}
                 className="flex shrink-0 items-center gap-1.5 rounded-sm border border-[#0095D9] px-3 py-1.5 text-xs font-medium text-[#0095D9] hover:bg-[#0095D90D] transition"
               >
                 <CalendarPlus size={13} strokeWidth={1.75} />

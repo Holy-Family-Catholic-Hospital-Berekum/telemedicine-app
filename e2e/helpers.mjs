@@ -128,13 +128,31 @@ export async function callAs(who, name, data = {}, extraHeaders = {}) {
   return body.result;
 }
 
-/** Waits until `check()` returns something truthy (polls the emulator). */
+/**
+ * Waits until `check()` returns something truthy (polls the emulator). A
+ * check that throws (the emulator busy) is tried again. On a timeout the
+ * error says what the checks saw, so a failure on a slow machine can be
+ * told apart from a real one.
+ */
 export async function waitFor(check, { timeout = 30000, every = 500, what = "condition" } = {}) {
   const until = Date.now() + timeout;
+  let checks = 0;
+  let slowest = 0;
+  let last;
   for (;;) {
-    const v = await check();
-    if (v) return v;
-    if (Date.now() > until) throw new Error(`Timed out waiting for ${what}`);
+    const started = Date.now();
+    try {
+      last = await check();
+      if (last) return last;
+    } catch (err) {
+      last = err;
+    }
+    checks += 1;
+    slowest = Math.max(slowest, Date.now() - started);
+    if (Date.now() > until) {
+      const seen = last instanceof Error ? `error: ${last.message}` : `last value: ${JSON.stringify(last)}`;
+      throw new Error(`Timed out waiting for ${what} (${checks} checks, slowest ${slowest} ms, ${seen})`);
+    }
     await new Promise((r) => setTimeout(r, every));
   }
 }

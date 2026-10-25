@@ -1,48 +1,16 @@
 import { useState } from "react";
 import { RefreshCw, Loader2 } from "lucide-react";
-import { requestReschedule, getNoShowFeeStatus } from "./patientFirestoreService";
+import { requestReschedule, waitForFeeStatus } from "./patientFirestoreService";
 import { callableMessage, formatTime } from "../../../src/constants";
 import { useSiteSettings } from "../../../src/siteSettings";
 import { openPaystackCheckout } from "../../../src/paystackCheckout";
-
-const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-// Mirrors rescheduleCountsAsNoShow (functions/lib/consultationLifecycle.js):
-// a patient asking for a new time while the doctor is waiting for them in
-// the video room (or after the start of a hospital visit) pays the no-show
-// fee. Only for the wording; the server decides.
-function isLate(booking, now = Date.now()) {
-  const start = booking.scheduledTime?.getTime?.();
-  if (!start || now < start || booking.metAt) return false;
-  if (booking.rescheduleRequest?.status === "requested") return false;
-  if (booking.mode === "online") return booking.waitDeadline?.for === "patient";
-  return true;
-}
-
-// Mirrors rescheduleNeedsLateFee (functions/lib/consultationLifecycle.js):
-// free up to 24 hours before the start; after that, until the start, the
-// reschedule fee. The appointment stays booked until it's paid. A time
-// given less than 24 hours ahead is free to change for its first hour.
-const FREE_RESCHEDULE_HOURS = 24;
-const SHORT_NOTICE_FREE_MINUTES = 60;
-function freeChangeUntil(booking) {
-  const start = booking.scheduledTime?.getTime?.();
-  const setAt = booking.scheduleSetAt?.getTime?.();
-  if (!start || !setAt || start - setAt >= FREE_RESCHEDULE_HOURS * 3600 * 1000) return null;
-  return new Date(setAt + SHORT_NOTICE_FREE_MINUTES * 60 * 1000);
-}
-function inFreeHour(booking, now = Date.now()) {
-  const until = freeChangeUntil(booking);
-  return Boolean(until) && now < until.getTime();
-}
-function needsLateFee(booking, now = Date.now()) {
-  const start = booking.scheduledTime?.getTime?.();
-  if (!start || now >= start || booking.metAt) return false;
-  if (booking.payAtHospital || booking.doctorUnavailable) return false;
-  if (booking.rescheduleRequest?.status === "requested") return false;
-  if (inFreeHour(booking, now)) return false;
-  return start - now < FREE_RESCHEDULE_HOURS * 3600 * 1000;
-}
+import {
+  FREE_RESCHEDULE_HOURS,
+  freeChangeUntil,
+  inFreeHour,
+  isLate,
+  needsLateFee,
+} from "./rescheduleRules";
 
 export default function RescheduleForm({ booking, onRequested }) {
   const { noShow } = useSiteSettings().settings;
@@ -79,12 +47,7 @@ export default function RescheduleForm({ booking, onRequested }) {
         // missed). Paystack's answer is only a hint; ask the server.
         setPaying(true);
         await openPaystackCheckout(result);
-        let status = "pending";
-        for (let i = 0; i < 10; i++) {
-          ({ status } = await getNoShowFeeStatus(booking.bookingId));
-          if (status !== "pending") break;
-          await wait(3000);
-        }
+        const status = await waitForFeeStatus(booking.bookingId);
         if (lateFee && status !== "confirmed") {
           // Nothing changed: no request was sent and the time still stands.
           setNotPaid(true);
