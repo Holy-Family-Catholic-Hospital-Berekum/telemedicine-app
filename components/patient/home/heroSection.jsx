@@ -13,9 +13,8 @@ import BookingCta from "./bookingCta";
  *
  * MOTION (all switched off for prefers-reduced-motion)
  * - slow "breathing" zoom on the photo
- * - ECG line that draws itself across the photo
  * - gradient that slides through "at your doorstep."
- * - floating glass chips, drifting colour glows, shimmer sweep on the CTA
+ * - drifting colour glows, shimmer sweep on the CTA
  */
 export default function HeroSection({ heroImage }) {
   return (
@@ -33,10 +32,6 @@ export default function HeroSection({ heroImage }) {
           0%, 100% { transform: scale(1); }
           50%      { transform: scale(1.045); }
         }
-        @keyframes heroFloat {
-          0%, 100% { transform: translateY(0); }
-          50%      { transform: translateY(-9px); }
-        }
         @keyframes heroGradient {
           0%   { background-position: 0% 50%; }
           100% { background-position: 200% 50%; }
@@ -44,13 +39,6 @@ export default function HeroSection({ heroImage }) {
         @keyframes heroDrift {
           0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
           50%      { transform: translate3d(26px, -20px, 0) scale(1.08); }
-        }
-        @keyframes heroEcg {
-          0%   { stroke-dashoffset: 1; opacity: 0; }
-          8%   { opacity: 1; }
-          55%  { stroke-dashoffset: 0; opacity: 1; }
-          85%  { stroke-dashoffset: 0; opacity: 0; }
-          100% { stroke-dashoffset: 1; opacity: 0; }
         }
         @keyframes heroShimmer {
           0%, 55% { transform: translateX(-130%) skewX(-18deg); }
@@ -60,9 +48,7 @@ export default function HeroSection({ heroImage }) {
         .hero-rise    { animation: heroRise .8s cubic-bezier(.2,.8,.2,1) both; }
         .hero-photo   { animation: heroPhotoIn 1.1s ease-out both; }
         .hero-breathe { animation: heroBreathe 18s ease-in-out infinite; }
-        .hero-float   { animation: heroFloat 6s ease-in-out infinite; }
         .hero-drift   { animation: heroDrift 14s ease-in-out infinite; }
-        .hero-ecg     { stroke-dasharray: 1; animation: heroEcg 5.5s ease-in-out infinite; }
         .hero-shimmer { animation: heroShimmer 4.5s ease-in-out infinite; }
         .hero-gradient-text {
           background-image: linear-gradient(100deg, #0095D9 0%, #0095D9 30%, #2CC5C0 48%, #F88535 66%, #0095D9 84%, #0095D9 100%);
@@ -74,9 +60,8 @@ export default function HeroSection({ heroImage }) {
           animation: heroGradient 7s linear infinite;
         }
         @media (prefers-reduced-motion: reduce) {
-          .hero-rise, .hero-photo, .hero-breathe, .hero-float, .hero-drift,
-          .hero-ecg, .hero-shimmer, .hero-gradient-text { animation: none !important; }
-          .hero-ecg { stroke-dashoffset: 0; }
+          .hero-rise, .hero-photo, .hero-breathe, .hero-drift,
+          .hero-shimmer, .hero-gradient-text { animation: none !important; }
           .hero-gradient-text { background-position: 0% 50%; }
         }
       `}</style>
@@ -155,65 +140,10 @@ export default function HeroSection({ heroImage }) {
           }}
         />
 
-        {/* ECG line that draws itself across the photo: the one "wow"
-            moment, and it says "hospital" without a word. */}
-        <svg
-          aria-hidden="true"
-          viewBox="0 0 600 90"
-          preserveAspectRatio="none"
-          className="pointer-events-none absolute inset-x-0 bottom-[30%] h-16 w-full sm:h-20 lg:bottom-[22%]"
-          fill="none"
-        >
-          <defs>
-            <linearGradient id="heroEcgGrad" x1="0" x2="1" y1="0" y2="0">
-              <stop offset="0" stopColor="#0095D9" stopOpacity="0" />
-              <stop offset="0.35" stopColor="#0095D9" />
-              <stop offset="0.75" stopColor="#F88535" />
-              <stop offset="1" stopColor="#F88535" stopOpacity="0" />
-            </linearGradient>
-          </defs>
-          <path
-            pathLength="1"
-            className="hero-ecg"
-            d="M0 48 H150 L172 48 L190 16 L214 82 L234 48 H330 L346 48 L362 28 L378 62 L392 48 H600"
-            stroke="url(#heroEcgGrad)"
-            strokeWidth="3"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            vectorEffect="non-scaling-stroke"
-          />
-        </svg>
-
-        {/* Floating glass chips. Only facts the page already states. */}
-
+        {/* Glass chip over the photo (desktop only). Only facts the page
+            already states. */}
         <div
-          className="hero-float absolute bottom-[30%] left-[4%] hidden items-center gap-2.5 rounded-2xl border border-white/70 bg-white/85 px-3.5 py-2.5 text-[15px] font-semibold text-[#142138] shadow-[0_18px_40px_-22px_rgba(20,33,56,0.45)] backdrop-blur-md sm:flex lg:bottom-[14%] lg:left-[16%]"
-          style={{ animationDelay: "-2.5s" }}
-        >
-          <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#F88535] text-white">
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 16 16"
-              fill="none"
-              aria-hidden="true"
-            >
-              <path
-                d="M6 3v2M14 3v2M3.5 7.5h11M4.5 5h9a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1h-9a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1Z"
-                stroke="currentColor"
-                strokeWidth="1.3"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                transform="translate(-1 -1) scale(.95)"
-              />
-            </svg>
-          </span>
-          Book in 4 simple steps
-        </div>
-
-        <div
-          className="hero-float absolute bottom-[8%] right-[5%] hidden items-center gap-2.5 rounded-full border border-white/70 bg-white/85 px-4 py-2.5 text-[14px] font-semibold text-[#142138] shadow-[0_18px_45px_-24px_rgba(20,33,56,0.4)] backdrop-blur-md lg:flex"
-          style={{ animationDelay: "-4.5s" }}
+          className="absolute bottom-[8%] right-[5%] hidden items-center gap-2.5 rounded-full border border-white/70 bg-white/85 px-4 py-2.5 text-[14px] font-semibold text-[#142138] shadow-[0_18px_45px_-24px_rgba(20,33,56,0.4)] backdrop-blur-md lg:flex"
         >
           <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#0095D9] text-white">
             <svg
