@@ -1,22 +1,21 @@
 // controlPanel.jsx
 //
-// Admin "Control Panel" tab. Lets an administrator:
-//   0. switch call recording on or off (RecordingSwitchCard), and register
-//      the telemedicine room computers doctors start calls from
-//      (RoomDevicesCard)
-//   1. change the photo on the home page hero
-//   2. set the consultation prices
-//   3. manage the photos in the BrandAside slideshow (add / remove / reorder)
-//   4. change the photo on the sign-in and sign-up pages
+// Admin "Control Panel" tab, in the order shown:
+//   - call recording mode and the telemedicine room computers
+//     (recordingSwitchCard.jsx, roomDevicesCard.jsx)
+//   - whether patients choose their doctor, payment for hospital visits and
+//     the hospital services list (their own *Card.jsx files)
+//   - the home page photo, consultation prices, the no-show policy, the
+//     side panel slideshow and the sign-in / sign-up photo (photos and
+//     prices are in this file)
+//   - terms and privacy policy (legalDocsCard.jsx)
 //
-// How saving works
-//   Prices  -> callable `updateConsultationPrices` (admin-checked on the server)
-//   Images  -> the browser uploads to Storage (rules: admins only), then calls
-//              `updateSiteImages` with the storage paths. The server verifies
-//              the files, writes siteSettings/public, deletes replaced files
-//              and writes an auditLog entry. Nothing on this screen can write
-//              settings directly, so hiding this tab is a convenience, not the
-//              security boundary.
+// How saving works: every card calls an admin-checked callable, which
+// validates the change and writes an audit entry. Images are first uploaded
+// by the browser to Storage (rules: admins only); `updateSiteImages` then
+// gets the storage paths, verifies the files, writes siteSettings/public and
+// deletes replaced files. Nothing on this screen can write settings
+// directly, so hiding this tab is a convenience, not the security boundary.
 //
 // Photos are resized in the browser before upload (long edge capped, saved as
 // JPEG), so a 9 MB phone photo becomes a few hundred KB. That keeps the public
@@ -68,12 +67,6 @@ const PRICE_ROWS = [
     hint: "General OPD or Surgical, at the hospital",
   },
 ];
-
-const SLOT_LABEL = {
-  hero: "Home page photo",
-  auth: "Sign-in and sign-up photo",
-  slider: "Side panel slideshow",
-};
 
 /* ------------------------------------------------------------------ */
 /* helpers                                                             */
@@ -228,7 +221,7 @@ function Progress({ value }) {
 /* Prices                                                              */
 /* ------------------------------------------------------------------ */
 
-function PricesCard({ current, onAudit }) {
+function PricesCard({ current }) {
   // null until the admin types, so the fields follow the saved values.
   const [draft, setDraft] = useState(null);
   const [confirming, setConfirming] = useState(false);
@@ -274,7 +267,6 @@ function PricesCard({ current, onAudit }) {
         tone: "ok",
         text: "Prices updated. New bookings use them now.",
       });
-      onAudit?.("Changed consultation prices", summary);
     } catch (err) {
       setNote({
         tone: "error",
@@ -383,7 +375,6 @@ function SingleImageCard({
   maxDim,
   current, // { path, url } | null
   fallbackSrc,
-  onAudit,
 }) {
   const inputRef = useRef(null);
   const [picked, setPicked] = useState(null); // { blob, previewUrl, width, height }
@@ -429,7 +420,6 @@ function SingleImageCard({
         tone: "ok",
         text: "Saved. The new photo is live on the site.",
       });
-      onAudit?.("Changed site images", SLOT_LABEL[slot]);
     } catch (err) {
       setNote({
         tone: "error",
@@ -450,10 +440,6 @@ function SingleImageCard({
     try {
       await callUpdateImages({ [slot]: null });
       setNote({ tone: "ok", text: "Restored the built-in photo." });
-      onAudit?.(
-        "Changed site images",
-        `${SLOT_LABEL[slot]} (restored default)`,
-      );
     } catch (err) {
       setNote({
         tone: "error",
@@ -568,7 +554,7 @@ function SingleImageCard({
 /* BrandAside slideshow                                                */
 /* ------------------------------------------------------------------ */
 
-function SliderCard({ current, onAudit }) {
+function SliderCard({ current }) {
   // null until the admin edits; then the working copy of the list.
   // Item: { key, path?, url, blob? } — `blob` marks a photo not yet uploaded.
   const [items, setItems] = useState(null);
@@ -698,7 +684,6 @@ function SliderCard({ current, onAudit }) {
         tone: "ok",
         text: "Saved. The slideshow is live on the site.",
       });
-      onAudit?.("Changed site images", SLOT_LABEL.slider);
     } catch (err) {
       setNote({
         tone: "error",
@@ -720,10 +705,6 @@ function SliderCard({ current, onAudit }) {
       await callUpdateImages({ slider: null });
       discard();
       setNote({ tone: "ok", text: "Restored the built-in photos." });
-      onAudit?.(
-        "Changed site images",
-        `${SLOT_LABEL.slider} (restored default)`,
-      );
     } catch (err) {
       setNote({
         tone: "error",
@@ -885,13 +866,7 @@ function SliderCard({ current, onAudit }) {
 /* Tab                                                                 */
 /* ------------------------------------------------------------------ */
 
-/**
- * `onAudit(action, targetId)` is optional. admin.jsx passes pushAudit so the
- * mock audit tab shows these changes. The real entries are written by the
- * Cloud Functions; once AuditPanel reads from Firestore, stop passing it or
- * every change will appear twice.
- */
-export default function ControlPanel({ onAudit }) {
+export default function ControlPanel() {
   const { raw, error } = useRawSettings();
 
   if (error) {
@@ -944,14 +919,13 @@ export default function ControlPanel({ onAudit }) {
         maxDim={1800}
         current={raw?.heroImage ?? null}
         fallbackSrc={DEFAULT_IMAGES.hero}
-        onAudit={onAudit}
       />
 
-      <PricesCard current={prices} onAudit={onAudit} />
+      <PricesCard current={prices} />
 
       <NoShowPolicyCard />
 
-      <SliderCard current={raw?.sliderImages ?? []} onAudit={onAudit} />
+      <SliderCard current={raw?.sliderImages ?? []} />
 
       <SingleImageCard
         slot="auth"
@@ -965,9 +939,8 @@ export default function ControlPanel({ onAudit }) {
         maxDim={1400}
         current={raw?.authImage ?? null}
         fallbackSrc={DEFAULT_IMAGES.auth}
-        onAudit={onAudit}
       />
-      <LegalDocsCard onAudit={onAudit} />
+      <LegalDocsCard />
     </div>
   );
 }

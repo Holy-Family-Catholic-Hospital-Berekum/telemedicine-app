@@ -23,6 +23,7 @@ import PaymentIssuesPanel from "./paymentIssuesPanel.jsx";
 import RefundRequestsPanel from "./refundRequestsPanel.jsx";
 import ControlPanel from "./controlPanel.jsx";
 import { IconBell, IconRefresh } from "./icons.jsx";
+import { bookingsToSchedule, dashboardStats, hospitalDay, initialsOf } from "./adminStats.js";
 
 import "./admin.css";
 import { usePageMeta } from "../../src/seo.js";
@@ -285,42 +286,12 @@ export default function Admin() {
     );
   };
 
-  const toSchedule = useMemo(
-    () => bookings.filter((b) => b.status === "paid" && !b.consultationId),
-    [bookings],
-  );
+  const toSchedule = useMemo(() => bookingsToSchedule(bookings), [bookings]);
 
-  const stats = useMemo(() => {
-    const todaysBookings = bookingLogToday.length;
-    // Under way: the patient and doctor were connected (metAt) and it isn't
-    // closed yet. Not a call someone merely opened, and not one the doctor
-    // couldn't make (that waits for a new time).
-    const activeConsultations = bookings.filter(
-      (b) => b.status === "scheduled" && b.metAt && !b.doctorUnavailable,
-    ).length;
-    // On duty = has something scheduled today (hospital time): a scheduled
-    // consultation, a paid booking for a slot today, or an admin-created
-    // slot today that isn't cancelled.
-    const onDuty = new Set();
-    for (const b of bookings) {
-      if (b.status === "scheduled" && b.scheduledTime && hospitalDay(b.scheduledTime) === todayDate) {
-        onDuty.add(b.doctorUid);
-      }
-      if (b.status === "paid" && b.preferredTime && hospitalDay(b.preferredTime) === todayDate) {
-        onDuty.add(b.requestedDoctorUid);
-      }
-    }
-    for (const s of todaySlots) {
-      if (s.status !== "cancelled") onDuty.add(s.doctorUid);
-    }
-    onDuty.delete(undefined);
-    onDuty.delete(null);
-    return {
-      todaysBookings,
-      activeConsultations,
-      doctorsOnDuty: onDuty.size,
-    };
-  }, [bookings, todaySlots, todayDate, bookingLogToday]);
+  const stats = useMemo(
+    () => dashboardStats({ bookings, todaySlots, bookingLogToday, todayDate }),
+    [bookings, todaySlots, todayDate, bookingLogToday],
+  );
 
   const heading = TAB_TITLES[tab] ?? TAB_TITLES.overview;
 
@@ -442,19 +413,4 @@ export default function Admin() {
       </main>
     </div>
   );
-}
-
-/** YYYY-MM-DD in hospital time (Africa/Accra). */
-function hospitalDay(value) {
-  return new Date(value).toLocaleDateString("en-CA", { timeZone: "Africa/Accra" });
-}
-
-function initialsOf(name) {
-  if (!name) return "?";
-  return name
-    .split(" ")
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((n) => n[0].toUpperCase())
-    .join("");
 }

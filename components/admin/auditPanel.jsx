@@ -5,8 +5,9 @@ import { actorLabel } from "./actorName.js";
 import { Pagination, LoadOlder } from "../shared/pagination.jsx";
 import { usePagination } from "../shared/usePagination.js";
 
-// auditLog collection (section 5). Records that an action happened and who
-// did it — never the patient details from that session.
+// The auditLog collection (written only by Cloud Functions, audit() in
+// functions/lib/core.js). Records that an action happened and who did it,
+// never the patient details from that session.
 export default function AuditPanel({ entries, window: win, names }) {
   const [query, setQuery] = useState("");
 

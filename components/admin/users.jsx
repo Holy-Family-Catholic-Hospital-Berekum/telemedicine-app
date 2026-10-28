@@ -7,10 +7,12 @@
 //   never their own and never another admin's. setAccountStatus enforces
 //   the same rule on the server, which is the real gate.
 //
-// Accounts are deactivated, never deleted: deactivation disables sign-in
-// and revokes sessions at once, and keeps history and recordings
-// resolving to a real person. Admin accounts are created only with the
-// hospital's staffAdmin script, never from the app.
+// Deactivation disables sign-in and revokes sessions at once, and keeps
+// history and recordings resolving to a real person. Only patients can be
+// deleted (deletePatientAccount: their bookings go, unused payments are
+// refunded, history is kept); staff accounts are only ever deactivated.
+// Admin accounts are created only with the hospital's staffAdmin script,
+// never from the app.
 //
 // Doctors are created by createDoctorAccount (server). The doctor then
 // receives Firebase's password-reset email to set their own password, and
@@ -92,12 +94,6 @@ function SearchInput({ value, onChange, placeholder }) {
   );
 }
 
-// Was rendering with `modal-overlay` / `modal-card`, classes that belong
-// to the auth pages (signIn/signUp) and aren't defined in admin.css — so
-// nothing here actually painted as an overlay. Switched to the
-// `admin-modal-backdrop` / `admin-modal` pattern used by SchedulingModal
-// and ConfirmDialog elsewhere in this dashboard, plus click-outside-to-
-// close for consistency with those.
 function CreateDoctorModal({ onClose, onCreate }) {
   const [form, setForm] = useState({
     name: "",

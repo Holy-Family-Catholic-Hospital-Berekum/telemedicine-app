@@ -14,8 +14,8 @@ import {
 import { Pagination, LoadOlder } from "../shared/pagination.jsx";
 import { usePagination } from "../shared/usePagination.js";
 
-// Inline to avoid assuming icons.jsx exports these — move into icons.jsx
-// alongside the others if you'd rather keep icon imports centralized.
+// The same search box (and icon) is copied in users.jsx; icons.jsx also
+// has an IconSearch. Candidates for one shared copy.
 function IconSearch({ size = 14 }) {
   return (
     <svg

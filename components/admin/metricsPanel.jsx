@@ -4,8 +4,9 @@ import MetricsExport from "./metricsExport.jsx";
 import RefreshRow from "./refreshRow.jsx";
 import { useConsultationStats } from "./hooks/useServerTotals.js";
 
-// metrics collection (4.6) — date, type, mode, outcome, doctorOrDept only.
-// No patient name, phone, email or consultation ID is ever stored here.
+// Consultation figures counted by Firestore from consultationHistory
+// (hooks/useServerTotals.js), which keeps no patient details, plus the
+// report export (metricsExport.jsx).
 export default function MetricsPanel() {
   // Counted by the database over all history, not just what's loaded.
   const consultationStats = useConsultationStats();

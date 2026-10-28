@@ -6,8 +6,8 @@ import {
   IconPulse,
   IconShield,
   IconChart,
-  IconUsers, // ASSUMPTION: swap for whatever icon your icons.jsx actually exports for this
-  IconSettings, // NEW — used for the Control Panel tab, added to icons.jsx.
+  IconUsers,
+  IconSettings,
   IconUserCheck,
   IconLogout,
 } from "./icons.jsx";
@@ -23,8 +23,7 @@ const NAV_ITEMS = [
   { key: "revenue", label: "Revenue", icon: IconTag },
   { key: "audit", label: "Audit Log", icon: IconShield },
   { key: "metrics", label: "Metrics & Reports", icon: IconChart },
-  // NEW — site content admins can change without a code deploy: home page
-  // photo, consultation prices, BrandAside slideshow, sign-in/sign-up photo.
+  // Settings admins change without a code deploy (controlPanel.jsx).
   { key: "control", label: "Control Panel", icon: IconSettings },
   // The signed-in admin's own name and sign-in email.
   { key: "account", label: "My Account", icon: IconUserCheck },

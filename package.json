@@ -14,7 +14,8 @@
     "test:rules": "firebase emulators:exec --only firestore,storage --project demo-telemedicine \"node --test tests/rules/rules.test.mjs\"",
     "deploy:functions": "node functions/scripts/deployFunctions.js",
     "test:e2e": "node e2e/run.mjs",
-    "test:patient": "node --test \"components/patient/tests/*.test.js\""
+    "test:patient": "node --test \"components/patient/tests/*.test.js\"",
+    "test:admin": "node --test \"components/admin/tests/*.test.js\""
   },
   "dependencies": {
     "@fontsource-variable/fraunces": "5.2.9",

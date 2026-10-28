@@ -4,32 +4,17 @@ import { db } from "../../src/firebase";
 import { useFirestoreCollection } from "./hooks/useFirestoreCollection.js";
 import { useRevenueTotals } from "./hooks/useServerTotals.js";
 import RefreshRow from "./refreshRow.jsx";
-import { IconInfo } from "./icons.jsx"; // ASSUMPTION: swap for whatever icons.jsx exports for an informational (non-warning) banner — see note below
+import { IconInfo } from "./icons.jsx";
 
-// Revenue is a reporting view now, not a fraud-reconciliation tool.
+// Revenue: a reporting view of what Paystack has confirmed paid, and a
+// check against Paystack's own settlement total (from the Paystack
+// dashboard), the one figure that comes from outside this system.
 //
-// Payments are confirmed automatically by Paystack at the moment of
-// payment — no admin action creates or verifies a `confirmedPayments`
-// doc. That removes the original threat this panel was built around
-// (an admin fraudulently self-confirming a payment), so there is no
-// more "who confirmed it" breakdown, and no more MoMo-statement
-// variance calculator built to catch that.
-//
-// What's left: a summary of what Paystack has reported paid, and an
-// optional reconciliation against Paystack's own settlement total
-// (from the Paystack dashboard/payout report) — the one figure that
-// still comes from outside this system entirely.
-//
-// ASSUMPTIONS (adjust to match your actual Paystack write shape):
-// - `payments` docs (the `confirmedPayments` collection, per admin.jsx)
-//   are written by a Paystack webhook / Cloud Function, shaped as:
-//     { id, amount, type, reference, paidAt, channel? }
-//   `reference` is Paystack's transaction reference (for looking a
-//   payment up in the Paystack dashboard if something looks off).
-//   `channel` (card / mobile_money / etc.) is optional — the by-type
-//   breakdown below still works if it's absent, but drop the "Channel"
-//   column if you don't have it.
-// - Field is `paidAt`.
+// Payments are confirmed only by the server (signed Paystack webhook or
+// verify-by-reference, functions/payments.js); no admin action creates or
+// changes a `confirmedPayments` record. Each one holds amount, Paystack's
+// charge (`fees`), type, `channel` (mobile_money, card, ...; payments with
+// another or no channel show as "Other"), reference and `paidAt`.
 //
 // SCALE: this panel never downloads payments. Every figure, for a period
 // or all time, is a Firestore count/sum (hooks/useServerTotals.js), so it

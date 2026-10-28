@@ -1,6 +1,5 @@
-// Shared confirmation dialog. Used by PaymentsPanel now; the doctor's
-// Close Session action (4.6) should reuse this too, since that one is
-// irreversible — there are no Firestore backups.
+// Shared confirmation dialog for admin actions (closing consultations,
+// cancelling slots, account changes, control panel settings).
 export default function ConfirmDialog({
   title,
   body,

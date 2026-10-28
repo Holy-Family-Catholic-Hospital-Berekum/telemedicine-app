@@ -66,7 +66,7 @@ const project = (d) => ({
   sections: d.sections.map((s) => ({ id: s.id, title: s.title, body: s.body })),
 });
 
-function LegalEditor({ meta, onAudit }) {
+function LegalEditor({ meta }) {
   const { loading, content } = useLegalDoc(meta.id);
   const [draft, setDraft] = useState(null);
   const [confirming, setConfirming] = useState(false);
@@ -177,8 +177,7 @@ function LegalEditor({ meta, onAudit }) {
         contactEmail: payload.contactEmail,
         sections: payload.sections.map((s) => ({ ...s, key: s.id })),
       });
-      setNote({ tone: "ok", text: `Saved. The ${meta.label.toLowerCase()} page is updated.` });
-      onAudit?.("Changed legal text", meta.label);
+      setNote({ tone: "ok", text: `Saved. The ${meta.label.toLowerCase()} page is updated.` });
     } catch (err) {
       setNote({
         tone: "error",
@@ -431,7 +430,7 @@ function VersionHistory({ docId }) {
   );
 }
 
-export default function LegalDocsCard({ onAudit }) {
+export default function LegalDocsCard() {
   const [active, setActive] = useState("terms");
 
   return (
@@ -463,7 +462,7 @@ export default function LegalDocsCard({ onAudit }) {
       {/* Both editors stay mounted so unsaved edits survive switching tabs. */}
       {DOCS.map((d) => (
         <div key={d.id} hidden={active !== d.id}>
-          <LegalEditor meta={d} onAudit={onAudit} />
+          <LegalEditor meta={d} />
           <VersionHistory docId={d.id} />
         </div>
       ))}

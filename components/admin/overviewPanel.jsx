@@ -20,9 +20,6 @@ function tintFor(entry) {
     : { Icon: IconCheck, bg: "var(--color-success-bg)", fg: "var(--color-success)" };
 }
 
-// Payments are confirmed automatically by Paystack — there is no manual
-// "awaiting verification" step for admin, so that stat card (and the
-// old manual-MoMo-confirmation flow it implied) has been removed.
 export default function OverviewPanel({ stats, recentActivity = [], names }) {
   // Counted by the database (all history, not just what's loaded).
   const consultationStats = useConsultationStats();
