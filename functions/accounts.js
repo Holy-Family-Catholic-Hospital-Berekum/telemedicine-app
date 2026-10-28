@@ -14,16 +14,12 @@
 //                       profile (patients: also open bookings)
 //   createDoctorAccount admin creates a doctor (Auth user, claim, profiles)
 //   setAccountStatus    admin deactivates or reactivates a patient/doctor
-//   deletePatientAccount admin deletes a patient for good: their bookings
-//                       are removed (paid ones that never took place are
-//                       refunded in full) and the account is deleted
-// (A patient deleted in the Firebase console is cleaned up by the daily
-// maintenance job: lib/accountDeletion.js sweepDeletedPatients.)
 //
-// Doctors are never hard-deleted from the app: deactivation disables the
-// Auth user and revokes its sessions, which is reversible and keeps history
-// and recordings resolving to a real person. Patients can be deleted
-// (lib/accountDeletion.js); their history and payment records are kept.
+// No account is ever deleted from the app (hospital decision, 28 Oct 2026):
+// deactivation disables the Auth user and revokes its sessions, which is
+// reversible and keeps history and recordings resolving to a real person.
+// A patient deleted in the Firebase console is cleaned up by the daily
+// maintenance job (lib/accountDeletion.js sweepDeletedPatients).
 
 const {
   onCall,
@@ -42,7 +38,6 @@ const {
   rateLimitIp,
   sha256,
 } = require("./lib/core");
-const { purgePatientData } = require("./lib/accountDeletion");
 const { AGE_DECLARATION_TEXT, CURRENT_AGE_DECLARATION } = require("./lib/consentText");
 const { issueSetupCode } = require("./lib/staffSetup");
 const { noteDevice } = require("./lib/signInAlerts");
@@ -515,36 +510,4 @@ exports.setAccountStatus = onCall(async (request) => {
     await admin.auth().revokeRefreshTokens(targetUid);
   }
   return { ok: true };
-});
-
-/* ------------------------------------------------------------------ */
-/* deletePatientAccount                                                */
-/* ------------------------------------------------------------------ */
-
-/**
- * data: { uid }
- * An admin deletes a patient for good (lib/accountDeletion.js): bookings
- * removed, paid ones that never took place refunded in full, profile and
- * sign-in account deleted. Patients only: staff are deactivated instead.
- */
-exports.deletePatientAccount = onCall(async (request) => {
-  const caller = await requireRole(request, ["admin"]);
-  const uid = docId(request.data?.uid, "Account");
-  await rateLimit(caller.uid, "deletePatientAccount", { max: 20, windowSeconds: 3600 });
-
-  // deepcode ignore Sqli: Firestore document ID, not SQL; uid passed docId() (/^[A-Za-z0-9_-]+$/).
-  const staffSnap = await db.collection("adminUsers").doc(uid).get();
-  // No Auth account (deleted already, e.g. in the console): still clean up.
-  const authUser = await admin.auth().getUser(uid).catch(() => null);
-  if (staffSnap.exists || (authUser && authUser.customClaims?.role && authUser.customClaims.role !== "patient")) {
-    throw new HttpsError("failed-precondition", "Only patient accounts can be deleted. Deactivate staff instead.");
-  }
-  // deepcode ignore Sqli: Firestore document ID, not SQL; uid passed docId().
-  const profile = await db.collection("users").doc(uid).get();
-  if (!profile.exists && !authUser) throw new HttpsError("not-found", "Patient not found.");
-
-  const actor = { uid: caller.uid, role: "admin" };
-  const summary = await purgePatientData(uid, { actor, meta: requestMeta(request) });
-  if (authUser) await admin.auth().deleteUser(uid);
-  return { ok: true, ...summary };
 });

@@ -14,8 +14,10 @@
 //                                 type and channel, refunds; null = all time
 //
 // Each returns { data, error, loading, updatedAt, refresh }.
-// Indexes: confirmedPayments type+paidAt and channel+paidAt,
-// consultationHistory type+endedAt (firestore.indexes.json).
+// Indexes (firestore.indexes.json): consultationHistory type+endedAt. A sum
+// needs an index holding the filtered fields AND every summed field:
+// confirmedPayments [type|channel]+[paidAt]+amount+fees, refundRequests /
+// paymentIssues status+[refundedAt]+amountRefunded.
 
 import { useCallback, useEffect, useState } from "react";
 import {

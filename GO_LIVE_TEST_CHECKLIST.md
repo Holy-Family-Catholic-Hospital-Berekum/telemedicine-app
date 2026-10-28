@@ -117,9 +117,11 @@ Repeat with a new booking for each case:
 
 - [ ] Bookings, History, Users, Revenue, Audit and Metrics load.
 - [ ] Recordings: play a recording (needs a second admin to approve).
-- [ ] Users → Delete a test patient (type DELETE): their bookings disappear
-      and any unused payment shows under Payment issues as "Patient account
-      deleted before the consultation".
+- [ ] Users: patients and doctors show Deactivate / Reactivate and no
+      Delete button.
+- [ ] Delete a test patient in the Firebase console; after the next daily
+      run their bookings disappear and any unused payment shows under
+      Payment issues as "Patient account deleted before the consultation".
 - [ ] Control panel → Legal: the privacy policy shows the current wording
       (see SECURITY_SETUP.md, "Publish the current privacy policy").
 

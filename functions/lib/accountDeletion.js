@@ -1,9 +1,8 @@
 // functions/lib/accountDeletion.js
 //
-// What happens to a patient's data when their account is deleted (an
-// admin's "Delete patient", or the account deleted in the Firebase
-// console, found by the daily sweep: accounts.js deletePatientAccount /
-// sweepDeletedPatients below).
+// What happens to a patient's data when their account is deleted in the
+// Firebase console (admins can't delete accounts in the app), found by the
+// daily sweep: sweepDeletedPatients below.
 //
 //   - Every booking of theirs is removed with its consultation, call room,
 //     held slot and queued emails. A consultation that was scheduled is

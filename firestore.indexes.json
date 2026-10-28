@@ -201,6 +201,79 @@
         { "fieldPath": "status", "order": "ASCENDING" },
         { "fieldPath": "scheduledTime", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "confirmedPayments",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "paidAt", "order": "ASCENDING" },
+        { "fieldPath": "amount", "order": "ASCENDING" },
+        { "fieldPath": "fees", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "confirmedPayments",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "type", "order": "ASCENDING" },
+        { "fieldPath": "paidAt", "order": "ASCENDING" },
+        { "fieldPath": "amount", "order": "ASCENDING" },
+        { "fieldPath": "fees", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "confirmedPayments",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "channel", "order": "ASCENDING" },
+        { "fieldPath": "paidAt", "order": "ASCENDING" },
+        { "fieldPath": "amount", "order": "ASCENDING" },
+        { "fieldPath": "fees", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "confirmedPayments",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "amount", "order": "ASCENDING" },
+        { "fieldPath": "fees", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "confirmedPayments",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "type", "order": "ASCENDING" },
+        { "fieldPath": "amount", "order": "ASCENDING" },
+        { "fieldPath": "fees", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "confirmedPayments",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "channel", "order": "ASCENDING" },
+        { "fieldPath": "amount", "order": "ASCENDING" },
+        { "fieldPath": "fees", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "refundRequests",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "refundedAt", "order": "ASCENDING" },
+        { "fieldPath": "amountRefunded", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "paymentIssues",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "refundedAt", "order": "ASCENDING" },
+        { "fieldPath": "amountRefunded", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

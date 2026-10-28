@@ -159,13 +159,14 @@ fresh sign-in (password + authenticator code) does.
 
 ## Deleting a patient
 
-Admin → Users → Delete (type DELETE). Every booking of theirs is removed
-and anything they paid for a consultation that never took place is
-refunded in full automatically (Payment issues, "Patient account deleted
-before the consultation"). History, payment records, consents, audit log
-and recordings are kept. Deleting the account in the Firebase console
-instead is also handled, by the daily maintenance run (within 24 hours).
-To block access without deleting, use Deactivate.
+Admins can't delete accounts in the app, only deactivate them (hospital
+decision, 28 Oct 2026). When a patient asks to be deleted, a project Owner
+deletes the account in the Firebase console (Authentication → Users); the
+daily maintenance run (within 24 hours) then removes every booking of
+theirs and refunds in full anything they paid for a consultation that
+never took place (Payment issues, "Patient account deleted before the
+consultation"). History, payment records, consents, audit log and
+recordings are kept.
 
 ## Data retention (to decide)
 
