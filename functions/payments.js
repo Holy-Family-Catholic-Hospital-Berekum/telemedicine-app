@@ -79,7 +79,9 @@ const CURRENCY = "GHS";
 // References (HFH-<6 code chars>-<bookingId>) and isOurReference: lib/paystack.js.
 
 const MAX_OPEN_DRAFTS = 3;
-const SLOT_HOLD_MINUTES = 30;
+// An open slot is held only while Paystack reports a charge for it under
+// way (holdSlotForCharge), this long at a time.
+const CHARGE_HOLD_MINUTES = 15;
 // Unpaid drafts (and their personal details) are deleted after this.
 const DRAFT_LIFETIME_HOURS = 24;
 
@@ -251,6 +253,8 @@ async function checkAttempts(bookingRef, booking, { strict = false } = {}) {
   if (refs.length === 0) return "none";
 
   let inFlight = false;
+  // Paystack itself reports a charge under way (not just a recent attempt).
+  let charging = false;
   let unknown = false;
   let latestStatus = null;
   for (const [i, reference] of refs.entries()) {
@@ -290,18 +294,59 @@ async function checkAttempts(bookingRef, booking, { strict = false } = {}) {
     const recent =
       Number.isFinite(createdAt) &&
       Date.now() - createdAt < IN_FLIGHT_WINDOW_MINUTES * 60 * 1000;
-    if (IN_FLIGHT.has(tx?.status) && recent) inFlight = true;
+    if (IN_FLIGHT.has(tx?.status) && recent) {
+      inFlight = true;
+      charging = true;
+    }
     // Strict (used before a NEW booking): a recently closed checkout may
     // still have a mobile-money prompt waiting on the phone, so anything
     // short of a definite failure counts as unconfirmed.
     if (strict && recent && tx?.status !== "failed" && tx?.status !== "reversed") inFlight = true;
   }
+  if (charging) await holdSlotForCharge(bookingRef, booking);
   if (inFlight) return "in_flight";
   if (unknown) return "unknown";
   if (latestStatus === "failed" || latestStatus === "abandoned" || latestStatus === "reversed") {
     return "failed";
   }
   return "none";
+}
+
+/**
+ * Is this open slot free for `bookingId` to pay for? Open, held by this
+ * booking, or held by another whose hold ran out. Not one that's booked,
+ * cancelled, or already started.
+ */
+function slotFreeFor(slot, bookingId, now = Date.now()) {
+  if (!slot || (slot.startAt?.toMillis?.() ?? 0) < now) return false;
+  if (slot.status === "open") return true;
+  return slot.status === "held" && (slot.bookingId === bookingId || (slot.heldUntil?.toMillis?.() ?? 0) < now);
+}
+
+/**
+ * Paystack reports a charge for this booking under way (e.g. a mobile money
+ * prompt waiting on the phone): hold its slot so nobody else pays for the
+ * same time meanwhile. Only a real charge holds a slot, never an unpaid
+ * booking alone (otherwise free throwaway accounts could hold every open
+ * time), and only for CHARGE_HOLD_MINUTES, renewed while it's still under
+ * way. releaseSlotHolds (maintenance.js) reopens it after that.
+ */
+async function holdSlotForCharge(bookingRef, booking) {
+  if (!booking.slotId) return;
+  // deepcode ignore Sqli: Firestore document ID, not SQL; slot id read from the server-written booking.
+  const slotRef = db.collection("availableSlots").doc(booking.slotId);
+  await db.runTransaction(async (tx) => {
+    const snap = await tx.get(slotRef);
+    const now = Date.now();
+    if (!slotFreeFor(snap.exists ? snap.data() : null, bookingRef.id, now)) return;
+    tx.update(slotRef, {
+      status: "held",
+      heldByUid: booking.patientUid,
+      bookingId: bookingRef.id,
+      heldUntil: Timestamp.fromMillis(now + CHARGE_HOLD_MINUTES * 60 * 1000),
+      updatedAt: serverTime(),
+    });
+  });
 }
 
 /**
@@ -686,19 +731,17 @@ exports.createBookingDraft = onCall({ secrets: [PAYSTACK_SECRET_KEY] }, async (r
     }
 
     // --- writes ---
-    if (slotRef) {
-      tx.update(
-        slotRef,
-        payAtHospital
-          ? { status: "booked", bookingId: bookingRef.id, heldUntil: FieldValue.delete(), updatedAt: serverTime() }
-          : {
-              status: "held",
-              heldByUid: uid,
-              bookingId: bookingRef.id,
-              heldUntil: Timestamp.fromMillis(now + SLOT_HOLD_MINUTES * 60 * 1000),
-              updatedAt: serverTime(),
-            },
-      );
+    // A free hospital visit is booked now, so it takes its slot now. A paid
+    // booking doesn't hold its slot: the slot is held only while a charge
+    // is under way (holdSlotForCharge) and taken when the payment is
+    // confirmed (markBookingPaid).
+    if (slotRef && payAtHospital) {
+      tx.update(slotRef, {
+        status: "booked",
+        bookingId: bookingRef.id,
+        heldUntil: FieldValue.delete(),
+        updatedAt: serverTime(),
+      });
     }
 
     tx.set(consentRef, {
@@ -848,6 +891,19 @@ exports.initializePayment = onCall({ secrets: [PAYSTACK_SECRET_KEY] }, async (re
       "resource-exhausted",
       "Too many payment attempts on this booking. Please start a new booking.",
     );
+  }
+  // The time chosen may have been paid for by someone else meanwhile (the
+  // slot isn't held until a charge is under way): say so before Paystack
+  // opens, rather than take the money for a time that's gone.
+  if (booking.slotId) {
+    // deepcode ignore Sqli: Firestore document ID, not SQL; slot id read from the server-written booking.
+    const slot = await db.collection("availableSlots").doc(booking.slotId).get();
+    if (!slotFreeFor(slot.exists ? slot.data() : null, bookingId)) {
+      throw new HttpsError(
+        "failed-precondition",
+        "Sorry, someone has just booked this appointment time. Please go back and choose another time.",
+      );
+    }
   }
 
   const reference = newReference(bookingId);
