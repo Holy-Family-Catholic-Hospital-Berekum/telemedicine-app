@@ -178,7 +178,9 @@ function reopenForReschedule(tx, { bookingRef, booking, consultationRef, fee }) 
   const pending = booking.pendingNoShowRequest || {};
   tx.update(bookingRef, {
     status: "scheduled",
-    ...(fee ? { noShowFee: fee } : {}),
+    // noShowFee: the fee for this reopen (admin Bookings); noShowFees:
+    // every one paid on the booking (history total, refunds).
+    ...(fee ? { noShowFee: fee, noShowFees: FieldValue.arrayUnion(fee) } : {}),
     rescheduleRequest: {
       status: "requested",
       preferredTime: pending.preferredTime || null,
@@ -187,6 +189,7 @@ function reopenForReschedule(tx, { bookingRef, booking, consultationRef, fee }) 
       requestedAt: Timestamp.now(),
     },
     pendingNoShowRequest: FieldValue.delete(),
+    noShowFeeRefs: FieldValue.delete(),
     pendingLateReschedule: FieldValue.delete(),
     noShowAt: FieldValue.delete(),
     noShowExpiresAt: FieldValue.delete(),
@@ -214,27 +217,38 @@ function reopenForReschedule(tx, { bookingRef, booking, consultationRef, fee }) 
 }
 
 /**
+ * The current no-show's fee attempts. markNoShow starts the list afresh for
+ * each no-show, so a fee paid for an earlier one can't pay for this one.
+ * Bookings marked before the list existed fall back to every attempt.
+ */
+const currentFeeRefs = (b) => b.noShowFeeRefs ?? b.feeTxRefs;
+
+/**
  * Applies a successful no-show fee payment, exactly once.
  * Resolves { status: "reopened" | "already" | "rejected" | "missing", duplicate? }.
  */
 async function markNoShowFeePaid(bookingRef, paystackData, via) {
   return db.runTransaction(async (tx) => {
-    const snap = await tx.get(bookingRef);
+    const reference = paystackData?.reference;
+    const [snap, applied] = await Promise.all([
+      tx.get(bookingRef),
+      // deepcode ignore Sqli: Firestore document ID, not SQL; Paystack re-read reference, matched by isOurReference before this is reached.
+      tx.get(db.collection("confirmedPayments").doc(String(reference))),
+    ]);
     if (!snap.exists) return { status: "missing" };
+    // Already applied (a webhook sent again, or verify and webhook racing).
+    if (applied.exists) return { status: "already" };
     const booking = snap.data();
-    const refs = Array.isArray(booking.feeTxRefs) ? booking.feeTxRefs : [];
-    const ours = paystackData?.status === "success" && refs.includes(paystackData.reference);
-    if (booking.status !== "no_show") {
-      // Paid twice, or after the booking moved on: refund it.
-      const already = booking.noShowFee?.reference === paystackData?.reference;
-      return { status: "already", duplicate: ours && !already };
+    const paid = paystackData?.status === "success";
+    const anyOfOurs = paid && (booking.feeTxRefs || []).includes(reference);
+    const ours = paid && (currentFeeRefs(booking) || []).includes(reference);
+    if (booking.status !== "no_show" || !ours) {
+      // Paid twice, after the booking moved on, or for an earlier no-show:
+      // refund it.
+      return anyOfOurs ? { status: "already", duplicate: true } : { status: "rejected" };
     }
     const fee = Number(booking.noShowTerms?.rescheduleFee || 0);
-    if (
-      !ours ||
-      paystackData.currency !== CURRENCY ||
-      !(Number(paystackData.amount) >= Math.round(fee * 100))
-    ) {
+    if (paystackData.currency !== CURRENCY || !(Number(paystackData.amount) >= Math.round(fee * 100))) {
       return { status: "rejected" };
     }
     const consultationRef = db.collection("consultations").doc(booking.consultationId);
@@ -277,7 +291,7 @@ async function markNoShowFeePaid(bookingRef, paystackData, via) {
  * "failed" | "none". Also used for the late reschedule fee
  * (lateReschedule.js LATE_FEE: the current request's attempts, its markPaid).
  */
-async function checkFeeAttempts(bookingRef, booking, { refsOf = (b) => b.feeTxRefs, apply = markNoShowFeePaid } = {}) {
+async function checkFeeAttempts(bookingRef, booking, { refsOf = currentFeeRefs, apply = markNoShowFeePaid } = {}) {
   const list = refsOf(booking);
   const refs = Array.isArray(list) ? [...list].reverse() : [];
   for (const reference of refs) {
@@ -373,13 +387,18 @@ async function beginNoShowReschedule({ caller, bookingId, preferredTime = null, 
       "Your last payment attempt is still being processed. Approve or decline the prompt on your phone, then wait a minute before trying again.",
     );
   }
-  if ((booking.feeTxRefs || []).length >= 10) {
+  if ((currentFeeRefs(booking) || []).length >= 10) {
     throw new HttpsError("resource-exhausted", "Too many payment attempts. Please contact the hospital.");
   }
 
   const reference = newReference(bookingId);
   const batch = db.batch();
-  batch.update(bookingRef, { feeTxRefs: FieldValue.arrayUnion(reference) });
+  // feeTxRefs: every attempt ever (refund tracing, clean-up);
+  // noShowFeeRefs: this no-show's attempts.
+  batch.update(bookingRef, {
+    feeTxRefs: FieldValue.arrayUnion(reference),
+    noShowFeeRefs: FieldValue.arrayUnion(reference),
+  });
   batch.set(db.collection("paymentRefs").doc(reference), {
     bookingId,
     patientUid: caller.uid,

@@ -68,6 +68,16 @@ const NO_SHOW_HOLD_DAYS = 14;
 // (the call screen checks in every ~15 s).
 const PRESENCE_TTL_MS = 45 * 1000;
 
+/**
+ * Every no-show fee paid on a booking ({ amount, reference, paidAt, via }),
+ * one per no-show it reopened. Bookings from before the list kept only the
+ * latest, as noShowFee.
+ */
+function noShowFeesOf(booking) {
+  if (Array.isArray(booking.noShowFees)) return booking.noShowFees;
+  return booking.noShowFee ? [booking.noShowFee] : [];
+}
+
 /** Is `role` ("doctor" | "patient") in the video room now? */
 function isPresent(c, role, now = Date.now()) {
   const seen = toDate(role === "doctor" ? c.presence?.doctor : c.presence?.patient)?.getTime();
@@ -247,6 +257,9 @@ async function markNoShow({ consultationId, actor, meta = null, expectDoctorUid 
         noShowAt: serverTime(),
         noShowExpiresAt: holdUntil,
         noShowTerms,
+        // This no-show's fee attempts (noShow.js): a fee paid for an
+        // earlier no-show of this booking doesn't pay for this one.
+        noShowFeeRefs: [],
         rescheduleRequest: FieldValue.delete(),
         pendingLateReschedule: FieldValue.delete(),
         updatedAt: serverTime(),
@@ -382,7 +395,7 @@ async function closeConsultation({ consultationId, outcome, actor, meta = null, 
       doctorUnavailableKind: c.doctorUnavailable?.kind || null,
       endedAt: serverTime(),
       amountPaid,
-      noShowFeePaid: Number(booking.noShowFee?.amount || 0),
+      noShowFeePaid: noShowFeesOf(booking).reduce((sum, f) => sum + Number(f.amount || 0), 0),
       lateRescheduleFeesPaid: (booking.lateRescheduleFees || []).reduce((sum, f) => sum + Number(f.amount || 0), 0),
       currency: booking.currency || "GHS",
       forfeitAmount,
@@ -670,6 +683,7 @@ module.exports = {
   SHORT_NOTICE_FREE_MINUTES,
   freeChangeUntil,
   rescheduleNeedsLateFee,
+  noShowFeesOf,
   markNoShow,
   markDoctorUnavailable,
   closeConsultation,
