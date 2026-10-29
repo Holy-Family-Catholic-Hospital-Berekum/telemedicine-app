@@ -406,7 +406,8 @@ async function closeConsultation({ consultationId, outcome, actor, meta = null, 
       paystackReference: booking.paystackReference || null,
       // Lets refundSync.js trace a refund of this payment on Paystack.
       paystackTransactionId: booking.paystackTransactionId || null,
-      closedByUid: actor.uid,
+      // Who closed it is in the audit log; the patient can read their own
+      // history (firestore.rules), so only the role is kept here.
       closedByRole: actor.role,
       createdAt: serverTime(),
     });
@@ -566,6 +567,10 @@ async function markDoctorUnavailable({
     }
 
     const flag = { kind, at: Timestamp.now(), by: actor.role, byUid: actor.uid, reason: reason || null };
+    // The patient can read their booking (firestore.rules), so it gets the
+    // flag without the admin note or who reported it; those stay on the
+    // consultation (admins read them there: admin.jsx).
+    const bookingFlag = { kind: flag.kind, at: flag.at, by: flag.by };
     tx.update(consultationRef, {
       status: "scheduled",
       doctorUnavailable: flag,
@@ -575,7 +580,7 @@ async function markDoctorUnavailable({
     if (booking) {
       // deepcode ignore Sqli: Firestore document ID, not SQL; bookingId read from the server-written consultation.
       tx.update(bookingRef, {
-        doctorUnavailable: flag,
+        doctorUnavailable: bookingFlag,
         // Free now: an unpaid late reschedule fee no longer applies.
         pendingLateReschedule: FieldValue.delete(),
         rescheduleRequest: {

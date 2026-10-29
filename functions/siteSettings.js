@@ -63,6 +63,10 @@ const PATH_RE = /^siteAssets\/(hero|auth|slider)\/[\w.-]+\.jpg$/;
 const getDb = () => db;
 const settingsDoc = () => getDb().doc("siteSettings/public");
 const SERVER_TIME = () => FieldValue.serverTimestamp();
+// Every save: when it changed. Who changed it is in the audit log, never
+// here (the document is public); updatedBy removes the admin uid older
+// saves stored.
+const stamp = () => ({ updatedAt: SERVER_TIME(), updatedBy: FieldValue.delete() });
 
 /* ------------------------------------------------------------------ */
 /* helpers                                                             */
@@ -166,7 +170,7 @@ exports.updateConsultationPrices = onCall({ region: REGION }, async (request) =>
 
     tx.set(
       ref,
-      { prices: next, updatedAt: SERVER_TIME(), updatedBy: uid },
+      { prices: next, ...stamp() },
       { merge: true },
     );
     tx.set(db.collection("auditLog").doc(), {
@@ -212,7 +216,7 @@ exports.updateNoShowPolicy = onCall({ region: REGION }, async (request) => {
   await db.runTransaction(async (tx) => {
     const snap = await tx.get(ref);
     const before = readNoShowPolicy(snap.exists ? snap.data() : null);
-    tx.set(ref, { noShow: next, updatedAt: SERVER_TIME(), updatedBy: uid }, { merge: true });
+    tx.set(ref, { noShow: next, ...stamp() }, { merge: true });
     tx.set(db.collection("auditLog").doc(), {
       actorId: uid,
       actorRole: "admin",
@@ -291,7 +295,7 @@ exports.updateSiteImages = onCall({ region: REGION }, async (request) => {
       }
     }
 
-    tx.set(ref, { ...next, updatedAt: SERVER_TIME(), updatedBy: uid }, { merge: true });
+    tx.set(ref, { ...next, ...stamp() }, { merge: true });
     tx.set(db.collection("auditLog").doc(), {
       actorId: uid,
       action: "Changed site images",
@@ -337,7 +341,7 @@ exports.updateDoctorSelection = onCall({ region: REGION }, async (request) => {
   const batch = db.batch();
   batch.set(
     settingsDoc(),
-    { doctorSelectionEnabled: enabled, updatedAt: SERVER_TIME(), updatedBy: uid },
+    { doctorSelectionEnabled: enabled, ...stamp() },
     { merge: true },
   );
   batch.set(db.collection("auditLog").doc(), {
@@ -390,7 +394,7 @@ exports.updateHospitalServices = onCall({ region: REGION }, async (request) => {
   }
   const db = getDb();
   const batch = db.batch();
-  batch.set(settingsDoc(), { services, updatedAt: SERVER_TIME(), updatedBy: uid }, { merge: true });
+  batch.set(settingsDoc(), { services, ...stamp() }, { merge: true });
   batch.set(db.collection("auditLog").doc(), {
     actorId: uid,
     actorRole: "admin",
@@ -426,7 +430,7 @@ exports.updateInPersonPayment = onCall({ region: REGION }, async (request) => {
   const batch = db.batch();
   batch.set(
     settingsDoc(),
-    { inPersonPaymentRequired: required, updatedAt: SERVER_TIME(), updatedBy: uid },
+    { inPersonPaymentRequired: required, ...stamp() },
     { merge: true },
   );
   batch.set(db.collection("auditLog").doc(), {

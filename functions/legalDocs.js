@@ -100,8 +100,8 @@ exports.updateLegalDocument = onCall(async (request) => {
     tx.set(ref, {
       ...clean,
       version: next,
+      // Public document: who changed it is in the audit log, not here.
       updatedAt: FieldValue.serverTimestamp(),
-      updatedBy: request.auth.uid,
     });
 
     tx.set(db.collection("auditLog").doc(), {

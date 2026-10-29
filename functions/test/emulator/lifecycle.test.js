@@ -133,6 +133,21 @@ test("doctor didn't join in time: patient and admins told, free reschedule reque
   assert.deepEqual(await mailKinds(), ["admin_doctor_unavailable", "patient_doctor_unavailable"]);
 });
 
+test("the admin note on 'doctor can't make it' stays off the booking the patient can read", async () => {
+  const { id, bookingId } = await seed({ startedAgoMin: -60 });
+  await markDoctorUnavailable({
+    consultationId: id,
+    actor: { uid: "admin1", role: "admin" },
+    reason: "Doctor off sick",
+  });
+  const onBooking = (await db.doc(`bookings/${bookingId}`).get()).data().doctorUnavailable;
+  assert.deepEqual(Object.keys(onBooking).sort(), ["at", "by", "kind"]);
+  assert.equal(onBooking.by, "admin");
+  const onConsultation = (await db.doc(`consultations/${id}`).get()).data().doctorUnavailable;
+  assert.equal(onConsultation.reason, "Doctor off sick");
+  assert.equal(onConsultation.byUid, "admin1");
+});
+
 test("the automatic check leaves a doctor who is in the room alone", async () => {
   const { id } = await seed({ consultation: { presence: { doctor: ts(Date.now()) } } });
   assert.equal(await markDoctorUnavailable({ consultationId: id, actor: SYSTEM }), null);
@@ -265,4 +280,62 @@ test("an open slot books its own doctor", async () => {
   const res = await createBookingDraft.run(asPatient(slotBooking({ doctorUid: DOCTOR })));
   const b = (await db.doc(`bookings/${res.bookingId}`).get()).data();
   assert.equal(b.doctorUid ?? b.requestedDoctorUid, DOCTOR);
+});
+
+/* ------------- no staff uid where a patient or anyone can read ------------- */
+
+// An admin signed in with their pinned authenticator (core.js requireRole).
+const asAdmin = (data) => ({
+  data,
+  auth: {
+    uid: "admin1",
+    token: {
+      role: "admin",
+      auth_time: Math.floor(Date.now() / 1000),
+      firebase: { sign_in_second_factor: "totp", second_factor_identifier: "factor1" },
+    },
+  },
+  rawRequest: { headers: {}, ip: "127.0.0.1" },
+});
+
+test("closing, declining a refund and changing settings leave no staff uid on readable documents", async () => {
+  const { resolveRefundRequest } = require("../../refunds");
+  const { updateDoctorSelection } = require("../../siteSettings");
+  const { setCallRecordingMode } = require("../../recordings");
+  const { id, bookingId } = await seed({
+    consultation: { status: "no_show" },
+    booking: { status: "no_show", noShowTerms: { forfeitPercent: 20, rescheduleFee: 50, waitMinutes: 5 } },
+  });
+  await db.doc("adminUsers/admin1").update({ mfaFactorUid: "factor1" });
+
+  // Refund request (the patient reads it), declined by an admin.
+  await requestRefund.run(asPatient({ source: "booking", id: bookingId, reason: "Couldn't make it" }));
+  await resolveRefundRequest.run(asAdmin({ consultationId: id, decision: "declined", note: "Outside the policy" }));
+  const request = (await db.doc(`refundRequests/${id}`).get()).data();
+  assert.equal(request.status, "declined");
+  assert.equal(request.resolvedByUid, undefined);
+
+  // History (the patient reads it) after an admin closes it.
+  await closeConsultation({ consultationId: id, outcome: "no_show", actor: { uid: "admin1", role: "admin" } });
+  const history = (await db.doc(`consultationHistory/${id}`).get()).data();
+  assert.equal(history.closedByRole, "admin");
+  assert.equal(history.closedByUid, undefined);
+
+  // Public site settings and the recording switch, each carrying an admin
+  // uid an older save stored: the next save removes it.
+  await db.doc("siteSettings/public").set({ updatedBy: "admin1" });
+  await updateDoctorSelection.run(asAdmin({ enabled: true }));
+  const settings = (await db.doc("siteSettings/public").get()).data();
+  assert.equal(settings.doctorSelectionEnabled, true);
+  assert.equal(settings.updatedBy, undefined);
+
+  await db.doc("systemSettings/features").set({ updatedByUid: "admin1" });
+  await setCallRecordingMode.run(asAdmin({ mode: "off" }));
+  const features = (await db.doc("systemSettings/features").get()).data();
+  assert.equal(features.callRecordingMode, "off");
+  assert.equal(features.updatedByUid, undefined);
+
+  // Who did each of these is in the audit log (admins only).
+  const codes = (await db.collection("auditLog").where("actorId", "==", "admin1").get()).docs.map((d) => d.data().code);
+  for (const code of ["payment.refund_declined", "consultation.closed_no_show"]) assert.ok(codes.includes(code), code);
 });

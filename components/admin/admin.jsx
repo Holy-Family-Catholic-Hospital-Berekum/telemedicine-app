@@ -100,6 +100,13 @@ const refundDueIssuesQuery = query(
   collection(db, "paymentIssues"),
   where("status", "in", ["refund_due", "refund_failed"]),
 );
+// Consultations the doctor couldn't make (a few at a time: each waits for a
+// new time or a refund). Their admin note is kept here, not on the booking,
+// which the patient can read.
+const doctorUnavailableQuery = query(
+  collection(db, "consultations"),
+  where("doctorUnavailable.kind", "in", ["doctor_absent", "call_incomplete"]),
+);
 
 export default function Admin() {
   // Installing from a staff page gives the staff app (opens on staff sign-in).
@@ -171,6 +178,17 @@ export default function Admin() {
   const { data: pendingRefunds } = useFirestoreCollection(pendingRefundsQuery);
   const { data: refundDueIssues } = useFirestoreCollection(refundDueIssuesQuery);
   const refundsToHandle = pendingRefunds.length + refundDueIssues.length;
+  // { [consultationId]: note } for the Bookings tab.
+  const { data: unavailableConsultations } = useFirestoreCollection(doctorUnavailableQuery);
+  const doctorOutNotes = useMemo(
+    () =>
+      Object.fromEntries(
+        unavailableConsultations
+          .filter((c) => c.doctorUnavailable?.reason)
+          .map((c) => [c.id, c.doctorUnavailable.reason]),
+      ),
+    [unavailableConsultations],
+  );
 
   // Who did what: audit entries store account IDs; show people's names.
   // All staff are loaded; patients only within the loaded window (others
@@ -352,6 +370,7 @@ export default function Admin() {
           {tab === "bookings" && (
             <BookingsPanel
               bookings={bookings}
+              doctorOutNotes={doctorOutNotes}
               doctors={doctors}
               slots={slots}
               loading={bookingsLoading}

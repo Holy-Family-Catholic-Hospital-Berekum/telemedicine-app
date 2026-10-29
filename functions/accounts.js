@@ -482,8 +482,9 @@ exports.setAccountStatus = onCall(async (request) => {
   const batch = db.batch();
   batch.update(ref, {
     status,
+    // Who changed it is in the audit log, not here: the patient can read
+    // their own profile (firestore.rules).
     updatedAt: serverTime(),
-    statusChangedByUid: caller.uid,
   });
   if (role === "doctor") {
     batch.set(

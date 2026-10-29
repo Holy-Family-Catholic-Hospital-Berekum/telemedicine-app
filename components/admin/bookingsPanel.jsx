@@ -170,6 +170,8 @@ const DOCTOR_OUT_BY = {
 
 export default function BookingsPanel({
   bookings,
+  // { [consultationId]: note } when the doctor can't make it (admin.jsx).
+  doctorOutNotes = {},
   doctors,
   slots,
   window: win,
@@ -488,7 +490,7 @@ export default function BookingsPanel({
                             ? "Call couldn't be completed · reported by the doctor"
                             : `Doctor can't make it${DOCTOR_OUT_BY[b.doctorUnavailable.by] ? ` · ${DOCTOR_OUT_BY[b.doctorUnavailable.by]}` : ""}`}
                           {" · needs a new time (no fee) or a full refund"}
-                          {b.doctorUnavailable.reason ? ` · Note: ${b.doctorUnavailable.reason}` : ""}
+                          {doctorOutNotes[b.consultationId] ? ` · Note: ${doctorOutNotes[b.consultationId]}` : ""}
                         </div>
                       )}
                       {subtab === "reschedules" && b.rescheduleRequest?.lateFee > 0 && (

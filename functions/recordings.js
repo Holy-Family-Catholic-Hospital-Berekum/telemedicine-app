@@ -41,6 +41,7 @@ const {
   onCall,
   admin,
   db,
+  FieldValue,
   Timestamp,
   serverTime,
   HttpsError,
@@ -86,8 +87,10 @@ exports.setCallRecordingMode = onCall(async (request) => {
       callRecordingMode: mode,
       // Kept for older readers; true whenever recording is on.
       callRecordingEnabled: mode !== "off",
+      // Every signed-in user can read it: who changed it is in the audit
+      // log, and the admin uid older saves stored is removed.
       updatedAt: serverTime(),
-      updatedByUid: caller.uid,
+      updatedByUid: FieldValue.delete(),
     },
     { merge: true },
   );

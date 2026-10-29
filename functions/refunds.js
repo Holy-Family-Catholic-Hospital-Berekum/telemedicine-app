@@ -232,7 +232,8 @@ exports.resolveRefundRequest = onCall({ secrets: [PAYSTACK_SECRET_KEY] }, async 
         refundMethod: decision === "manual" ? "manual" : null,
         amountRefunded,
         note,
-        resolvedByUid: caller.uid,
+        // Which admin decided is in the audit log, not here: the patient
+        // can read their own request (firestore.rules).
         resolvedAt: serverTime(),
         // What the Revenue tab totals (refundSync.js sets it for Paystack).
         ...(decision === "manual" ? { refundedAt: serverTime() } : {}),
@@ -308,7 +309,6 @@ exports.resolveRefundRequest = onCall({ secrets: [PAYSTACK_SECRET_KEY] }, async 
     paystackRefundId: refund.id,
     paystackRefundStatus: refund.status,
     note: note || null,
-    resolvedByUid: caller.uid,
     resolvedAt: serverTime(),
     lastRefundError: null,
   });
