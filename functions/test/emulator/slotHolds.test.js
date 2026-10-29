@@ -128,3 +128,26 @@ test("a charge that failed doesn't hold the slot", async () => {
   await getBookingStatus.run(asPatient(a, { bookingId: draft.bookingId }));
   assert.equal((await slot("s1")).status, "open");
 });
+
+test("free hospital visits: one open visit per phone number, so throwaway accounts can't hold the times", async () => {
+  // Admin switch "Payment for hospital visits" off: a visit is booked at once.
+  await db.doc("siteSettings/public").set({ inPersonPaymentRequired: false });
+  for (const id of ["v1", "v2", "v3"]) {
+    await db.doc(`availableSlots/${id}`).set({
+      doctorUid: DOCTOR, doctorName: "Dr Test", type: "OPD", mode: "in_person", status: "open",
+      startAt: Timestamp.fromMillis(Date.now() + 5 * HOUR),
+    });
+  }
+  const visit = (uid, slotId, phone) =>
+    createBookingDraft.run(asPatient(uid, {
+      type: "OPD", mode: "in_person", slotId, phone, consentVersion: CURRENT_BOOKING_CONSENT,
+    }));
+
+  assert.equal((await visit(await patient("first"), "v1", "0241234567")).status, "booked");
+  await assert.rejects(
+    visit(await patient("second"), "v2", "024 123 4567"),
+    /This phone number already has a hospital visit booked/,
+  );
+  assert.equal((await slot("v2")).status, "open");
+  assert.equal((await visit(await patient("third"), "v3", "0551234567")).status, "booked");
+});

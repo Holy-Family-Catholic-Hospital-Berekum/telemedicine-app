@@ -694,19 +694,30 @@ exports.createBookingDraft = onCall({ secrets: [PAYSTACK_SECRET_KEY] }, async (r
       amount = prices[mode];
     }
 
-    // Free hospital visits: one open visit per patient.
+    // Free hospital visits take their slot at once, with no money spent:
+    // one open visit per account AND per phone number, so throwaway
+    // accounts can't hold the hospital's times (a Ghana SIM needs a Ghana
+    // Card; email aliases cost nothing).
     if (payAtHospital) {
-      const open = await tx.get(
-        db.collection("bookings")
-          .where("patientUid", "==", uid)
-          .where("payAtHospital", "==", true)
-          .where("status", "in", ["paid", "scheduled"])
-          .limit(1),
-      );
-      if (!open.empty) {
+      const openVisits = (field, value) =>
+        tx.get(
+          db.collection("bookings")
+            .where(field, "==", value)
+            .where("payAtHospital", "==", true)
+            .where("status", "in", ["paid", "scheduled"])
+            .limit(1),
+        );
+      const [mine, samePhone] = await Promise.all([openVisits("patientUid", uid), openVisits("phone", phone)]);
+      if (!mine.empty) {
         throw new HttpsError(
           "failed-precondition",
           "You already have a hospital visit booked. You can book another one after that visit.",
+        );
+      }
+      if (!samePhone.empty) {
+        throw new HttpsError(
+          "failed-precondition",
+          "This phone number already has a hospital visit booked. You can book another one after that visit, or call the hospital.",
         );
       }
     }
