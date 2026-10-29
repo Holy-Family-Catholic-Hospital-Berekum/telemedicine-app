@@ -12,6 +12,9 @@ if (!process.env.FIRESTORE_EMULATOR_HOST) {
 }
 const PROJECT = process.env.GCLOUD_PROJECT || "demo-telemedicine";
 if (!PROJECT.startsWith("demo-")) throw new Error("Refusing to run against a non-demo project.");
+// When the test patient signed in; seeded as reported (users.signInNotedAt,
+// lib/core.js requireRole).
+const SIGNED_IN = Math.floor(Date.now() / 1000) - 60;
 
 // Before lib/paystack.js loads: talk to the stand-in (emulator only).
 const PAYSTACK_PORT = 4598;
@@ -62,7 +65,7 @@ test.beforeEach(async () => {
 
 const asPatient = (data) => ({
   data,
-  auth: { uid: PATIENT, token: { role: "patient", email_verified: true, email: "patient@example.test" } },
+  auth: { uid: PATIENT, token: { role: "patient", email_verified: true, auth_time: SIGNED_IN, email: "patient@example.test" } },
   rawRequest: { headers: {}, ip: "127.0.0.1" },
 });
 // An admin signed in with their pinned authenticator (core.js requireRole).
@@ -80,7 +83,7 @@ const asAdmin = (data) => ({
 });
 
 async function seed() {
-  await db.doc(`users/${PATIENT}`).set({ status: "active", name: "Test Patient", email: "patient@example.test" });
+  await db.doc(`users/${PATIENT}`).set({ status: "active", signInNotedAt: SIGNED_IN, name: "Test Patient", email: "patient@example.test" });
   await db.doc("adminUsers/admin1").set({ role: "admin", status: "active", name: "Admin", mfaFactorUid: "factor1" });
   await db.doc("adminUsers/doctor1").set({ role: "doctor", status: "active", name: "Dr Test", email: "doctor@example.test" });
   await db.doc("doctorProfiles/doctor1").set({ name: "Dr Test", availableFor: ["OPD"] });

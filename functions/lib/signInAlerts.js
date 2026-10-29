@@ -56,29 +56,39 @@ function describeDevice(userAgent) {
  * Records this sign-in's browser on the account and emails the holder if
  * it's one they haven't used before.
  * ref: users/{uid} or adminUsers/{uid}. audience: "patient" | "staff".
+ * authTime (patients, accounts.js noteSignIn): the sign-in being reported
+ * (token auth_time, seconds). It's recorded as users.signInNotedAt, which
+ * unlocks the account for this sign-in (lib/core.js requireRole); one
+ * already recorded is skipped; and a report without a valid device id
+ * counts as an unknown device, so leaving it out doesn't avoid the email.
  * Returns { isNew, alerted }.
  */
-async function noteDevice({ ref, uid, deviceId, userAgent, audience }) {
-  if (!validDeviceId(deviceId)) return { isNew: false, alerted: false };
-  const key = sha256(`${uid}:${deviceId}`).slice(0, 32);
+async function noteDevice({ ref, uid, deviceId, userAgent, audience, authTime }) {
+  const reporting = authTime !== undefined;
+  const valid = validDeviceId(deviceId);
+  if (!valid && !reporting) return { isNew: false, alerted: false };
+  const key = valid ? sha256(`${uid}:${deviceId}`).slice(0, 32) : null;
   const now = Date.now();
 
   const seen = await db.runTransaction(async (tx) => {
     const snap = await tx.get(ref);
     if (!snap.exists) return null;
     const data = snap.data();
+    if (reporting && Number(authTime) <= Number(data.signInNotedAt ?? -1)) return { already: true };
     const known = data.knownDevices && typeof data.knownDevices === "object" ? data.knownDevices : null;
-    const isNew = !known || !Object.hasOwn(known, key);
+    const isNew = !key || !known || !Object.hasOwn(known, key);
     // Most recently used first; keep the newest few.
     const kept = Object.entries(known || {})
       .filter(([k]) => k !== key)
       .sort(([, a], [, b]) => (b?.toMillis?.() ?? 0) - (a?.toMillis?.() ?? 0))
-      .slice(0, MAX_KNOWN_DEVICES - 1);
+      .slice(0, MAX_KNOWN_DEVICES - (key ? 1 : 0));
     tx.update(ref, {
-      knownDevices: Object.fromEntries([[key, Timestamp.fromMillis(now)], ...kept]),
+      knownDevices: Object.fromEntries([...(key ? [[key, Timestamp.fromMillis(now)]] : []), ...kept]),
+      ...(reporting ? { signInNotedAt: Number(authTime) } : {}),
     });
     return { isNew, first: !known || Object.keys(known).length === 0, email: data.email, name: data.name };
   });
+  if (seen?.already) return { isNew: false, alerted: false };
 
   if (!seen?.isNew || seen.first || !seen.email) return { isNew: Boolean(seen?.isNew), alerted: false };
 

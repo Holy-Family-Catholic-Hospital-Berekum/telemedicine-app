@@ -205,6 +205,9 @@ export async function createPatient(name = "Kofi Asante") {
   });
   await adminAuth.updateUser(created.localId, { emailVerified: true });
   const signedIn = await authRest("accounts:signInWithPassword", { email, password: PASSWORD, returnSecureToken: true });
+  // A patient's sign-in is reported before the account can be used, as the
+  // website does (functions/accounts.js noteSignIn).
+  await callAs({ token: signedIn.idToken }, "noteSignIn", { deviceId: "e2e-robot-browser-0001" });
   return { uid: created.localId, email, name, token: signedIn.idToken };
 }
 

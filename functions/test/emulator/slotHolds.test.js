@@ -13,6 +13,9 @@ if (!process.env.FIRESTORE_EMULATOR_HOST) {
 }
 const PROJECT = process.env.GCLOUD_PROJECT || "demo-telemedicine";
 if (!PROJECT.startsWith("demo-")) throw new Error("Refusing to run against a non-demo project.");
+// When the test patient signed in; seeded as reported (users.signInNotedAt,
+// lib/core.js requireRole).
+const SIGNED_IN = Math.floor(Date.now() / 1000) - 60;
 
 // Before lib/paystack.js loads: talk to the stand-in (emulator only).
 const PAYSTACK_PORT = 4596;
@@ -54,12 +57,12 @@ test.beforeEach(async () => {
 
 const asPatient = (uid, data, ip = "41.66.9.9") => ({
   data,
-  auth: { uid, token: { role: "patient", email_verified: true, email: `${uid}@example.test` } },
+  auth: { uid, token: { role: "patient", email_verified: true, auth_time: SIGNED_IN, email: `${uid}@example.test` } },
   rawRequest: { headers: { "x-forwarded-for": ip } },
 });
 
 async function patient(uid) {
-  await db.doc(`users/${uid}`).set({ status: "active", name: "Test Patient", email: `${uid}@example.test` });
+  await db.doc(`users/${uid}`).set({ status: "active", signInNotedAt: SIGNED_IN, name: "Test Patient", email: `${uid}@example.test` });
   return uid;
 }
 

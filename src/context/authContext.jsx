@@ -95,7 +95,12 @@
 // 9. Stolen passwords. Every sign-in sends this browser's random id
 //    (deviceId.js): noteSignIn for patients, confirmStaffSession for staff.
 //    A browser the account hasn't used before gets the holder a "new
-//    sign-in" email (functions/lib/signInAlerts.js). A patient's password
+//    sign-in" email (functions/lib/signInAlerts.js). A patient's sign-in
+//    must be reported before the account can be used (the server and the
+//    database rules refuse it otherwise), so it's awaited
+//    (reportPatientSignIn) wherever a patient session starts: sign-in,
+//    sign-up, a page reload with a sign-in not reported yet, and a fresh
+//    sign-in to confirm their identity. A patient's password
 //    is also checked against a public list of leaked passwords
 //    (passwordCheck.js, nothing but a 5-character hash prefix leaves the
 //    browser): `passwordLeaked` makes the dashboard ask them to change it.
@@ -113,13 +118,17 @@ import { loadAuthSdk } from "../authSdkLoader.js";
 import { getDeviceId } from "../deviceId.js";
 import { passwordLeakCount } from "../passwordCheck.js";
 
-// Tells the server a patient just signed in from this browser; it emails
-// them if it's a new one (functions/lib/signInAlerts.js). Never blocks or
-// fails a sign-in.
-function noteSignIn() {
-  loadAuthSdk()
-    .then(({ callNoteSignIn }) => callNoteSignIn({ deviceId: getDeviceId() }))
-    .catch(() => {});
+// Reports a patient's sign-in from this browser before the account is used:
+// the server and the database rules refuse a sign-in that wasn't reported
+// (functions/accounts.js noteSignIn), and the holder is emailed about a
+// browser the account hasn't used before (functions/lib/signInAlerts.js).
+// `notedAt` is users.signInNotedAt from the profile: a sign-in already
+// reported (a page reload) isn't sent again. Throws if it can't be sent.
+async function reportPatientSignIn(fbUser, notedAt) {
+  const { claims } = await fbUser.getIdTokenResult();
+  if (Number(claims.auth_time) <= Number(notedAt ?? -1)) return;
+  const { callNoteSignIn } = await loadAuthSdk();
+  await callNoteSignIn({ deviceId: getDeviceId() });
 }
 
 // Staff: tell the server the session is in use at most this often while
@@ -276,6 +285,8 @@ export function AuthProvider({ children }) {
           name: data.name || fbUser.displayName || "Patient",
           phone: data.phone,
           email: data.email || null,
+          // The latest sign-in reported (reportPatientSignIn).
+          signInNotedAt: data.signInNotedAt ?? null,
         };
   }, []);
 
@@ -329,6 +340,11 @@ export function AuthProvider({ children }) {
             await signOut(auth).catch(() => {});
             return;
           }
+        } else {
+          // A sign-in not reported yet (e.g. the page closed straight
+          // after signing in): report it before the account is used. If
+          // that fails, the catch below says "you're offline".
+          await reportPatientSignIn(fbUser, p.signInNotedAt);
         }
         loadedProfileUidRef.current = fbUser.uid;
         setProfile(p);
@@ -436,13 +452,19 @@ export function AuthProvider({ children }) {
           await signOut(auth).catch(() => {});
           throw new Error("We couldn't finish setting up your account. Please sign in.");
         }
+        // Records this browser as the account's first (no email) and
+        // unlocks the account for this sign-in.
+        try {
+          await reportPatientSignIn(cred.user, p.signInNotedAt);
+        } catch (err) {
+          await signOut(auth).catch(() => {});
+          throw new Error("Your account was created, but we couldn't finish signing you in. Please sign in.", { cause: err });
+        }
         setFirebaseUser(cred.user);
         setEmailVerifiedFlag(cred.user.emailVerified ?? false);
         loadedProfileUidRef.current = cred.user.uid;
         setProfile(p);
         scheduleIdleLogout(p.role);
-        // Records this browser as the account's first (no email).
-        noteSignIn();
         return cred.user;
       } finally {
         signingInRef.current = false;
@@ -585,9 +607,15 @@ export function AuthProvider({ children }) {
 
         if (audience === "staff") return await staffSecondStep(cred.user, p);
 
+        // Reported before the account is used (reportPatientSignIn).
+        try {
+          await reportPatientSignIn(cred.user, p.signInNotedAt);
+        } catch (err) {
+          await signOut(auth).catch(() => {});
+          throw new Error(mapAuthError({ code: "auth/network-request-failed" }), { cause: err });
+        }
         setPasswordLeaked(((await leakCheck) || 0) > 0);
         exposeSession(cred.user, p);
-        noteSignIn();
         return { user: cred.user, role: p.role };
       } finally {
         signingInRef.current = false;
@@ -839,6 +867,9 @@ export function AuthProvider({ children }) {
         );
       }
     }
+    // A fresh sign-in has a new sign-in time: a patient's must be reported
+    // too before the account can be used again (reportPatientSignIn).
+    if ((await roleClaim(u)) === "patient") await reportPatientSignIn(u);
     return u;
   }, []);
 

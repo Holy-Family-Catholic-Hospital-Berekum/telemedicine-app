@@ -21,6 +21,8 @@ import { ref, uploadBytes } from "firebase/storage";
 
 const PROJECT_ID = "demo-telemedicine";
 const now = () => Math.floor(Date.now() / 1000);
+// When the test patients signed in; seeded as reported (users.signInNotedAt).
+const SIGNED_IN = now() - 60;
 
 let env;
 
@@ -43,8 +45,8 @@ function staff(uid, role, { factor = FACTOR, ageHours = 1, secondFactor = true }
 const admin = (opts) => staff("admin1", "admin", opts);
 const doctor = (opts) => staff("doc1", "doctor", opts);
 const otherDoctor = () => staff("doc2", "doctor");
-const patient = (uid = "pat1") =>
-  env.authenticatedContext(uid, { role: "patient", email_verified: true, auth_time: now() });
+const patient = (uid = "pat1", { authTime = SIGNED_IN } = {}) =>
+  env.authenticatedContext(uid, { role: "patient", email_verified: true, auth_time: authTime });
 
 /* ---------------- setup ---------------- */
 
@@ -69,9 +71,9 @@ beforeEach(async () => {
     await put("adminUsers/doc1", { role: "doctor", status: "active", mfaFactorUid: FACTOR });
     await put("adminUsers/doc2", { role: "doctor", status: "active", mfaFactorUid: FACTOR });
     await put("adminUsers/docNew", { role: "doctor", status: "active" }); // no authenticator pinned
-    await put("users/pat1", { status: "active" });
-    await put("users/pat2", { status: "active" });
-    await put("users/patOff", { status: "deactivated" });
+    await put("users/pat1", { status: "active", signInNotedAt: SIGNED_IN });
+    await put("users/pat2", { status: "active", signInNotedAt: SIGNED_IN });
+    await put("users/patOff", { status: "deactivated", signInNotedAt: SIGNED_IN });
     await put("bookings/b1", { patientUid: "pat1", status: "scheduled" });
     await put("bookings/b2", { patientUid: "pat2", status: "scheduled" });
     await put("bookings/bOff", { patientUid: "patOff", status: "scheduled" });
@@ -183,6 +185,14 @@ describe("patients", () => {
   });
   test("can't write bookings directly", async () => {
     await assertFails(setDoc(doc(patient("pat1").firestore(), "bookings/new"), { patientUid: "pat1" }));
+  });
+  // A sign-in not reported yet (functions/accounts.js noteSignIn, which
+  // emails the holder about a new browser) can't use the account.
+  test("a sign-in that wasn't reported can't read their data", async () => {
+    await assertFails(get(patient("pat1", { authTime: SIGNED_IN + 30 }), "bookings/b1"));
+  });
+  test("a sign-in that wasn't reported can still read their own profile (to report it)", async () => {
+    await assertSucceeds(get(patient("pat1", { authTime: SIGNED_IN + 30 }), "users/pat1"));
   });
 });
 

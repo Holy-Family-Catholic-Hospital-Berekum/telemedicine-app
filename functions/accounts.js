@@ -173,22 +173,20 @@ exports.registerPatient = onCall(async (request) => {
 /* noteSignIn                                                          */
 /* ------------------------------------------------------------------ */
 
-// A sign-in this recent is the one being reported (older tokens are just
-// a page reload and are ignored).
-const SIGN_IN_FRESH_SECONDS = 10 * 60;
-
 /**
- * data: { deviceId }. The patient's browser calls this right after signing
- * in (and after sign-up). A browser the account hasn't used before gets
- * the account holder a "new sign-in" email (lib/signInAlerts.js).
+ * data: { deviceId }. The patient's browser reports each sign-in (and
+ * sign-up, and a fresh sign-in to confirm their identity) before using the
+ * account: until it does, every patient function (lib/core.js
+ * requireRole) and database read (firestore.rules isPatient) is refused.
+ * A browser the account hasn't used before, or none at all, gets the
+ * account holder a "new sign-in" email (lib/signInAlerts.js), so someone
+ * with a stolen password can't use the account without the holder hearing
+ * of it. A sign-in already reported (a page reload) does nothing.
  * Works before the email is verified: that's when an account is newest.
  */
 exports.noteSignIn = onCall(async (request) => {
   const auth = request.auth;
   if (!auth || auth.token.role !== "patient") return { ok: true };
-  if (Date.now() / 1000 - Number(auth.token.auth_time || 0) > SIGN_IN_FRESH_SECONDS) {
-    return { ok: true };
-  }
   await rateLimit(auth.uid, "noteSignIn", { max: 30, windowSeconds: 3600 });
   const { userAgent } = requestMeta(request);
   await noteDevice({
@@ -197,6 +195,7 @@ exports.noteSignIn = onCall(async (request) => {
     deviceId: request.data?.deviceId,
     userAgent,
     audience: "patient",
+    authTime: Number(auth.token.auth_time),
   });
   return { ok: true };
 });

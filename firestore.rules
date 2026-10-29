@@ -51,9 +51,15 @@ service cloud.firestore {
     function isDoctor() {
       return signedIn() && role() == 'doctor' && staffActive() && staffSecondFactor();
     }
+    // Also: this sign-in has been reported (functions/accounts.js
+    // noteSignIn, same check as functions/lib/core.js requireRole), which is
+    // when a new browser emails the account holder; signInNotedAt is the
+    // auth_time of the latest reported sign-in.
     function isPatient() {
+      let user = get(/databases/$(database)/documents/users/$(myUid())).data;
       return signedIn() && role() == 'patient'
-        && get(/databases/$(database)/documents/users/$(myUid())).data.get('status', '') == 'active';
+        && user.get('status', '') == 'active'
+        && request.auth.token.auth_time <= user.get('signInNotedAt', -1);
     }
 
     // ---------------- identity ----------------

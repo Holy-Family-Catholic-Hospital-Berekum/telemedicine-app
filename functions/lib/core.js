@@ -119,11 +119,26 @@ function assertStaffSecondFactor(token, profile) {
 }
 
 /**
+ * A patient's sign-in must have been reported (accounts.js noteSignIn)
+ * before the account can be used: that's when a browser the account hasn't
+ * used before emails the holder (lib/signInAlerts.js), so someone with a
+ * stolen password can't skip the email by not reporting. Mirrored in
+ * isPatient() in firestore.rules. users.signInNotedAt is the auth_time
+ * (seconds) of the latest reported sign-in.
+ */
+function assertSignInReported(token, profile) {
+  if (!(Number(token.auth_time) <= Number(profile.signInNotedAt ?? -1))) {
+    throw new HttpsError("permission-denied", "Please sign in again.", { reason: "sign_in_unreported" });
+  }
+}
+
+/**
  * Rejects unless the caller is signed in, holds one of `roles` in the
  * signed `role` claim, and their profile document says `active`. Reading
  * the profile on every call means a deactivated account loses access at
  * once, not when its ID token next refreshes. Staff must also have passed
- * their second factor for this sign-in (see above).
+ * their second factor for this sign-in (see above); patients must have
+ * reported this sign-in (assertSignInReported).
  *
  * Returns { uid, role, profile, token }.
  */
@@ -147,6 +162,7 @@ async function requireRole(request, roles) {
     );
   }
   const profile = snap.data();
+  if (role === "patient") assertSignInReported(auth.token, profile);
   if (STAFF_ROLES.includes(role)) {
     assertStaffSecondFactor(auth.token, profile);
     await touchStaffActivity(snap.ref, profile);

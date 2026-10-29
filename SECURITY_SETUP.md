@@ -215,6 +215,13 @@ dashboard. Their hospital admin account is enough.
   me": deactivate the account (Users tab), reset their authenticator
   (doctors: Users tab; admins: `staffAdmin.js reset-mfa`), and have them
   choose a new password.
+- **The email can't be skipped (patients).** A patient account can't be
+  used until its sign-in has been reported (`noteSignIn`): every patient
+  function and database read refuses it before that. So someone using a
+  stolen password through Firebase directly, not the website, still
+  triggers the email (a report with no browser id counts as a new
+  browser). Release order for this: website first, then functions and
+  rules together.
 - **Leaked passwords.** At sign-up and at patient sign-in, the browser
   checks the password against Have I Been Pwned's list of leaked passwords
   (`src/passwordCheck.js`; only a 5-character hash prefix is sent). Sign-up

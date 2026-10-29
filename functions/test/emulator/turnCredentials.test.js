@@ -12,6 +12,9 @@ if (!process.env.FIRESTORE_EMULATOR_HOST) {
 }
 const PROJECT = process.env.GCLOUD_PROJECT || "demo-telemedicine";
 if (!PROJECT.startsWith("demo-")) throw new Error("Refusing to run against a non-demo project.");
+// When the test patient signed in; seeded as reported (users.signInNotedAt,
+// lib/core.js requireRole).
+const SIGNED_IN = Math.floor(Date.now() / 1000) - 60;
 
 // No request to Cloudflare: the emulator-only switch answers with no
 // servers once every check has passed (consultations.js).
@@ -34,12 +37,12 @@ test.beforeEach(async () => {
 
 const asPatient = (data) => ({
   data,
-  auth: { uid: PATIENT, token: { role: "patient", email_verified: true, email: "patient@example.test" } },
+  auth: { uid: PATIENT, token: { role: "patient", email_verified: true, auth_time: SIGNED_IN, email: "patient@example.test" } },
   rawRequest: { headers: {}, ip: "127.0.0.1" },
 });
 
 async function seed(startsInMs) {
-  await db.doc(`users/${PATIENT}`).set({ status: "active", name: "Test Patient", email: "patient@example.test" });
+  await db.doc(`users/${PATIENT}`).set({ status: "active", signInNotedAt: SIGNED_IN, name: "Test Patient", email: "patient@example.test" });
   await db.doc("adminUsers/doctor1").set({ role: "doctor", status: "active", name: "Dr Test", email: "doctor@example.test" });
   await db.doc("bookings/b-turn").set({ patientUid: PATIENT, status: "scheduled", consultationId: ID, email: "patient@example.test" });
   await db.doc(`consultations/${ID}`).set({
