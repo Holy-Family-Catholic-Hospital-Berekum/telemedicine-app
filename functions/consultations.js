@@ -675,6 +675,20 @@ exports.getTurnCredentials = onCall(
     }
     if (consultation.doctorUnavailable)
       throw doctorUnavailableError(caller.role);
+    // Only someone in the video room now: startVideoCall checked the time,
+    // consent and (doctors) the room computer, and the call screen keeps
+    // presence fresh. Otherwise credentials could be collected days ahead
+    // and the hospital's relay used for anything.
+    const scheduled = toDate(consultation.scheduledTime)?.getTime() ?? 0;
+    const now = Date.now();
+    if (
+      consultation.mode !== "online" ||
+      now < scheduled - JOIN_OPENS_MINUTES_BEFORE * 60 * 1000 ||
+      now > scheduled + JOIN_CLOSES_HOURS_AFTER * 3600 * 1000 ||
+      !isPresent(consultation, caller.role, now)
+    ) {
+      throw new HttpsError("failed-precondition", "Join the video call first.");
+    }
 
     // Automated tests (local emulator only, TURN_RELAY=off in
     // functions/.env.demo-telemedicine): no relay, nothing sent to Cloudflare.
