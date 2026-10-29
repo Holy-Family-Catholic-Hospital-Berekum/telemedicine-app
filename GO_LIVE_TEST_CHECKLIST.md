@@ -23,6 +23,9 @@ step fails, note what you saw and the time.
 - [ ] Sign in as the patient on a second browser or phone: "New sign-in"
       email arrives (not for the very first browser). Same for a doctor on
       a new computer (email without a link).
+- [ ] Reload the dashboard and close and reopen the browser ("Remember
+      me" ticked): the patient stays signed in, appointments load, and no
+      second "New sign-in" email comes.
 - [ ] Verification email arrives; until it's verified, booking is refused.
 - [ ] Patient signs in; "Remember me" keeps them signed in after closing
       the browser, unticked it doesn't.
@@ -43,13 +46,18 @@ step fails, note what you saw and the time.
 - [ ] Book a **hospital visit**: no age/sex/location asked.
 - [ ] Control panel → Payment for hospital visits off: a hospital visit is
       booked at once without Paystack ("pay at the hospital"); a second one
-      is refused while the first is open. Switch it back afterwards.
+      is refused while the first is open, also from another account with the
+      same phone number. Switch it back afterwards.
 - [ ] The payment step, the footer, the WhatsApp panel and the booking
       emails all carry the warning that the hospital never asks for money
       or a PIN by call, text or WhatsApp.
 - [ ] Admin receives the "New booking" email.
 - [ ] Close the Paystack window without paying: no booking appears, and a
       new booking is allowed afterwards.
+- [ ] Two patients pick the same open time on the home page: the time
+      stays on the home page while they fill in the form; whoever pays first
+      gets it, and the other is told "someone has just booked this
+      appointment time" before Paystack opens.
 
 ## 3. Scheduling
 
@@ -130,6 +138,8 @@ Repeat with a new booking for each case:
 ## 5. After a no-show
 
 - [ ] Patient pays the no-show fee: booking becomes a reschedule request.
+- [ ] Admin gives it a new time and the patient misses that one too: a new
+      no-show fee is asked for (the first one doesn't count again).
 - [ ] Patient asks for a refund instead: request appears for the admin;
       "Approve & refund" sends it; Revenue → Refunds shows it once Paystack
       confirms.
@@ -141,8 +151,9 @@ Repeat with a new booking for each case:
 - [ ] Users: patients and doctors show Deactivate / Reactivate and no
       Delete button.
 - [ ] Delete a test patient in the Firebase console; after the next daily
-      run their bookings disappear and any unused payment shows under
-      Payment issues as "Patient account deleted before the consultation".
+      run their bookings disappear and Payment issues shows "Patient account
+      deleted: refund…": in full for an appointment not had yet, minus the
+      no-show share for a missed one; no-show and late fees aren't refunded.
 - [ ] Control panel → Legal: the privacy policy shows the current wording
       (see SECURITY_SETUP.md, "Publish the current privacy policy").
 

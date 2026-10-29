@@ -111,6 +111,7 @@ npm run test:rules     # rules tests on the Firebase emulators (Java 21)
 npm run test:functions # server tests on the emulators (Java 21)
 npm run test:e2e       # end-to-end robot tests on the emulators (Java 21)
 npm run test:patient   # patient-page logic: booking form, reschedule fees (no setup)
+npm run test:admin     # admin logic: Overview figures, report periods, CSV (no setup)
 cd functions && npm test   # server unit tests (no setup)
 npm run deploy:functions   # deploy only changed functions (test; add -- --project live)
 
@@ -132,7 +133,7 @@ deployment quirks.
 | File | For | What's in it |
 |---|---|---|
 | [HANDOVER.md](HANDOVER.md) | A developer taking over | Access to hand over, first-time setup, deploying, where everything lives |
-| [SECURITY_SETUP.md](SECURITY_SETUP.md) | Whoever runs the live system | Staff accounts, lost phones, restores, alerts, budget, payments go-live |
+| [SECURITY_SETUP.md](SECURITY_SETUP.md) | Whoever runs the live system | Staff accounts, lost phones, restores, alerts, budget, the 29 Oct 2026 security review, payments go-live |
 | [GO_LIVE_TEST_CHECKLIST.md](GO_LIVE_TEST_CHECKLIST.md) | Testers | The full manual test pass before launch and after big changes |
 | [CLAUDE.md](CLAUDE.md) | Developers (and AI assistants) | Detailed reference: every rule, collection and gotcha |
 | `.env.example` | Developers | The website's settings, without values |

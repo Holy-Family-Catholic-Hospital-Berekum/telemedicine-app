@@ -82,14 +82,23 @@ patients' data by mistake.
      checks, reschedule fee rules, dashboard grouping) with Node's test
      runner. No setup, a second or two; **run it yourself** after changing
      `components/patient/` (GitHub doesn't).
+   - `npm run test:admin`: the admin pages' own logic (Overview figures,
+     report periods and CSV export, audit names). No setup.
    - `npm run test:functions` / `npm run test:rules`: server and database
      rules tests on the Firebase emulators (need Java 21). Changing rules:
-     add a test in `tests/rules/rules.test.mjs`.
+     add a test in `tests/rules/rules.test.mjs`. The emulator tests
+     (`functions/test/emulator/`) cover no-shows and refunds, no-show
+     fees, account deletion refunds, open-slot holds and free visits,
+     video relay credentials, patient sign-in reporting and the metrics
+     report.
    - `npm run test:e2e`: the **robot** (Playwright, `e2e/`) uses the
      website like a patient on a throwaway copy of the whole system:
      sign-up, booking and payment, joining a video call, the
-     doctor-waiting and doctor-missing rules, a refund request. About 4
-     minutes; needs Java 21. Paystack's own payment window can't be
+     doctor-waiting and doctor-missing rules, a refund request, and a
+     prescription written in the call, downloaded and checked. About 4
+     minutes on GitHub; needs Java 21. On a slow computer the emulators
+     can time out: if a test fails locally, compare with the run on
+     GitHub before suspecting the code. Paystack's own payment window can't be
      automated, so it is stood in for; check it by hand before go-live.
      Staff steps call the real staff functions with a token only the
      emulator accepts (staff need an authenticator). A run contacts no
@@ -137,6 +146,14 @@ nothing run on a developer's computer can reach real patients' data.
 
 After deploying functions, watch Cloud Logging for errors for a few
 minutes; the *Telemedicine function errors* alert emails the owner too.
+
+**Release order** when a change touches both the website and the server:
+deploy it to **test** first (push to `test`, then functions and rules with
+no `--project`), check it there, then live. On each project the website
+goes first when the server starts requiring something new from it (for
+example, patient sign-in reporting: website, then functions and rules
+together), and the server goes first when the website starts relying on a
+new function. Say which in the commit message.
 
 ### Test environment
 
@@ -337,27 +354,36 @@ installed app ("Holy Family") is separate and opens the patient dashboard.
 - **End-to-end tests:** `e2e/` (start with `e2e/helpers.mjs`).
 - **Owner scripts** (`functions/scripts/`, run locally, never deployed):
   `staffAdmin.js` (make-admin, reset-mfa, issue-setup-code, sync-claims…),
-  `resetTestPayments.js` (go-live only).
+  `resetTestPayments.js` (go-live only), `scrubStaffUids.js` (one-off,
+  already run on both projects on 29 Oct 2026; harmless to run again).
+  Each does a dry run unless given `--confirm <project id>`.
 
 ## 6. Known gaps (what I'd work on next)
 
-1. **Test coverage:** the robot covers the patient's main journeys; not
-   yet the admin and doctor screens themselves (their functions are
-   covered), no-show fee payment, rescheduling and patient deletion.
-   The manual [GO_LIVE_TEST_CHECKLIST.md](GO_LIVE_TEST_CHECKLIST.md)
-   covers the rest, and the real Paystack window. `npm run test:patient`
-   could be added to the *Build* workflow.
-2. **Data retention** isn't automated (audit log, consultation history,
+1. **Test coverage:** the robot covers the patient's main journeys and a
+   prescription; not yet the admin and doctor screens themselves (their
+   functions are covered by emulator tests), rescheduling in the browser
+   and patient deletion (covered by emulator tests). The manual
+   [GO_LIVE_TEST_CHECKLIST.md](GO_LIVE_TEST_CHECKLIST.md) covers the rest,
+   and the real Paystack window. `npm run test:patient` and
+   `npm run test:admin` could be added to the *Build* workflow.
+2. **Findings accepted after the 29 Oct 2026 security review** (doctor and
+   admin powers judged minor): listed in SECURITY_SETUP.md, "Security
+   review". The one I'd do first if anything changes: no "Mark done" on a
+   hospital visit before its start time (today a misclick closes it).
+3. **Data retention** isn't automated (audit log, consultation history,
    recordings are kept until the hospital decides periods).
-3. **Folder layout** (`src/` and `components/` importing each other) works
+4. **Folder layout** (`src/` and `components/` importing each other) works
    but could be unified.
-4. **Placeholders** to replace at launch: hospital phone and WhatsApp
+5. **Placeholders** to replace at launch: hospital phone and WhatsApp
    number in `components/shared/contact.js` and `functions/lib/mailConfig.js`.
-5. **Dependabot:** three alerts in the deploy job's Firebase CLI lockfile
+6. **Dependabot:** three alerts in the deploy job's Firebase CLI lockfile
    (`braces`, `@opentelemetry/core` 1.x, `uuid` 9) have no non-breaking fix;
    they're denial-of-service only and not reached by a hosting deploy, so
    they were dismissed with reasons (23 Oct 2026). Recheck when the
-   Firebase CLI is next updated.
+   Firebase CLI is next updated. #24 (`deepmerge`, low, 29 Oct 2026) is in
+   the offline-app build tooling only and has no fix published: dismiss it
+   as "not used in production" and recheck when `vite-plugin-pwa` updates.
 
 ## 7. Who decided what
 

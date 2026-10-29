@@ -36,7 +36,10 @@ script prints the project before doing anything. That Google account must itself
 | API key restriction | The public web key only works from the hospital's sites. | Google Cloud credentials |
 | Security headers | CSP, HSTS, no framing, etc. | `firebase.json` → `hosting.headers` |
 | Website publishing | Only GitHub Actions publishes the website, without any key file (Workload Identity Federation, locked to this repository, branch and environment), and only after the security pipeline (TruffleHog, ESLint, Semgrep, Snyk, GitGuardian) passes. A hosting deploy typed on a computer is refused. Visitors to Firebase's own addresses are sent to the hospital domain. | `.github/workflows/deploy-website.yml`; HANDOVER.md "Website deploys" |
-| New-device sign-in emails, leaked-password check, scam warnings | See "Stolen passwords and scams" below. | `lib/signInAlerts.js`, `src/passwordCheck.js` |
+| New-device sign-in emails, leaked-password check, scam warnings | See "Stolen passwords and scams" below. A patient sign-in can't use the account until it's reported, so the new-device email can't be skipped. | `lib/signInAlerts.js`, `src/passwordCheck.js`, `assertSignInReported` in `lib/core.js`, `isPatient()` in `firestore.rules` |
+| Open times can't be hoarded | An unpaid booking doesn't hold its slot; a slot is held only while Paystack reports a payment under way (15 min), and goes to whoever's payment is confirmed. A free hospital visit (pay at the hospital) is limited to one open visit per account and per phone number. | `functions/payments.js` |
+| Nothing staff-only in what patients read | Patient-readable records (bookings, history, refund requests, profiles) and public settings carry no staff uid or admin note; who did what is in the audit log. | `lib/consultationLifecycle.js`, `siteSettings.js` |
+| Video relay only during a call | Cloudflare relay credentials are issued only to someone in the video room, inside the join window. | `getTurnCredentials` in `consultations.js` |
 | Rule tests | `npm run test:rules` checks the access rules on the emulator (needs Java 21). Also run on GitHub for every push that changes the rules. | `tests/rules/`, `.github/workflows/rules-tests.yml` |
 
 ---
@@ -253,6 +256,52 @@ dashboard. Their hospital admin account is enough.
   Google mail (`google._domainkey`). Once that's on and the DMARC reports
   to `report@hfhberekum.org` look clean for a few weeks, change DMARC to
   `p=reject`.
+
+## Security review, 29 October 2026
+
+A full review before launch, one kind of user at a time (patient, doctor,
+admin): the code was read and every suspected weakness was then attacked
+on the local emulators to prove it. Nothing let a patient read another
+patient's data, act as staff, pay less than the fee or get round the
+two-admin rules.
+
+**Fixed (patient side), deployed to test and live on 29 Oct 2026:**
+
+| What could happen | Fix |
+|---|---|
+| A no-show fee paid once reopened the booking again after a second no-show. | Each no-show counts only its own fee payments (`noShowFeeRefs`); every fee paid is kept (`noShowFees`). |
+| Deleting one's own account (Firebase allows it) refunded everything in full, including a missed appointment and no-show fees. | Deletion refunds only what a refund request would give (hospital decision): not attended yet in full, a missed one minus the share kept, fees kept. |
+| The admin's note on "doctor can't make it", and staff uids, were readable by patients and, on public settings, by anyone. | Removed; who did what stays in the audit log. Old records cleaned with `scripts/scrubStaffUids.js` on both projects. |
+| Throwaway accounts could hold every open time without paying. | Slots are held only during a real payment; free hospital visits limited per phone number too. |
+| Video relay credentials could be collected days ahead. | Only for someone in the call. |
+| Someone with a stolen patient password could skip the new-device email. | A sign-in must be reported before the account can be used. |
+| A patient could flood the doctor's call screen with connection data. | The call screen keeps only the newest few sessions' data. |
+
+**Accepted by the hospital (judged minor; revisit if the situation changes):**
+
+- *Doctors:* a doctor's call screen alone can mark a video consultation as
+  having taken place (which unlocks "completed" and a prescription and
+  ends the patient's refund right); a doctor can close a hospital visit as
+  completed before it happens (the card offers "Mark done" on any hospital
+  visit, so also by mistake; an admin can still refund manually); the
+  room-computer key can be copied to another computer; recording runs in
+  the doctor's browser (it can be stopped early); doctors can change their
+  own displayed name and department.
+- *Admins:* one admin can create a doctor account for an email they
+  control (they're given its setup code), which could issue prescriptions
+  the check page shows as valid. Keep the number of admins small, review
+  `staff.created` in the audit log, and pharmacists should check MDC
+  numbers against the Medical and Dental Council register. The two-admin
+  rule for metrics reports records who downloaded; the preparing admin
+  already sees the figures. Site-image changes are audited without a code.
+- *Platform:* during their own call a participant can write many
+  signalling documents (a cost, covered by the budget alert); Dependabot
+  #24 (`deepmerge`, build tooling only, no fix published) can be
+  dismissed as "not used in production".
+
+Not covered by the review: console-only settings (checked against this
+guide, not inspected), load testing, Data Protection Act compliance, and
+an independent penetration test (recommended before or soon after launch).
 
 ## Still to do
 
