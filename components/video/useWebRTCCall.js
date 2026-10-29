@@ -53,6 +53,8 @@ const AUDIO_CONSTRAINTS = {
   autoGainControl: true,
 };
 const MAX_VIDEO_BITRATE = 1_500_000;
+// Offers/answers whose ICE candidates are kept while they're on their way.
+const MAX_PENDING_SESSIONS = 8;
 
 const callGetTurnCredentials = httpsCallable(functions, "getTurnCredentials");
 const callStartVideoCall = httpsCallable(functions, "startVideoCall");
@@ -173,6 +175,13 @@ export function useWebRTCCall({ consultationId, role, patientSeq, onEnded }) {
       if (session === remoteSessionId && pcRef.current) {
         pcRef.current.addIceCandidate(new RTCIceCandidate(candidate)).catch(() => {});
       } else {
+        // Kept until that offer/answer arrives: at most 100 candidates for
+        // each of the MAX_PENDING_SESSIONS newest sessions (a real call has
+        // one or two), so the other side can't fill this browser's memory
+        // by inventing sessions. The rules can't count them.
+        if (!pendingCandidates.has(session) && pendingCandidates.size >= MAX_PENDING_SESSIONS) {
+          pendingCandidates.delete(pendingCandidates.keys().next().value);
+        }
         const list = pendingCandidates.get(session) || [];
         if (list.length < 100) list.push(candidate);
         pendingCandidates.set(session, list);
