@@ -14,7 +14,7 @@ developer adds the new one and then removes themselves.
 | Service | What for | Access the new developer needs |
 |---|---|---|
 | **GitHub** organisation `Holy-Family-Catholic-Hospital-Berekum`, repo `telemedicine-app` | Source code, CI | Member with write access (owner: hospital IT) |
-| **Google Cloud / Firebase** project `telemedicine-hfch` | Back end, database, auth, logs, alerts, budget | IAM role *Owner* or *Editor* (Owner is needed for the staffAdmin script and IAM changes) |
+| **Google Cloud / Firebase** projects `telemedicine-hfch` (live) and `telemedicine-hfch-test` (test) | Back end, database, auth, logs, alerts, budget | IAM role *Owner* or *Editor* on both (Owner is needed for the staffAdmin script and IAM changes) |
 | **Google Cloud billing** account (Firebase Payment) | Pays for Firebase; budget alerts | *Billing account viewer* at least |
 | **Paystack** dashboard | Payments, refunds, webhook URL, API keys | Developer role |
 | **Brevo** | Emails (since 13 Oct 2026; free plan 300/day); API keys `telemedicine-live` / `telemedicine-test`; domain `mail.hfhberekum.org` authenticated; **Authorised IPs must stay off** (Google's servers change address) | Team member |
@@ -49,21 +49,21 @@ Secrets never live in the repo:
    ```
 3. Sign in to the tools: `firebase login`, `gcloud auth login`, and for
    scripts that use the Admin SDK `gcloud auth application-default login`.
-   `firebase use` should show `telemedicine-hfch`.
-4. Create `.env` from `.env.example` (values from Firebase console, the
-   GitHub `test` environment and the hospital; the staff path from the
-   hospital).
-5. **App Check:** it's enforced on the live project, so local development
-   needs a debug token: Firebase console → App Check → Apps → web app →
-   *Manage debug tokens* → add one, put it in `.env` as
-   `VITE_APPCHECK_DEBUG_TOKEN`. Delete it when you stop developing.
+   `firebase use` should show `test` (`telemedicine-hfch-test`).
+4. Create `.env` from `.env.example` with the **test** project's values
+   (`firebase apps:sdkconfig WEB --project test`, the GitHub `test`
+   environment; the staff path from the hospital).
+5. **App Check:** it's enforced on both projects, so local development
+   needs a debug token: Firebase console → **test project** → App Check →
+   Apps → web app → *Manage debug tokens* → add one, put it in `.env` as
+   `VITE_APPCHECK_DEBUG_TOKEN`. Delete it when you stop developing. Never
+   add one to the live project.
 6. `npm run dev` → http://localhost:5173.
 
-**Important: there is no separate test project.** Local development talks
-to the **live** Firebase project (live database, live emails). Use test
-accounts, never real patients' data, and be careful with anything that
-writes. A separate test Firebase project is a worthwhile improvement
-(see section 6).
+Local development always talks to the **test** project (its own database,
+accounts and test payments; see "Test environment" in section 4). Live's
+browser key doesn't accept `localhost`, so a computer can't reach real
+patients' data by mistake.
 
 ## 3. Making a change
 
@@ -72,10 +72,16 @@ writes. A separate test Firebase project is a worthwhile improvement
 2. `npm run lint` and `npm run build` must pass. The pre-commit hook runs
    a secret scan and lint on staged files. If TruffleHog blocks a commit
    but lists no finding, it's a known glitch: just commit again.
-3. Tests (GitHub runs all of them on every push to `main` or `test`):
+3. Tests (GitHub runs all but the patient-page tests on pushes to `main`
+   or `test` that touch the code they cover):
    - `cd functions && npm test`: server unit tests (waiting rule, refund
-     amounts, age, reminders, metrics report, scheduled jobs, email
+     amounts, age, reminders, late reschedule fee, prescriptions,
+     caller IP, sign-in alerts, metrics report, scheduled jobs, email
      services, error scrubbing). No setup.
+   - `npm run test:patient`: the patient pages' own logic (booking form
+     checks, reschedule fee rules, dashboard grouping) with Node's test
+     runner. No setup, a second or two; **run it yourself** after changing
+     `components/patient/` (GitHub doesn't).
    - `npm run test:functions` / `npm run test:rules`: server and database
      rules tests on the Firebase emulators (need Java 21). Changing rules:
      add a test in `tests/rules/rules.test.mjs`.
@@ -90,6 +96,9 @@ writes. A separate test Firebase project is a worthwhile improvement
      outside service (email, Paystack and the video relay are switched off
      in `functions/.env.demo-telemedicine`, emulator only).
    - *Build* (GitHub) lints and builds the website on every push.
+   - *Security audit* (GitHub: TruffleHog, ESLint, Semgrep, Snyk,
+     GitGuardian) runs on every push and must pass before the website is
+     published. Before pushing, a Snyk scan of your changes is worthwhile.
    Try risky changes on the **test environment** first (section 4).
 4. Keep [CLAUDE.md](CLAUDE.md) up to date when behaviour changes; it's the
    reference the next person (or an AI assistant) relies on.
@@ -223,11 +232,14 @@ key file exists anywhere:
   `VITE_FIREBASE_STORAGE_BUCKET`, `VITE_FIREBASE_MESSAGING_SENDER_ID`,
   `VITE_FIREBASE_APP_ID`, `VITE_PAYSTACK_PUBLIC_KEY`,
   `VITE_RECAPTCHA_ENTERPRISE_SITE_KEY`, `VITE_SITE_URL`,
-  `GCP_WORKLOAD_IDENTITY_PROVIDER`
+  `VITE_CANONICAL_REDIRECT` (`live` only, `on`; see "The hospital
+  domain"), `GCP_WORKLOAD_IDENTITY_PROVIDER`
   (`projects/<number>/locations/global/workloadIdentityPools/github/providers/telemedicine-app`;
   live `973381621706`, test `608175505205`) and
   `GCP_DEPLOY_SERVICE_ACCOUNT`. Secret: `VITE_STAFF_LOGIN_PATH`. Never set
-  `VITE_APPCHECK_DEBUG_TOKEN` there.
+  `VITE_APPCHECK_DEBUG_TOKEN` there. `VITE_SEARCH_INDEXING` isn't a
+  variable: the workflow sets it from the branch (`on` for `main`, `off`
+  for `test`).
 - The workflow refuses to publish a build for the wrong project, without
   the staff path, or with Firebase in the first download.
 - A site address is also listed in each project's reCAPTCHA key (App
@@ -245,7 +257,9 @@ key file exists anywhere:
   update: change the version in its `package.json`, run
   `npm install --package-lock-only --ignore-scripts` there, commit both).
   Actions are pinned to commit SHAs. The build is refused if it contains an
-  App Check debug token, emulator addresses or source maps.
+  App Check debug token, emulator addresses or source maps. The security
+  pipeline gets only the Snyk and GitGuardian keys, and only the deploy job
+  may ask Google for a token.
 - **Who can deploy live = who can push to `main`.** Keep write access to
   the repository to the people who need it, require two-factor sign-in in
   the GitHub organisation, and protect `main` and `test` (Settings → Rules
@@ -296,6 +310,12 @@ installed app ("Holy Family") is separate and opens the patient dashboard.
   - Payments, drafts, refunds of unusable payments, reconciliation:
     `functions/payments.js`, `functions/reconcile.js`, `functions/refunds.js`,
     `functions/refundSync.js`.
+  - Late reschedule fee: `functions/lateReschedule.js` (rules in
+    `rescheduleNeedsLateFee`, `lib/consultationLifecycle.js`).
+  - Prescriptions: `functions/prescriptions.js` (who may issue, when) and
+    `functions/lib/prescriptionPdf.js` (the server-built PDF).
+  - Real caller IP for limits and audit: `clientIp` in `functions/lib/core.js`
+    (comment explains why it's the right-most `X-Forwarded-For` entry).
   - Deleting a patient: `functions/lib/accountDeletion.js`.
   - Video calls: `components/video/` (`useWebRTCCall.js` header explains
     the signalling protocol).
@@ -305,6 +325,12 @@ installed app ("Holy Family") is separate and opens the patient dashboard.
   in `functions/jobs.js` (every minute / every 15 minutes / daily 02:00).
   A new task: give it one of the schedules jobs.js lists and add it to
   `TASKS` in `index.js`.
+- **Patient pages:** `components/patient/`. Page files stay short and
+  import their parts: the booking page's steps, cards and payment calls
+  are in `booking/` with its checks in `bookingForm.js`; Home's sections in
+  `home/`; the dashboard's fee rules in `dashboard/rescheduleRules.js` and
+  grouping in `dashboard/patientUtils.js`. Logic worth testing goes in a
+  plain `.js` file (tests in `components/patient/tests/`).
 - **Email service:** `functions/lib/mailProvider.js` (Resend or Brevo,
   setting `MAIL_PROVIDER`).
 - **Website errors:** `src/errorReporting.js` -> `functions/clientErrors.js`.
@@ -319,13 +345,19 @@ installed app ("Holy Family") is separate and opens the patient dashboard.
    yet the admin and doctor screens themselves (their functions are
    covered), no-show fee payment, rescheduling and patient deletion.
    The manual [GO_LIVE_TEST_CHECKLIST.md](GO_LIVE_TEST_CHECKLIST.md)
-   covers the rest, and the real Paystack window.
+   covers the rest, and the real Paystack window. `npm run test:patient`
+   could be added to the *Build* workflow.
 2. **Data retention** isn't automated (audit log, consultation history,
    recordings are kept until the hospital decides periods).
 3. **Folder layout** (`src/` and `components/` importing each other) works
    but could be unified.
 4. **Placeholders** to replace at launch: hospital phone and WhatsApp
    number in `components/shared/contact.js` and `functions/lib/mailConfig.js`.
+5. **Dependabot:** three alerts in the deploy job's Firebase CLI lockfile
+   (`braces`, `@opentelemetry/core` 1.x, `uuid` 9) have no non-breaking fix;
+   they're denial-of-service only and not reached by a hosting deploy, so
+   they were dismissed with reasons (23 Oct 2026). Recheck when the
+   Firebase CLI is next updated.
 
 ## 7. Who decided what
 

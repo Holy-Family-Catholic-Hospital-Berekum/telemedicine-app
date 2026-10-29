@@ -66,8 +66,8 @@ let the browser read only what each person may see.
 | Payments | Paystack (mobile money), webhook + daily reconciliation |
 | Email | Brevo (verified domain `mail.hfhberekum.org`; Resend also supported, `MAIL_PROVIDER`) |
 | Video | WebRTC; Cloudflare TURN relay |
-| Hosting | Firebase Hosting (website), Firebase (back end) |
-| Quality / security | ESLint (+ security plugin), Husky pre-commit (TruffleHog secret scan, lint), GitHub Actions (TruffleHog, ESLint, Semgrep, Snyk, GitGuardian, rules tests) |
+| Hosting | Firebase Hosting (website, published only by GitHub Actions), Firebase (back end); a separate test project and site |
+| Quality / security | ESLint (+ security plugin), Husky pre-commit (TruffleHog secret scan, lint), GitHub Actions (TruffleHog, ESLint, Semgrep, Snyk, GitGuardian, which must pass before the website is published; unit, rules, emulator and end-to-end tests) |
 
 ## Folders
 
@@ -76,7 +76,8 @@ src/                 App shell: routes (App.jsx), Firebase setup, auth,
                      shared helpers (dates, consent text, site settings),
                      sign-in / sign-up pages.
 components/
-  patient/           Home page, booking page, patient dashboard.
+  patient/           Home page (sections in home/), booking page (steps in
+                     booking/), patient dashboard, and their tests.
   doctor/            Doctor portal.
   admin/             Admin portal (one file per tab).
   video/             Video calls (WebRTC, call screen, recording).
@@ -89,6 +90,7 @@ functions/           Cloud Functions (the back end).
   scripts/           Owner-only scripts run on a laptop, never deployed
                      (making admins, resetting authenticators, go-live).
 tests/rules/         Database/storage rules tests (emulators).
+e2e/                 End-to-end robot tests (Playwright, emulators).
 firestore.rules      Who may read what (database).
 storage.rules        Who may read what (files).
 firebase.json        Firebase settings, incl. website headers (security policy) and routing.
@@ -108,6 +110,7 @@ npm run lint           # ESLint for the website and functions
 npm run test:rules     # rules tests on the Firebase emulators (Java 21)
 npm run test:functions # server tests on the emulators (Java 21)
 npm run test:e2e       # end-to-end robot tests on the emulators (Java 21)
+npm run test:patient   # patient-page logic: booking form, reschedule fees (no setup)
 cd functions && npm test   # server unit tests (no setup)
 npm run deploy:functions   # deploy only changed functions (test; add -- --project live)
 
@@ -118,8 +121,10 @@ firebase deploy --only firestore,storage --project live   # rules and indexes
 ```
 
 The website deploys itself: every push to `main` on GitHub is built and
-published to Firebase Hosting by GitHub Actions (`test` goes to the test
-project). See [HANDOVER.md](HANDOVER.md) for the details and the
+published to Firebase Hosting by GitHub Actions once the security checks
+pass (`test` goes to the test site,
+https://telemedicine-hfch-test.web.app). It can't be deployed from a
+computer. See [HANDOVER.md](HANDOVER.md) for the details and the
 deployment quirks.
 
 ## Documentation

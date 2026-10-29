@@ -25,7 +25,8 @@ script prints the project before doing anything. That Google account must itself
 | Password policy | 10+ characters, upper and lower case, number, symbol. | Firebase Authentication |
 | Sign-in reCAPTCHA (audit) | Every email/password sign-in and sign-up is scored by reCAPTCHA; nothing is blocked (see "Still to do"). | Firebase Authentication |
 | Email enumeration protection | Sign-in doesn't reveal which emails have accounts. | Firebase Authentication |
-| Rate limits | Per-account limits on every function that could be abused; forged payment webhooks are audited at most 10/hour per sender. | `lib/core.js rateLimit` |
+| Rate limits | Per-account limits on every function that could be abused, plus per-address limits on sign-up (30/h), new bookings (40/h) and the signed-out functions (prescription check, error reports); forged payment webhooks are audited at most 10/hour per sender. Limits are generous because many phones share one mobile-network address. | `lib/core.js rateLimit`, `rateLimitIp` |
+| Real caller address | Consent records, the audit log and per-address limits use the address Google itself saw (right-most `X-Forwarded-For` entry), which a caller can't fake. | `lib/core.js clientIp` |
 | Backups | Point-in-time recovery (any minute, last 7 days) + daily backup kept 7 days + database delete protection. | Firestore |
 | Tamper-proof audit copy | Every audit entry is copied to the `audit-locked` log bucket (365 days). | `mirrorAuditLog` → log sink `audit-to-locked` |
 | Security alerts | Email to the security contact on: failed/refused staff sign-in steps, authenticator resets, staff sign-in email changes, screenshot attempts, forged payment webhooks, recording deletion requests and deletions, missing recordings. Recommended: add `doctor.prescriber_changed` (a doctor's prescription signature or MDC number changed) to the policy's filter (see "Audit log and alerts"). | Cloud Monitoring policy *Telemedicine security event* |
@@ -34,6 +35,8 @@ script prints the project before doing anything. That Google account must itself
 | App Check | Requests carry proof they come from the real site (reCAPTCHA Enterprise). **Enforced** on Firestore, Storage, Authentication and (since 11 Oct 2026) every callable function. | Firebase console; `functions/lib/securityConfig.js` |
 | API key restriction | The public web key only works from the hospital's sites. | Google Cloud credentials |
 | Security headers | CSP, HSTS, no framing, etc. | `firebase.json` → `hosting.headers` |
+| Website publishing | Only GitHub Actions publishes the website, without any key file (Workload Identity Federation, locked to this repository, branch and environment), and only after the security pipeline (TruffleHog, ESLint, Semgrep, Snyk, GitGuardian) passes. A hosting deploy typed on a computer is refused. Visitors to Firebase's own addresses are sent to the hospital domain. | `.github/workflows/deploy-website.yml`; HANDOVER.md "Website deploys" |
+| New-device sign-in emails, leaked-password check, scam warnings | See "Stolen passwords and scams" below. | `lib/signInAlerts.js`, `src/passwordCheck.js` |
 | Rule tests | `npm run test:rules` checks the access rules on the emulator (needs Java 21). Also run on GitHub for every push that changes the rules. | `tests/rules/`, `.github/workflows/rules-tests.yml` |
 
 ---
@@ -197,6 +200,13 @@ with only:
 `roles/eventarc.eventReceiver`, and *Service Account Token Creator* on
 itself (to sign 10-minute recording links).
 
+The website is published as `website-deployer@<project>` (one per
+project), which can only publish hosting (*Firebase Hosting Admin*,
+*Service Usage Viewer*) and can only be used by this repository's GitHub
+Actions on the matching branch. It has no key. Who can push to `main` can
+therefore change the live website: keep the repository's write access
+small and two-factor sign-in required in the GitHub organisation.
+
 Keep human Owners to the minimum (today: one), each with 2-Step
 Verification. Don't give Editor or Owner to anyone who only needs the admin
 dashboard. Their hospital admin account is enough.
@@ -211,8 +221,10 @@ dashboard. Their hospital admin account is enough.
   through `confirmStaffSession` (staff also get the audit line
   `staff.new_device`). The first browser an account is seen on is recorded
   silently, and at most 5 emails go to one account a day
-  (`functions/lib/signInAlerts.js`). If a staff member says "that wasn't
-  me": deactivate the account (Users tab), reset their authenticator
+  (`functions/lib/signInAlerts.js`). For the security contact to hear of
+  every new staff browser too, make sure `staff.new_device` is in the
+  security alert's filter (see "Audit log and alerts"). If a staff member
+  says "that wasn't me": deactivate the account (Users tab), reset their authenticator
   (doctors: Users tab; admins: `staffAdmin.js reset-mfa`), and have them
   choose a new password.
 - **The email can't be skipped (patients).** A patient account can't be

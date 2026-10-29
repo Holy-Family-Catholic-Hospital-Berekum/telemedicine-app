@@ -18,6 +18,11 @@ step fails, note what you saw and the time.
 
 - [ ] Patient signs up with a new email: adult declaration asked, sign-up
       works (reCAPTCHA runs invisibly; no error).
+- [ ] Sign-up with a well-known leaked password (e.g. `Password123!`) is
+      refused and asks for another one.
+- [ ] Sign in as the patient on a second browser or phone: "New sign-in"
+      email arrives (not for the very first browser). Same for a doctor on
+      a new computer (email without a link).
 - [ ] Verification email arrives; until it's verified, booking is refused.
 - [ ] Patient signs in; "Remember me" keeps them signed in after closing
       the browser, unticked it doesn't.
@@ -36,6 +41,12 @@ step fails, note what you saw and the time.
 - [ ] Book for **your child**: under-18 age accepted, 18+ refused; for a
       child under 2 the months box appears; guardian consent asked.
 - [ ] Book a **hospital visit**: no age/sex/location asked.
+- [ ] Control panel → Payment for hospital visits off: a hospital visit is
+      booked at once without Paystack ("pay at the hospital"); a second one
+      is refused while the first is open. Switch it back afterwards.
+- [ ] The payment step, the footer, the WhatsApp panel and the booking
+      emails all carry the warning that the hospital never asks for money
+      or a PIN by call, text or WhatsApp.
 - [ ] Admin receives the "New booking" email.
 - [ ] Close the Paystack window without paying: no booking appears, and a
       new booking is allowed afterwards.
@@ -72,6 +83,10 @@ step fails, note what you saw and the time.
       the hospital form with logo, doctor's name, MDC number, signature and
       QR code. Scanning the QR on another phone opens the check page:
       "Valid prescription" with the same medicines and no patient name.
+- [ ] A prescription with the maximum 10 medicines, long instructions and
+      a note with line breaks: if it doesn't fit, the PDF continues on a
+      second page with the headings and booking reference repeated; the
+      note keeps its lines.
 - [ ] Doctor → Prescriptions → **Cancel**: the patient sees "cancelled",
       can't download it, and the check page says "Cancelled by the doctor".
 - [ ] Doctor taps **Mark done → Close as completed**: booking moves to
@@ -102,9 +117,15 @@ Repeat with a new booking for each case:
 - [ ] Less than 24 hours before: the button shows the fee; paying it sends
       the request ("late fee paid" on the admin's request); closing the
       payment window leaves the appointment as it was.
+- [ ] Admin gives that request a new time less than 24 hours ahead: the
+      email says it can be changed free until a time one hour later; a
+      change in that hour is free, after it the fee applies again (a
+      second late change is charged again).
 - [ ] Doctor's "Call couldn't be completed": the patient's card says "Your
       consultation couldn't be completed" (not "doctor can't make it"); the
-      admin can give it a new time.
+      patient can send a preferred time; the admin can give it a new time.
+- [ ] A missed appointment, or one the doctor can't make, shows no
+      "Your consultation is live / Rejoin call" banner on the dashboard.
 
 ## 5. After a no-show
 
@@ -125,7 +146,16 @@ Repeat with a new booking for each case:
 - [ ] Control panel → Legal: the privacy policy shows the current wording
       (see SECURITY_SETUP.md, "Publish the current privacy policy").
 
-## 7. Phones and weak connections
+## 7. Website address
+
+- [ ] https://telemedicine-hfch.web.app and
+      https://telemedicine-hfch.firebaseapp.com open the hospital address
+      (https://telemedicine.hfhberekum.org) instead.
+- [ ] The padlock shows a valid certificate on the hospital address.
+- [ ] The test site (https://telemedicine-hfch-test.web.app) shows
+      `Disallow: /` in `/robots.txt`.
+
+## 8. Phones and weak connections
 
 - [ ] Android: the "Add the app to your phone" popup appears on the
       dashboard; adding works; the icon and name "Holy Family" look right.
@@ -134,7 +164,7 @@ Repeat with a new booking for each case:
       a white screen); it reloads by itself when the connection is back.
 - [ ] On a slow connection the "Your connection is slow" bar appears.
 
-## 8. After the pass
+## 9. After the pass
 
 - [ ] No unexpected "Telemedicine function errors" alert emails.
 - [ ] Clear the test data (SECURITY_SETUP.md, "Payments go-live checklist").
