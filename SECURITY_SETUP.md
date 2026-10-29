@@ -163,10 +163,14 @@ Admins can't delete accounts in the app, only deactivate them (hospital
 decision, 28 Oct 2026). When a patient asks to be deleted, a project Owner
 deletes the account in the Firebase console (Authentication → Users); the
 daily maintenance run (within 24 hours) then removes every booking of
-theirs and refunds in full anything they paid for a consultation that
-never took place (Payment issues, "Patient account deleted before the
-consultation"). History, payment records, consents, audit log and
-recordings are kept.
+theirs and refunds what they could have asked for anyway (hospital
+decision, 29 Oct 2026; Payment issues, "Patient account deleted"): a
+consultation not had yet in full, a missed one minus the no-show share,
+nothing for one that took place; no-show and late reschedule fees are
+kept. A patient can also delete their own account from the browser
+(Firebase allows it), which is handled the same way, so deleting an
+account never gets round the no-show policy. History, payment records,
+consents, audit log and recordings are kept.
 
 ## Data retention (to decide)
 

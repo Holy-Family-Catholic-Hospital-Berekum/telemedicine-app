@@ -1,20 +1,30 @@
 // functions/lib/accountDeletion.js
 //
-// What happens to a patient's data when their account is deleted in the
-// Firebase console (admins can't delete accounts in the app), found by the
-// daily sweep: sweepDeletedPatients below.
+// What happens to a patient's data when their account is deleted, found by
+// the daily sweep (sweepDeletedPatients below). Admins can't delete
+// accounts in the app; the hospital deletes them in the Firebase console,
+// and a patient can delete their own from the browser (Firebase allows it;
+// sign-up relies on it to undo a half-made account). The sweep can't tell
+// which, so both are treated the same.
 //
 //   - Every booking of theirs is removed with its consultation, call room,
 //     held slot and queued emails. A consultation that was scheduled is
 //     closed through closeConsultation first, so a short history record is
 //     kept like for any other consultation (outcome "cancelled", or
 //     "no_show" for a held no-show), flagged accountDeleted.
-//   - Money (hospital decision): every payment for a booking that never
-//     took place (the patient and doctor were never connected) is refunded
-//     IN FULL automatically, the consultation fee and any no-show fee,
-//     through the same path as other payments we can't use (paymentIssues,
-//     reason "account_deleted"). A refund already requested is settled by
-//     that instead, never twice.
+//   - Money (hospital decision, 29 Oct 2026): exactly what the patient
+//     could get by asking for a refund (refunds.js), so deleting an account
+//     never gets round the no-show policy (refundOnDeletion):
+//       consultation not attended yet (or the doctor couldn't make it): the
+//         consultation payment in full;
+//       a held no-show: what was paid minus the share the policy keeps;
+//       one that took place: nothing;
+//       no-show and late reschedule fees: kept (they paid for a slot the
+//         patient lost).
+//     Refunded automatically through the same path as other payments we
+//     can't use (paymentIssues, reason "account_deleted"). A refund already
+//     under way is left to finish, never paid twice; one only asked for is
+//     closed, as this settles it.
 //   - Their prescriptions (and the signature copies on them) are deleted.
 //   - Their profile (users/{uid}) is deleted.
 //   - Kept, as for every consultation: consultationHistory, confirmedPayments,
@@ -24,24 +34,25 @@
 const logger = require("firebase-functions/logger");
 const { db, FieldValue, serverTime, audit, deleteTree } = require("./core");
 const { closeConsultation } = require("./consultationLifecycle");
+const { noShowSplit } = require("./money");
 
-/** The Paystack payments on a booking that can still be refunded in full. */
-function refundablePayments(booking) {
-  const payments = [];
-  if (booking.paystackReference && Number(booking.amountPaid) > 0) {
-    payments.push({
-      reference: booking.paystackReference,
-      amount: Number(booking.amountPaid),
-      id: booking.paystackTransactionId || null,
-    });
-  }
-  if (booking.noShowFee?.reference && Number(booking.noShowFee.amount) > 0) {
-    payments.push({ reference: booking.noShowFee.reference, amount: Number(booking.noShowFee.amount), id: null });
-  }
-  for (const f of booking.lateRescheduleFees || []) {
-    if (f.reference && Number(f.amount) > 0) payments.push({ reference: f.reference, amount: Number(f.amount), id: null });
-  }
-  return payments;
+/**
+ * What deleting the account refunds for one booking (see the header):
+ * { reference, amount (GHS), id } of the consultation payment, or null.
+ * Fees for a no-show or a late reschedule are never refunded here.
+ */
+function refundOnDeletion(booking) {
+  const paid = Number(booking.amountPaid || 0);
+  if (!booking.paystackReference || !(paid > 0)) return null;
+  if (!["paid", "scheduled", "no_show"].includes(booking.status)) return null;
+  // Took place (the two were connected), unless the doctor then reported
+  // the call couldn't be completed.
+  if (booking.metAt && !booking.doctorUnavailable) return null;
+  const amount = booking.status === "no_show"
+    ? noShowSplit(paid, booking.noShowTerms?.forfeitPercent ?? 0).refund
+    : paid;
+  if (!(amount > 0)) return null;
+  return { reference: booking.paystackReference, amount, id: booking.paystackTransactionId || null };
 }
 
 /**
@@ -59,39 +70,34 @@ async function purgePatientData(uid, { actor, meta = null }) {
   for (const doc of bookings.docs) {
     const b = doc.data();
     summary.bookings += 1;
-    const tookPlace = Boolean(b.metAt);
-
-    // 1. Refund in full what was paid for a consultation that never happened.
-    if (!tookPlace && ["paid", "scheduled", "no_show"].includes(b.status)) {
-      // A refund the patient already asked for settles it instead.
-      let refundUnderWay = false;
-      if (b.consultationId) {
-        // deepcode ignore Sqli: Firestore document ID, not SQL; consultationId read from the server-written booking.
-        const reqRef = db.collection("refundRequests").doc(b.consultationId);
-        const req = await reqRef.get();
-        if (req.exists) {
-          const status = req.data().status;
-          if (["refund_starting", "processing", "refunded"].includes(status)) {
-            refundUnderWay = true;
-          } else if (["requested", "failed"].includes(status)) {
-            await reqRef.update({
-              status: "declined",
-              note: "Account deleted: refunded in full automatically.",
-              resolvedByUid: actor.uid,
-              resolvedAt: serverTime(),
-            });
-          }
+    // 1. Refund what the patient could have asked for (refundOnDeletion).
+    //    A refund already under way settles it instead; one only asked for
+    //    is closed, as this settles it.
+    let refundUnderWay = false;
+    if (b.consultationId) {
+      // deepcode ignore Sqli: Firestore document ID, not SQL; consultationId read from the server-written booking.
+      const reqRef = db.collection("refundRequests").doc(b.consultationId);
+      const req = await reqRef.get();
+      if (req.exists) {
+        const status = req.data().status;
+        if (["refund_starting", "processing", "refunded"].includes(status)) {
+          refundUnderWay = true;
+        } else if (["requested", "failed"].includes(status)) {
+          await reqRef.update({
+            status: "declined",
+            note: "Account deleted: any refund due was made automatically.",
+            resolvedAt: serverTime(),
+          });
         }
       }
-      if (!refundUnderWay) {
-        for (const p of refundablePayments(b)) {
-          await recordPaymentIssue(
-            { reference: p.reference, amount: Math.round(p.amount * 100), currency: b.currency || "GHS", id: p.id },
-            { reason: "account_deleted", bookingId: doc.id, patientUid: uid },
-          );
-          summary.refunds += 1;
-        }
-      }
+    }
+    const refund = refundUnderWay ? null : refundOnDeletion(b);
+    if (refund) {
+      await recordPaymentIssue(
+        { reference: refund.reference, amount: Math.round(refund.amount * 100), currency: b.currency || "GHS", id: refund.id },
+        { reason: "account_deleted", bookingId: doc.id, patientUid: uid },
+      );
+      summary.refunds += 1;
     }
 
     // 2. A consultation: close it (history kept), which also deletes the
@@ -215,4 +221,4 @@ async function sweepDeletedPatients() {
   return purged;
 }
 
-module.exports = { purgePatientData, sweepDeletedPatients };
+module.exports = { purgePatientData, sweepDeletedPatients, refundOnDeletion };

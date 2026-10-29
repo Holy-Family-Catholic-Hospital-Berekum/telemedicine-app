@@ -28,7 +28,7 @@ const REASONS = {
   duplicate_payment: "Paid twice for the same booking",
   no_matching_booking: "Paid after the booking expired or was removed",
   amount_mismatch: "Amount didn't match the booking",
-  account_deleted: "Patient account deleted before the consultation",
+  account_deleted: "Patient account deleted: refund of a consultation not had (minus the no-show share, if missed)",
 };
 
 export default function PaymentIssuesPanel({ callAdmin }) {

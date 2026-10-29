@@ -192,7 +192,8 @@ If you are not happy with how we handle your information, you can complain to Gh
 - Each consultation can be either rescheduled or refunded, not both.
 - If your doctor could not join your online consultation, you can reschedule it at no extra cost. If you need help, call the hospital.
 - The hospital reviews each refund request. Approved refunds are sent through Paystack back to the mobile money wallet you paid from; it can take a few working days to arrive.
-- If you are charged twice for the same booking, or your payment arrives after your booking has expired, the payment we cannot use is refunded to you in full automatically.`,
+- If you are charged twice for the same booking, or your payment arrives after your booking has expired, the payment we cannot use is refunded to you in full automatically.
+- If your account is deleted, we refund automatically what you could have asked for: in full for an appointment you have not had yet, or that your doctor could not make; for a missed appointment, what you paid minus the share the hospital keeps. No-show fees and late reschedule fees are not refunded, because they pay for an appointment time that was lost.`,
       },
       {
         id: "conduct",
