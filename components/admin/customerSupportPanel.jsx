@@ -13,7 +13,15 @@ import { LoadOlder } from "../shared/pagination.jsx";
 // Customer support tab: patients' messages from the Help button
 // (functions/support.js). Replies reach the patient in the app and by
 // email, signed "Holy Family support"; who wrote each one is kept for
-// admins only (supportStaff) and in the audit log. Messages are shown as
+// admins only (supportStaff) and in the audit log.
+//
+// Besides replying, an admin can move a conversation without writing:
+//   No reply needed   waiting -> answered (the patient's "ok, thanks")
+//   Needs follow-up   answered -> waiting (after "we'll get back to you",
+//                     so it isn't closed automatically)
+//   Reopen            closed -> waiting
+//   Send and close    a final answer, closed in the same step
+// None of these email the patient (only a reply does). Messages are shown as
 // plain text (never HTML, links not clickable). Closed conversations are
 // deleted 30 days after closing; answered ones close themselves after 7
 // days without a reply from the patient.
@@ -27,6 +35,12 @@ const FILTERS = {
   answered: "Answered",
   closed: "Closed",
   all: "All",
+};
+
+const STATUS_LABELS = {
+  waiting: "Waiting for us",
+  answered: "Answered",
+  closed: "Closed",
 };
 
 const ago = (date) => {
@@ -49,7 +63,7 @@ function Conversation({ thread, names, currentUid, callAdmin }) {
     [thread.id],
   );
   const [text, setText] = useState("");
-  const [busy, setBusy] = useState(null); // "reply" | "claim" | "close"
+  const [busy, setBusy] = useState(null); // "reply" | "replyClose" | "claim" | "close" | "status"
 
   const run = async (what, name, payload, after) => {
     setBusy(what);
@@ -72,7 +86,12 @@ function Conversation({ thread, names, currentUid, callAdmin }) {
     <div className="support-thread">
       <div className="support-thread-head">
         <div>
-          <h3>{SUPPORT_TOPICS[thread.topic] ?? "Message"}</h3>
+          <h3>
+            {SUPPORT_TOPICS[thread.topic] ?? "Message"}{" "}
+            <span className={`status-pill${thread.status === "waiting" ? "" : " confirmed"}`}>
+              {STATUS_LABELS[thread.status] ?? thread.status}
+            </span>
+          </h3>
           <div className="admin-cell-sub">
             {thread.patientName || "Patient"} · {thread.patientEmail || "no email"}
           </div>
@@ -108,10 +127,35 @@ function Conversation({ thread, names, currentUid, callAdmin }) {
               Let it go
             </button>
           )}
+          {thread.status === "waiting" && (
+            <button
+              className="btn btn-outline"
+              disabled={busy !== null}
+              title="The patient's last message doesn't need an answer (e.g. 'ok, thank you'). Nothing is sent to them."
+              onClick={() => run("status", "setSupportStatus", { threadId: thread.id, status: "answered" })}
+            >
+              No reply needed
+            </button>
+          )}
+          {thread.status !== "waiting" && (
+            <button
+              className="btn btn-outline"
+              disabled={busy !== null}
+              title={
+                thread.status === "closed"
+                  ? "Back to Waiting for us. Nothing is sent to the patient."
+                  : "We still owe the patient an answer: back to Waiting for us, so it isn't closed automatically."
+              }
+              onClick={() => run("status", "setSupportStatus", { threadId: thread.id, status: "waiting" })}
+            >
+              {thread.status === "closed" ? "Reopen" : "Needs follow-up"}
+            </button>
+          )}
           {thread.status !== "closed" && (
             <button
               className="btn btn-outline"
               disabled={busy !== null}
+              title="Closes it without a message. Deleted 30 days after closing."
               onClick={() => run("close", "closeSupportThread", { threadId: thread.id })}
             >
               Close
@@ -142,8 +186,11 @@ function Conversation({ thread, names, currentUid, callAdmin }) {
           className="support-reply"
           onSubmit={(e) => {
             e.preventDefault();
+            // The button pressed: "Send reply" or "Send and close".
+            const close = e.nativeEvent.submitter?.value === "close";
             if (text.trim().length >= 2) {
-              run("reply", "replySupportMessage", { threadId: thread.id, text }, () => setText(""));
+              run(close ? "replyClose" : "reply", "replySupportMessage", { threadId: thread.id, text, close }, () =>
+                setText(""));
             }
           }}
         >
@@ -160,9 +207,25 @@ function Conversation({ thread, names, currentUid, callAdmin }) {
           />
           <div className="admin-row-actions">
             <span className="admin-cell-sub">{MESSAGE_MAX - text.length} characters left</span>
-            <button type="submit" className="btn btn-primary" disabled={busy !== null || text.trim().length < 2}>
-              {busy === "reply" ? "Sending…" : thread.status === "closed" ? "Reply and reopen" : "Send reply"}
-            </button>
+            <span className="admin-row-actions">
+              <button
+                type="submit"
+                value="close"
+                className="btn btn-outline"
+                disabled={busy !== null || text.trim().length < 2}
+                title="A final answer: sends it and closes the conversation. The patient can write again to reopen it."
+              >
+                {busy === "replyClose" ? "Sending…" : "Send and close"}
+              </button>
+              <button
+                type="submit"
+                value="reply"
+                className="btn btn-primary"
+                disabled={busy !== null || text.trim().length < 2}
+              >
+                {busy === "reply" ? "Sending…" : thread.status === "closed" ? "Reply and reopen" : "Send reply"}
+              </button>
+            </span>
           </div>
         </form>
       )}

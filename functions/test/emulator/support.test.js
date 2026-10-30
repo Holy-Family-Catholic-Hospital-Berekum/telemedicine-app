@@ -18,6 +18,7 @@ const { db } = require("../../lib/core");
 const {
   sendSupportMessage,
   replySupportMessage,
+  setSupportStatus,
   closeSupportThread,
   markSupportRead,
   supportHousekeeping,
@@ -110,8 +111,8 @@ test("an admin reply: patient emailed the text, unread badge, admin kept off the
 test("closing, reopening, auto-close and deletion after 30 days", async () => {
   const { threadId } = await sendSupportMessage.run(asPatient({ topic: "other", text: "First" }));
   await replySupportMessage.run(asAdmin({ threadId, text: "Answer" }));
-  // Answered and left for 8 days: closed by the hourly task.
-  await db.doc(`supportThreads/${threadId}`).update({ lastMessageAt: Timestamp.fromMillis(Date.now() - 8 * 86400000) });
+  // Answered 8 days ago and nothing since: closed by the hourly task.
+  await db.doc(`supportThreads/${threadId}`).update({ answeredAt: Timestamp.fromMillis(Date.now() - 8 * 86400000) });
   await supportHousekeeping();
   const closed = (await db.doc(`supportThreads/${threadId}`).get()).data();
   assert.equal(closed.status, "closed");
@@ -136,4 +137,59 @@ test("a deleted account's conversations go with it", async () => {
   assert.equal(await deletePatientThreads("pat1"), 1);
   assert.equal((await db.collection("supportThreads").where("patientUid", "==", "pat1").get()).size, 0);
   assert.equal((await db.doc(`supportThreads/${other}`).get()).exists, true);
+});
+
+const statusOf = async (id) => (await db.doc(`supportThreads/${id}`).get()).data().status;
+
+test("'No reply needed' answers a patient's 'ok' without emailing them", async () => {
+  const { threadId } = await sendSupportMessage.run(asPatient({ topic: "payment", text: "Is my payment through?" }));
+  await replySupportMessage.run(asAdmin({ threadId, text: "We're checking, we'll get back to you." }));
+  await sendSupportMessage.run(asPatient({ threadId, text: "ok" }));
+  assert.equal(await statusOf(threadId), "waiting");
+
+  await setSupportStatus.run(asAdmin({ threadId, status: "answered" }));
+  assert.equal(await statusOf(threadId), "answered");
+  assert.equal((await mailOf("support_reply")).length, 1); // only the real reply
+  const audits = await db.collection("auditLog").where("code", "==", "support.no_reply_needed").get();
+  assert.equal(audits.size, 1);
+
+  // Auto-close counts from when it was marked, not from the patient's "ok".
+  await db.doc(`supportThreads/${threadId}`).update({ lastMessageAt: Timestamp.fromMillis(Date.now() - 30 * 86400000) });
+  await supportHousekeeping();
+  assert.equal(await statusOf(threadId), "answered");
+});
+
+test("'Needs follow-up' keeps a holding reply from being closed automatically", async () => {
+  const { threadId } = await sendSupportMessage.run(asPatient({ topic: "payment", text: "Refund please" }));
+  await replySupportMessage.run(asAdmin({ threadId, text: "We'll get back to you." }));
+  await setSupportStatus.run(asAdmin({ threadId, status: "waiting" }));
+  assert.equal(await statusOf(threadId), "waiting");
+  await db.doc(`supportThreads/${threadId}`).update({ answeredAt: Timestamp.fromMillis(Date.now() - 8 * 86400000) });
+  await supportHousekeeping();
+  assert.equal(await statusOf(threadId), "waiting");
+});
+
+test("send and close; reopen; a closed one can't be marked as needing no reply", async () => {
+  const { threadId } = await sendSupportMessage.run(asPatient({ topic: "payment", text: "Refund please" }));
+  await replySupportMessage.run(asAdmin({ threadId, text: "Your refund has been sent.", close: true }));
+  const thread = (await db.doc(`supportThreads/${threadId}`).get()).data();
+  assert.equal(thread.status, "closed");
+  assert.equal(thread.unreadByPatient, true);
+  assert.ok(thread.deleteAt);
+  const [reply] = await mailOf("support_reply");
+  assert.equal(reply.data.closed, true);
+
+  await assert.rejects(setSupportStatus.run(asAdmin({ threadId, status: "answered" })), { code: "failed-precondition" });
+  await assert.rejects(setSupportStatus.run(asAdmin({ threadId, status: "closed" })), { code: "invalid-argument" });
+  await setSupportStatus.run(asAdmin({ threadId, status: "waiting" }));
+  const reopened = (await db.doc(`supportThreads/${threadId}`).get()).data();
+  assert.equal(reopened.status, "waiting");
+  assert.equal(reopened.deleteAt, undefined);
+});
+
+test("a patient closes a conversation still waiting; patients can't change the status", async () => {
+  const { threadId } = await sendSupportMessage.run(asPatient({ topic: "account", text: "Can't sign in" }));
+  await assert.rejects(setSupportStatus.run(asPatient({ threadId, status: "answered" })), { code: "permission-denied" });
+  await closeSupportThread.run(asPatient({ threadId }));
+  assert.equal(await statusOf(threadId), "closed");
 });

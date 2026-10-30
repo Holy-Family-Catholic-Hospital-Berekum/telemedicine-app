@@ -58,7 +58,10 @@ step fails, note what you saw and the time.
       Reply: the patient gets the reply email, and the button shows a badge
       and "Support has replied to you" on every patient page until read.
       Outside Mon–Fri 8 am–5 pm the patient also gets the "we'll reply when
-      we open" email (once per closed period).
+      we open" email (once per closed period). Patient answers "ok":
+      admin "No reply needed" moves it to Answered with no email; "Needs
+      follow-up" puts it back in Waiting; "Send and close" closes it with
+      the reply.
 - [ ] Close the Paystack window without paying: no booking appears, and a
       new booking is allowed afterwards.
 - [ ] Two patients pick the same open time on the home page: the time

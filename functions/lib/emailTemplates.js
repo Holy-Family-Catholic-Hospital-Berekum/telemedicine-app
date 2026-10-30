@@ -236,7 +236,9 @@ function supportContent(kind, data, when) {
         ["Replied", formatWhen(when)],
       ],
       paragraphs: [
-        "To answer, sign in to the hospital website and tap the blue Help button at the bottom right of the page. Please don't reply to this email.",
+        data.closed
+          ? "We've marked this conversation as resolved. If you still need help, sign in to the hospital website, tap the blue Help button at the bottom right of the page and write again: the conversation reopens. Please don't reply to this email."
+          : "To answer, sign in to the hospital website and tap the blue Help button at the bottom right of the page. Please don't reply to this email.",
       ],
     };
   }

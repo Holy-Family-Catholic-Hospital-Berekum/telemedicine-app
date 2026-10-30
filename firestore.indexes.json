@@ -288,7 +288,7 @@
       "queryScope": "COLLECTION",
       "fields": [
         { "fieldPath": "status", "order": "ASCENDING" },
-        { "fieldPath": "lastMessageAt", "order": "ASCENDING" }
+        { "fieldPath": "answeredAt", "order": "ASCENDING" }
       ]
     },
     {

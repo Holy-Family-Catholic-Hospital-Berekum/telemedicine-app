@@ -69,6 +69,18 @@ test("the reply email quotes the reply, escaped, with the scam warning", () => {
   assert.match(html, /&lt;script&gt;/);
 });
 
+test("a reply that closes the conversation says how to reopen it", () => {
+  const { text } = renderEmail("support_reply", {
+    scheduledAt: Date.parse("2026-11-02T09:00:00Z"),
+    patientName: "Ama",
+    topic: "payment",
+    reply: "Your refund has been sent.",
+    closed: true,
+  });
+  assert.match(text, /marked this conversation as resolved/);
+  assert.match(text, /reopens/);
+});
+
 test("the after-hours email says when we open", () => {
   const { text } = renderEmail("support_after_hours", {
     scheduledAt: Date.parse("2026-11-06T18:00:00Z"),

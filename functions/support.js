@@ -5,12 +5,19 @@
 // tab). Signed-out visitors get the WhatsApp fallback instead.
 //
 //   sendSupportMessage   patient: starts a conversation or writes in one
-//   replySupportMessage  admin: answers (the patient is emailed the reply)
+//   replySupportMessage  admin: answers (the patient is emailed the reply),
+//                        optionally closing it ("Send and close")
+//   setSupportStatus     admin, no message sent: "No reply needed" (a
+//                        patient's "ok, thanks" -> answered) or "Needs
+//                        follow-up" (back to waiting, e.g. after "we'll get
+//                        back to you", or reopening a closed one)
 //   claimSupportThread   admin: "I'm handling this" (or lets it go)
-//   closeSupportThread   patient ("My question is answered") or admin
+//   closeSupportThread   patient ("My question is answered" / "I no longer
+//                        need help with this") or admin
 //   markSupportRead      patient: has seen the latest reply
-//   supportHousekeeping  hourly task: closes answered conversations left
-//                        for AUTO_CLOSE_DAYS, deletes closed ones after
+//   supportHousekeeping  hourly task: closes conversations answered more
+//                        than AUTO_CLOSE_DAYS ago (answeredAt) that the
+//                        patient hasn't written in since, deletes closed ones after
 //                        DELETE_AFTER_CLOSE_DAYS (hospital decision: 30)
 //
 // Data (written only here; firestore.rules):
@@ -212,12 +219,24 @@ exports.sendSupportMessage = onCall(async (request) => {
   return { threadId: sent.id, officeOpen: isOfficeOpen(now), opensAt };
 });
 
-/** data: { threadId, text }. The patient is emailed the reply. */
+/** The fields that close a conversation (deleted DELETE_AFTER_CLOSE_DAYS later). */
+const closedFields = (now = Date.now()) => ({
+  status: "closed",
+  closedAt: serverTime(),
+  deleteAt: Timestamp.fromMillis(now + DELETE_AFTER_CLOSE_DAYS * DAY_MS),
+  waitingSince: null,
+});
+
+/**
+ * data: { threadId, text, close? }. The patient is emailed the reply;
+ * close: true also closes the conversation (writing again reopens it).
+ */
 exports.replySupportMessage = onCall(async (request) => {
   const caller = await requireRole(request, ["admin"]);
   const d = request.data || {};
   const threadId = docId(d.threadId, "Conversation");
   const text = messageText(d.text);
+  const close = d.close === true;
   await rateLimit(caller.uid, "supportReply", { max: 120, windowSeconds: 3600 });
   const ref = threads().doc(threadId);
   const now = Date.now();
@@ -236,15 +255,20 @@ exports.replySupportMessage = onCall(async (request) => {
     const msgRef = ref.collection("messages").doc();
     tx.set(msgRef, { from: "support", text, at: serverTime() });
     tx.update(ref, {
-      status: "answered",
       lastFrom: "support",
       lastMessageAt: serverTime(),
       preview: preview(text),
       unreadByPatient: true,
-      waitingSince: null,
       messageCount: FieldValue.increment(1),
-      closedAt: FieldValue.delete(),
-      deleteAt: FieldValue.delete(),
+      ...(close
+        ? closedFields(now)
+        : {
+          status: "answered",
+          answeredAt: serverTime(),
+          waitingSince: null,
+          closedAt: FieldValue.delete(),
+          deleteAt: FieldValue.delete(),
+        }),
     });
     tx.set(
       staffDoc(threadId),
@@ -259,7 +283,13 @@ exports.replySupportMessage = onCall(async (request) => {
       queueEmail(tx, {
         to: user.data().email || thread.patientEmail,
         kind: "support_reply",
-        data: { scheduledAt: now, patientName: user.data().name || thread.patientName, topic: thread.topic, reply: text },
+        data: {
+          scheduledAt: now,
+          patientName: user.data().name || thread.patientName,
+          topic: thread.topic,
+          reply: text,
+          closed: close,
+        },
         sendBefore: now + REPLY_EMAIL_WINDOW_MS,
       });
     }
@@ -272,7 +302,54 @@ exports.replySupportMessage = onCall(async (request) => {
       targetType: "supportThread",
       targetId: threadId,
       patientUid: thread.patientUid,
-      details: { messageId: msgRef.id },
+      details: { messageId: msgRef.id, closed: close },
+      meta: requestMeta(request),
+    });
+  });
+  return { ok: true };
+});
+
+/**
+ * data: { threadId, status: "answered" | "waiting" }. No message, no email.
+ *   answered  "No reply needed": a waiting conversation whose last message
+ *             (e.g. "ok, thank you") doesn't need an answer. Auto-closes
+ *             AUTO_CLOSE_DAYS later like any answered one.
+ *   waiting   "Needs follow-up": an answered one the hospital still owes an
+ *             answer (so it isn't auto-closed), or reopening a closed one.
+ */
+exports.setSupportStatus = onCall(async (request) => {
+  const caller = await requireRole(request, ["admin"]);
+  const threadId = docId(request.data?.threadId, "Conversation");
+  const status = oneOf(request.data?.status, ["answered", "waiting"], "status");
+  const ref = threads().doc(threadId);
+  await db.runTransaction(async (tx) => {
+    // deepcode ignore Sqli: Firestore document ID (validated by docId), not SQL.
+    const snap = await tx.get(ref);
+    if (!snap.exists) throw notFound();
+    const thread = snap.data();
+    if (thread.status === status) return;
+    if (status === "answered" && thread.status !== "waiting") {
+      throw new HttpsError("failed-precondition", "Only a conversation waiting for us can be marked as needing no reply.");
+    }
+    tx.update(
+      ref,
+      status === "answered"
+        ? { status, answeredAt: serverTime(), waitingSince: null }
+        : { status, waitingSince: serverTime(), closedAt: FieldValue.delete(), deleteAt: FieldValue.delete() },
+    );
+    audit(tx, {
+      actorId: caller.uid,
+      actorRole: "admin",
+      action: status === "answered"
+        ? "Marked a support conversation as needing no reply"
+        : thread.status === "closed"
+          ? "Reopened a support conversation"
+          : "Marked a support conversation as needing follow-up",
+      code: status === "answered" ? "support.no_reply_needed" : "support.follow_up",
+      category: "support",
+      targetType: "supportThread",
+      targetId: threadId,
+      patientUid: thread.patientUid,
       meta: requestMeta(request),
     });
   });
@@ -307,12 +384,7 @@ exports.closeSupportThread = onCall(async (request) => {
     const thread = snap.exists ? snap.data() : null;
     if (!thread || (caller.role === "patient" && thread.patientUid !== caller.uid)) throw notFound();
     if (thread.status === "closed") return;
-    tx.update(ref, {
-      status: "closed",
-      closedAt: serverTime(),
-      deleteAt: Timestamp.fromMillis(Date.now() + DELETE_AFTER_CLOSE_DAYS * DAY_MS),
-      waitingSince: null,
-    });
+    tx.update(ref, closedFields());
     audit(tx, {
       actorId: caller.uid,
       actorRole: caller.role,
@@ -348,19 +420,16 @@ async function deleteThread(ref) {
 
 exports.supportHousekeeping = task("supportHousekeeping", { schedule: "every 60 minutes", timeoutSeconds: 300 }, async () => {
   const now = Date.now();
+  // Answered (a reply, or "No reply needed") and nothing from the patient
+  // since: a patient message makes it waiting again.
   const stale = await threads()
     .where("status", "==", "answered")
-    .where("lastMessageAt", "<", Timestamp.fromMillis(now - AUTO_CLOSE_DAYS * DAY_MS))
+    .where("answeredAt", "<", Timestamp.fromMillis(now - AUTO_CLOSE_DAYS * DAY_MS))
     .limit(BATCH)
     .get();
   if (!stale.empty) {
     const batch = db.batch();
-    stale.docs.forEach((doc) =>
-      batch.update(doc.ref, {
-        status: "closed",
-        closedAt: serverTime(),
-        deleteAt: Timestamp.fromMillis(now + DELETE_AFTER_CLOSE_DAYS * DAY_MS),
-      }));
+    stale.docs.forEach((doc) => batch.update(doc.ref, closedFields(now)));
     await batch.commit();
   }
 

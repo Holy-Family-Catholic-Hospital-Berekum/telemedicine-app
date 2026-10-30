@@ -32,7 +32,7 @@ const drafts = new Map(); // "new" | threadId -> text
 
 const STATUS = {
   waiting: { label: "Waiting for a reply", tone: "bg-amber-50 text-amber-800" },
-  answered: { label: "Replied", tone: "bg-emerald-50 text-emerald-800" },
+  answered: { label: "Answered", tone: "bg-emerald-50 text-emerald-800" },
   closed: { label: "Closed", tone: "bg-black/5 text-[#3E4E56]" },
 };
 
@@ -266,14 +266,16 @@ function Conversation({ thread, onBack, notice }) {
         label="Your reply"
         placeholder="Write a reply"
       />
-      {thread.status === "answered" && (
+      {/* Sorted it out yourself while waiting, or got your answer. */}
+      {thread.status !== "closed" && (
         <button
           type="button"
           onClick={close}
           disabled={closing}
           className="mt-2 flex items-center gap-1.5 text-[14px] font-medium text-[#0b6ba0] hover:underline disabled:opacity-50"
         >
-          <CheckCircle2 size={16} /> My question is answered
+          <CheckCircle2 size={16} />
+          {thread.status === "answered" ? "My question is answered" : "I no longer need help with this"}
         </button>
       )}
     </div>

@@ -118,6 +118,7 @@ exports.downloadReport = reports.downloadReport;
 // Customer support tab)
 exports.sendSupportMessage = support.sendSupportMessage;
 exports.replySupportMessage = support.replySupportMessage;
+exports.setSupportStatus = support.setSupportStatus;
 exports.claimSupportThread = support.claimSupportThread;
 exports.closeSupportThread = support.closeSupportThread;
 exports.markSupportRead = support.markSupportRead;

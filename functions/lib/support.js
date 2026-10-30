@@ -24,8 +24,9 @@ const LIMITS = {
   messagesPerThread: 60,
 };
 
-// An answered conversation the patient doesn't reply to is closed after
-// this, and every closed conversation is deleted this long after closing
+// An answered conversation (answeredAt: a reply, or an admin's "No reply
+// needed") the patient doesn't write in again is closed after this, and
+// every closed conversation is deleted this long after closing
 // (hospital decision: 30 days), messages and all.
 const AUTO_CLOSE_DAYS = 7;
 const DELETE_AFTER_CLOSE_DAYS = 30;
