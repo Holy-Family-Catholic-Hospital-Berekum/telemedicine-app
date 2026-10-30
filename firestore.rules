@@ -231,6 +231,27 @@ service cloud.firestore {
       }
     }
 
+    // ---------------- support messages ----------------
+    // functions/support.js. The patient reads their own conversations and
+    // messages; admins read all. Who handled it and which admin wrote each
+    // reply (supportStaff) is admin-only, so no staff uid is in a record a
+    // patient can read.
+    match /supportThreads/{threadId} {
+      allow read: if isAdmin()
+                  || (isPatient() && resource.data.patientUid == myUid());
+      allow write: if false; // sendSupportMessage, replySupportMessage, closeSupportThread, markSupportRead
+      match /messages/{messageId} {
+        allow read: if isAdmin()
+                    || (isPatient()
+                        && get(/databases/$(database)/documents/supportThreads/$(threadId)).data.patientUid == myUid());
+        allow write: if false;
+      }
+    }
+    match /supportStaff/{threadId} {
+      allow read: if isAdmin();
+      allow write: if false; // replySupportMessage, claimSupportThread
+    }
+
     // ---------------- admin-only records ----------------
 
     match /recordings/{recordingId} {

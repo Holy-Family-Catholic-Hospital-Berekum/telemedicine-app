@@ -52,6 +52,13 @@ step fails, note what you saw and the time.
       emails all carry the warning that the hospital never asks for money
       or a PIN by call, text or WhatsApp.
 - [ ] Admin receives the "New booking" email.
+- [ ] Signed out, the floating button opens WhatsApp. Signed in, "Help"
+      sends a message (link a booking); admins get the "New message to
+      support" email (no name, no text) and see it under Customer support.
+      Reply: the patient gets the reply email, and the button shows a badge
+      and "Support has replied to you" on every patient page until read.
+      Outside Mon–Fri 8 am–5 pm the patient also gets the "we'll reply when
+      we open" email (once per closed period).
 - [ ] Close the Paystack window without paying: no booking appears, and a
       new booking is allowed afterwards.
 - [ ] Two patients pick the same open time on the home page: the time

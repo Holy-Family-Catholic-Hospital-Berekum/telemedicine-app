@@ -17,6 +17,7 @@ const {
   SITE_URL,
 } = require("./mailConfig");
 const { noShowSplit } = require("./money");
+const { TOPICS: SUPPORT_TOPICS } = require("./support");
 
 const TYPE_LABELS = { OPD: "General OPD", SURGICAL: "Surgical" };
 
@@ -218,6 +219,42 @@ function patientContent(kind, data, when) {
   }
 }
 
+/**
+ * Patient emails about a support message (functions/support.js). The
+ * reply is the admin's text as written (data.reply), shown as a quote:
+ * escaped, never HTML.
+ */
+function supportContent(kind, data, when) {
+  const topic = SUPPORT_TOPICS[data.topic] || SUPPORT_TOPICS.other;
+  if (kind === "support_reply") {
+    return {
+      subject: "Our support team has replied to your message",
+      intro: "Our support team has replied to your message:",
+      quote: String(data.reply || ""),
+      rows: [
+        ["About", topic],
+        ["Replied", formatWhen(when)],
+      ],
+      paragraphs: [
+        "To answer, sign in to the hospital website and tap the blue Help button at the bottom right of the page. Please don't reply to this email.",
+      ],
+    };
+  }
+  // support_after_hours
+  return {
+    subject: "We have your message and will reply when we open",
+    intro: "Thank you for your message. Our support team is closed at the moment.",
+    rows: [
+      ["About", topic],
+      ["We open", formatWhen(new Date(data.opensAt))],
+    ],
+    paragraphs: [
+      "We answer messages Monday to Friday, 8:00 am to 5:00 pm (Ghana time). We'll reply as soon as we open, and email you when we do.",
+      "For an emergency, call 112 or go to the nearest hospital.",
+    ],
+  };
+}
+
 /** Doctor emails. Returns { subject, intro, rows, paragraphs }. */
 function doctorContent(kind, data, when) {
   const online = data.mode === "online";
@@ -324,6 +361,22 @@ const REPORTED_BY = {
 function adminContent(kind, data, when) {
   const online = data.mode === "online";
   const typeLabel = TYPE_LABELS[data.type] || "Consultation";
+  // No patient name and no message text: admins read it in the portal.
+  if (kind === "admin_support_message") {
+    return {
+      subject: data.reopened ? "A patient has written to support again" : "New message to support from a patient",
+      intro: data.reopened
+        ? "A patient has written again in a support conversation and is waiting for a reply."
+        : "A patient has sent a message to support and is waiting for a reply.",
+      rows: [
+        ["Received", formatWhen(when)],
+        ["About", SUPPORT_TOPICS[data.topic] || SUPPORT_TOPICS.other],
+      ],
+      paragraphs: [
+        "Please read and answer it in the admin portal: Customer support. The patient is emailed your reply.",
+      ],
+    };
+  }
   if (kind === "admin_new_booking") {
     const asked = [
       data.requestedDoctorName || null,
@@ -416,7 +469,10 @@ const SCAM_WARNING =
  *       "doctor_reminder" | "doctor_not_joined" | "doctor_missed" |
  *       "admin_doctor_unavailable" | "admin_new_booking" |
  *       "security_new_sign_in" (data: { scheduledAt = sign-in time, name,
- *       device, audience: "patient" | "staff" })
+ *       device, audience: "patient" | "staff" }) |
+ *       "support_reply" (data: { scheduledAt, patientName, topic, reply }) |
+ *       "support_after_hours" (data: { scheduledAt, patientName, topic, opensAt }) |
+ *       "admin_support_message" (data: { scheduledAt, topic, reopened })
  * data: { scheduledAt (ms), type, mode, doctorName, patientName?,
  *         consultationId? (patients only), lead? ("24h" | "1h"),
  *         otherJoined?, noShow? (policy), afterDoctorUnavailable?,
@@ -429,6 +485,7 @@ function renderEmail(kind, data) {
   const forStaffSecurity = forSecurity && data.audience === "staff";
   const forDoctor = kind.startsWith("doctor_");
   const forAdmin = kind.startsWith("admin_");
+  const forSupport = kind.startsWith("support_");
   const forPatient = !forSecurity && !forDoctor && !forAdmin;
   const content = forSecurity
     ? securityContent(kind, data, when)
@@ -436,8 +493,10 @@ function renderEmail(kind, data) {
       ? adminContent(kind, data, when)
       : forDoctor
         ? doctorContent(kind, data, when)
-        : patientContent(kind, data, when);
-  const { subject, intro, rows } = content;
+        : forSupport
+          ? supportContent(kind, data, when)
+          : patientContent(kind, data, when);
+  const { subject, intro, rows, quote } = content;
   // Patients (and patient security emails): how to spot a scam.
   const paragraphs = forPatient || (forSecurity && !forStaffSecurity)
     ? [...content.paragraphs, SCAM_WARNING]
@@ -457,7 +516,10 @@ function renderEmail(kind, data) {
       ? { href: `${SITE_URL}/doctor`, label: "Open the doctor portal" }
       : forSecurity
         ? { href: `${SITE_URL}/signin`, label: "Go to the sign-in page" }
-        : { href: `${SITE_URL}/dashboard`, label: "Open your dashboard" };
+        : forSupport
+          // #support opens the Help panel (components/shared/supportButton.jsx).
+          ? { href: `${SITE_URL}/dashboard#support`, label: "Open your messages" }
+          : { href: `${SITE_URL}/dashboard`, label: "Open your dashboard" };
   // No-reply sender (lib/mailConfig.js): say so, and where to get help.
   const noReply = forAdmin
     ? "This is an automated email; replies to it aren't read."
@@ -468,13 +530,16 @@ function renderEmail(kind, data) {
       ? "You are receiving this email because you are an administrator of the hospital's telemedicine service."
       : forDoctor
         ? "You are receiving this email because you are a doctor on the hospital's telemedicine service."
-        : "You are receiving this email because you booked a consultation with us.";
+        : forSupport
+          ? "You are receiving this email because you sent a message to our support team."
+          : "You are receiving this email because you booked a consultation with us.";
 
   const text = [
     hello,
     "",
     intro,
     "",
+    ...(quote ? [...quote.split("\n").map((l) => `> ${l}`), ""] : []),
     ...rows.map(([k, v]) => `${k}: ${v}`),
     "",
     ...paragraphs.flatMap((p) => [p, ""]),
@@ -496,6 +561,7 @@ function renderEmail(kind, data) {
 <tr><td style="padding:8px 28px;font-size:15px;line-height:1.5;">
 <p style="margin:0 0 12px;">${escapeHtml(hello)}</p>
 <p style="margin:0 0 16px;">${escapeHtml(intro)}</p>
+${quote ? `<div style="margin:0 0 16px;padding:12px 16px;border-left:4px solid #0b6ba0;background:#f1f6f9;white-space:pre-wrap;">${escapeHtml(quote)}</div>` : ""}
 <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;margin:0 0 16px;">
 ${rows.map(([k, v]) => `<tr><td style="padding:6px 12px 6px 0;color:#5c6b72;font-size:14px;white-space:nowrap;vertical-align:top;">${escapeHtml(k)}</td><td style="padding:6px 0;font-size:15px;font-weight:bold;">${escapeHtml(v)}</td></tr>`).join("\n")}
 </table>

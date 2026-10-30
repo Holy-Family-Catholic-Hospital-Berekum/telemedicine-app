@@ -26,6 +26,7 @@
 //     under way is left to finish, never paid twice; one only asked for is
 //     closed, as this settles it.
 //   - Their prescriptions (and the signature copies on them) are deleted.
+//   - Their support conversations (functions/support.js) are deleted.
 //   - Their profile (users/{uid}) is deleted.
 //   - Kept, as for every consultation: consultationHistory, confirmedPayments,
 //     consents, the audit log and recordings (financial/legal records).
@@ -63,7 +64,8 @@ function refundOnDeletion(booking) {
 async function purgePatientData(uid, { actor, meta = null }) {
   // Lazy: payments.js loads this module's callers too.
   const { recordPaymentIssue } = require("../payments");
-  const summary = { bookings: 0, refunds: 0, closed: 0, prescriptions: 0 };
+  const { deletePatientThreads } = require("../support");
+  const summary = { bookings: 0, refunds: 0, closed: 0, prescriptions: 0, supportThreads: 0 };
 
   // deepcode ignore Sqli: Firestore equality filter on the account's own uid (from Auth), not SQL.
   const bookings = await db.collection("bookings").where("patientUid", "==", uid).get();
@@ -165,7 +167,10 @@ async function purgePatientData(uid, { actor, meta = null }) {
     summary.prescriptions += 1;
   }
 
-  // 5. The profile.
+  // 5. Support conversations, with their messages.
+  summary.supportThreads = await deletePatientThreads(uid);
+
+  // 6. The profile.
   // deepcode ignore Sqli: Firestore document ID, not SQL; the account's own uid (from Auth).
   await db.collection("users").doc(uid).delete().catch(() => {});
 

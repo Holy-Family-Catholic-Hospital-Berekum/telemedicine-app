@@ -16,7 +16,9 @@ import {
   assertSucceeds,
   initializeTestEnvironment,
 } from "@firebase/rules-unit-testing";
-import { addDoc, collection, doc, getDoc, serverTimestamp, setDoc, Timestamp, updateDoc } from "firebase/firestore";
+import {
+  addDoc, collection, doc, getDoc, getDocs, query, serverTimestamp, setDoc, Timestamp, updateDoc, where,
+} from "firebase/firestore";
 import { ref, uploadBytes } from "firebase/storage";
 
 const PROJECT_ID = "demo-telemedicine";
@@ -93,6 +95,9 @@ beforeEach(async () => {
     await put("prescriptions/RX-1", { patientUid: "pat1", doctorUid: "doc1", status: "active", checkCode: "C" });
     await put("prescriptionSignatures/RX-1", { png: "x" });
     await put("doctorSignatures/doc1", { png: "x" });
+    await put("supportThreads/t1", { patientUid: "pat1", status: "waiting", unreadByPatient: true });
+    await put("supportThreads/t1/messages/m1", { from: "patient", text: "Help" });
+    await put("supportStaff/t1", { handledBy: { uid: "admin1" } });
     await put("doctorProfiles/doc1", {
       name: "Dr One", bio: "", focus: "", specialties: [], languages: [], isAvailable: true, photoURL: null,
     });
@@ -268,6 +273,39 @@ describe("prescriptions", () => {
     await assertFails(get(admin(), "doctorSignatures/doc1"));
     await assertFails(get(patient(), "doctorSignatures/doc1"));
     await assertFails(setDoc(doc(doctor().firestore(), "doctorSignatures/doc1"), { png: "y" }));
+  });
+});
+
+describe("support messages", () => {
+  test("the patient reads their own conversation and its messages; admins read all", async () => {
+    await assertSucceeds(get(patient(), "supportThreads/t1"));
+    await assertSucceeds(get(patient(), "supportThreads/t1/messages/m1"));
+    await assertSucceeds(getDocs(query(collection(patient().firestore(), "supportThreads"),
+      where("patientUid", "==", "pat1"), where("unreadByPatient", "==", true))));
+    await assertSucceeds(get(admin(), "supportThreads/t1"));
+    await assertSucceeds(get(admin(), "supportThreads/t1/messages/m1"));
+  });
+  test("other patients, doctors, password-only admins and deactivated patients can't", async () => {
+    await assertFails(get(patient("pat2"), "supportThreads/t1"));
+    await assertFails(get(patient("pat2"), "supportThreads/t1/messages/m1"));
+    await assertFails(getDocs(collection(patient("pat2").firestore(), "supportThreads")));
+    await assertFails(get(doctor(), "supportThreads/t1"));
+    await assertFails(get(admin({ secondFactor: false }), "supportThreads/t1"));
+    await env.withSecurityRulesDisabled((ctx) =>
+      setDoc(doc(ctx.firestore(), "supportThreads/tOff"), { patientUid: "patOff" }));
+    await assertFails(get(patient("patOff"), "supportThreads/tOff"));
+  });
+  test("who handled it is for admins only", async () => {
+    await assertSucceeds(get(admin(), "supportStaff/t1"));
+    await assertFails(get(patient(), "supportStaff/t1"));
+    await assertFails(get(doctor(), "supportStaff/t1"));
+  });
+  test("nobody writes support records from a browser", async () => {
+    await assertFails(updateDoc(doc(patient().firestore(), "supportThreads/t1"), { unreadByPatient: false }));
+    await assertFails(setDoc(doc(patient().firestore(), "supportThreads/t9"), { patientUid: "pat1" }));
+    await assertFails(addDoc(collection(patient().firestore(), "supportThreads/t1/messages"), { from: "support", text: "x" }));
+    await assertFails(addDoc(collection(admin().firestore(), "supportThreads/t1/messages"), { from: "support", text: "x" }));
+    await assertFails(setDoc(doc(admin().firestore(), "supportStaff/t1"), { handledBy: null }));
   });
 });
 

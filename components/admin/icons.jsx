@@ -115,6 +115,11 @@ export const IconBell = (p) => (
     <path d="M9.5 19a2.5 2.5 0 005 0" />
   </Svg>
 );
+export const IconChat = (p) => (
+  <Svg {...p}>
+    <path d="M21 12a8 8 0 01-11.6 7.1L4 20l1-4.6A8 8 0 1121 12z" />
+  </Svg>
+);
 export const IconPlus = (p) => (
   <Svg {...p}>
     <path d="M12 5v14M5 12h14" />

@@ -24,16 +24,17 @@ const Terms = lazy(() => import("./pages/terms"));
 const CheckPrescription = lazy(() => import("./pages/checkPrescription"));
 
 // Larger, easier-to-read type on every page patients use (src/index.css).
-// Every patient page also gets the WhatsApp "Chat with us" button.
+// Every patient page also gets the floating Help button (in-app messages
+// for signed-in patients, WhatsApp for everyone else).
 function PatientPage({ children }) {
   return (
     <div className="patient-ui">
       {children}
-      <WhatsAppSupport />
+      <SupportButton />
     </div>
   );
 }
-import WhatsAppSupport from "../components/shared/whatsAppSupport";
+import SupportButton from "../components/shared/supportButton";
 import NetworkBanner from "../components/shared/networkBanner";
 import AppUpdate from "../components/shared/appUpdate";
 import { AppErrorBoundary } from "../components/shared/offlineScreen";

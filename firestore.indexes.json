@@ -274,6 +274,30 @@
         { "fieldPath": "refundedAt", "order": "ASCENDING" },
         { "fieldPath": "amountRefunded", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "supportThreads",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "patientUid", "order": "ASCENDING" },
+        { "fieldPath": "lastMessageAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "supportThreads",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "lastMessageAt", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "supportThreads",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "deleteAt", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

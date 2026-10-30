@@ -10,6 +10,7 @@ import {
   IconSettings,
   IconUserCheck,
   IconLogout,
+  IconChat,
 } from "./icons.jsx";
 
 import logo from "./logo.webp";
@@ -20,6 +21,7 @@ const NAV_ITEMS = [
   { key: "history", label: "Consultation History", icon: IconClock },
   { key: "users", label: "Users", icon: IconUsers },
   { key: "recordings", label: "Call Recordings", icon: IconPulse },
+  { key: "support", label: "Customer Support", icon: IconChat },
   { key: "revenue", label: "Revenue", icon: IconTag },
   { key: "audit", label: "Audit Log", icon: IconShield },
   { key: "metrics", label: "Metrics & Reports", icon: IconChart },
@@ -28,6 +30,12 @@ const NAV_ITEMS = [
   // The signed-in admin's own name and sign-in email.
   { key: "account", label: "My Account", icon: IconUserCheck },
 ];
+
+const BADGE_TITLES = {
+  bookings: "Bookings to schedule",
+  revenue: "Refunds waiting for an admin",
+  support: "Patients waiting for a reply",
+};
 
 export default function Sidebar({
   active,
@@ -57,12 +65,10 @@ export default function Sidebar({
           >
             <Icon size={17} />
             {label}
-            {/* bookings: paid bookings to schedule; revenue: refunds to handle */}
+            {/* bookings: paid bookings to schedule; revenue: refunds to
+                handle; support: patients waiting for a reply */}
             {badges[key] > 0 && (
-              <span
-                className="admin-nav-badge"
-                title={key === "revenue" ? "Refunds waiting for an admin" : "Bookings to schedule"}
-              >
+              <span className="admin-nav-badge" title={BADGE_TITLES[key]}>
                 {badges[key]}
               </span>
             )}

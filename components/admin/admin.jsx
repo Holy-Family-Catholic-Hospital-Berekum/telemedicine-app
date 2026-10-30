@@ -22,6 +22,7 @@ import RecordingsPanel from "./recordingsPanel.jsx";
 import PaymentIssuesPanel from "./paymentIssuesPanel.jsx";
 import RefundRequestsPanel from "./refundRequestsPanel.jsx";
 import ControlPanel from "./controlPanel.jsx";
+import CustomerSupportPanel from "./customerSupportPanel.jsx";
 import { IconBell, IconRefresh } from "./icons.jsx";
 import { bookingsToSchedule, dashboardStats, hospitalDay, initialsOf } from "./adminStats.js";
 
@@ -53,6 +54,10 @@ const TAB_TITLES = {
   recordings: {
     title: "Call recordings",
     sub: "Play, download or delete recorded consultations. Every access is logged",
+  },
+  support: {
+    title: "Customer support",
+    sub: "Answer patients' messages. They get your reply in the app and by email",
   },
   revenue: {
     title: "Revenue",
@@ -100,6 +105,8 @@ const refundDueIssuesQuery = query(
   collection(db, "paymentIssues"),
   where("status", "in", ["refund_due", "refund_failed"]),
 );
+// Support conversations waiting for a reply (badge on Customer support).
+const supportWaitingQuery = query(collection(db, "supportThreads"), where("status", "==", "waiting"));
 // Consultations the doctor couldn't make (a few at a time: each waits for a
 // new time or a refund). Their admin note is kept here, not on the booking,
 // which the patient can read.
@@ -178,6 +185,7 @@ export default function Admin() {
   const { data: pendingRefunds } = useFirestoreCollection(pendingRefundsQuery);
   const { data: refundDueIssues } = useFirestoreCollection(refundDueIssuesQuery);
   const refundsToHandle = pendingRefunds.length + refundDueIssues.length;
+  const { data: supportWaiting } = useFirestoreCollection(supportWaitingQuery);
   // { [consultationId]: note } for the Bookings tab.
   const { data: unavailableConsultations } = useFirestoreCollection(doctorUnavailableQuery);
   const doctorOutNotes = useMemo(
@@ -311,7 +319,7 @@ export default function Admin() {
         active={tab}
         onChange={setTab}
         admin={currentAdmin}
-        badges={{ bookings: toSchedule.length, revenue: refundsToHandle }}
+        badges={{ bookings: toSchedule.length, revenue: refundsToHandle, support: supportWaiting.length }}
         onLogout={signOutUser}
       />
 
@@ -399,6 +407,15 @@ export default function Admin() {
           )}
 
           {tab === "recordings" && <RecordingsPanel callAdmin={callAdmin} />}
+
+          {tab === "support" && (
+            <CustomerSupportPanel
+              callAdmin={callAdmin}
+              names={actorNames}
+              currentUid={currentAdmin.uid}
+              waitingCount={supportWaiting.length}
+            />
+          )}
 
           {tab === "revenue" && (
             <>

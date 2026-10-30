@@ -33,6 +33,7 @@ const auditMirror = require("./auditMirror");
 const noShow = require("./noShow");
 const refundSync = require("./refundSync");
 const prescriptions = require("./prescriptions");
+const support = require("./support");
 
 // Staff sign-in second factor (authenticator app for admins and doctors)
 exports.confirmStaffSession = staffAuth.confirmStaffSession;
@@ -113,6 +114,14 @@ exports.cancelReportRequest = reports.cancelReportRequest;
 exports.decideReportRequest = reports.decideReportRequest;
 exports.downloadReport = reports.downloadReport;
 
+// Support messages between patients and admins (Help button, admin
+// Customer support tab)
+exports.sendSupportMessage = support.sendSupportMessage;
+exports.replySupportMessage = support.replySupportMessage;
+exports.claimSupportThread = support.claimSupportThread;
+exports.closeSupportThread = support.closeSupportThread;
+exports.markSupportRead = support.markSupportRead;
+
 // Errors in visitors' browsers -> Cloud Logging "CLIENT_ERROR" (alerted)
 exports.reportClientError = require("./clientErrors").reportClientError;
 
@@ -143,6 +152,9 @@ const TASKS = [
   prescriptions.deleteExpiredPrescriptions,
   // Metrics report data nobody downloaded
   reports.cleanupReportData,
+  // Support conversations: close answered ones left alone, delete closed
+  // ones after 30 days
+  support.supportHousekeeping,
 ];
 
 // Appointment emails and reminders to patients and doctors. Sending needs

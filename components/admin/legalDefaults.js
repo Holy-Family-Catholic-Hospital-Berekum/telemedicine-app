@@ -32,6 +32,7 @@ export const DEFAULT_LEGAL = {
 - Payment details: the amount, the payment reference and whether the payment succeeded, and for refunds, the amount and its progress. Payment is made by mobile money through Paystack, and refunds go back through Paystack to the wallet you paid from. We never see or store your mobile money PIN.
 - Prescriptions: when your doctor writes one after a video consultation, the medicines and how to take them, with the name, age and sex printed on it.
 - Consultation information: what you share with your doctor during the consultation and, when the hospital has call recording switched on, a recording of online consultations (video with sound, or sound only) (see "Consultation recording" below).
+- Support messages: what you write to our support team with the Help button, which booking it is about if you choose one, and our replies.
 - Basic technical data needed to keep the service working and secure, such as sign-in activity (including the type of device and browser you sign in from, so we can email you when your account is used on a new one), and any attempt the call screen detects to take a screenshot of or record a video consultation.`,
       },
       {
@@ -44,6 +45,7 @@ export const DEFAULT_LEGAL = {
         title: "Why we use it",
         body: `- To set up your consultation, assign a doctor and schedule a time.
 - To contact you about your appointment by phone, WhatsApp or email.
+- To answer your support messages: in the app, and by email with a copy of our reply.
 - To confirm your payment.
 - To keep the platform secure and to keep a record of important actions, such as payment confirmations and schedule changes.
 - To keep a short record of each consultation (doctor, date, start and end time, outcome and amount paid), which you can see in your dashboard.
@@ -52,12 +54,12 @@ export const DEFAULT_LEGAL = {
       {
         id: "who-sees-it",
         title: "Who can see your information",
-        body: `Clinical details you share are visible only to the doctor handling your consultation. A prescription can be seen only by you and the doctor who wrote it; anyone holding the code printed on it (such as your pharmacist) can check online that it is genuine and see the doctor, the dates and the medicines, but not your name. Hospital staff who schedule and administer consultations can see your booking details, but only what their role needs.
+        body: `Clinical details you share are visible only to the doctor handling your consultation. A prescription can be seen only by you and the doctor who wrote it; anyone holding the code printed on it (such as your pharmacist) can check online that it is genuine and see the doctor, the dates and the medicines, but not your name. Hospital staff who schedule and administer consultations can see your booking details, but only what their role needs. Support messages are read only by the hospital's administrators, not by doctors.
 
 We use a small number of service providers to run the platform. They process information on our behalf and only for that purpose:
 
 - Google (Firebase and Google Cloud), for sign-in, our database, file storage (including consultation recordings), the servers that run the service and hosting the website.
-- Brevo, which sends our appointment emails (your email address, name and appointment details).
+- Brevo, which sends our emails (your email address, name, appointment details and our replies to your support messages).
 - Cloudflare, which relays a video call when your device can't connect directly to the doctor's. The call stays encrypted and is not stored.
 - Paystack, for mobile money payments.
 
@@ -79,6 +81,7 @@ We do not sell your information and we do not use it for advertising.`,
 - To protect against data loss, we keep encrypted backups of our database for 7 days. Information deleted from the platform can remain in these backups until they expire, at most 7 days later, and is only used to restore the service after a fault.
 - A short record of each consultation (doctor, date, start and end time, outcome and amount paid) is kept so you and the hospital can see your history.
 - Prescriptions are deleted 7 days after your doctor writes them, so download yours before then. We keep only a note that a prescription was written and when, without the medicines. Your doctor records your consultation in the hospital's patient records system, as for a visit at the hospital.
+- Support messages are deleted 30 days after the conversation is closed (you can close it yourself, and we close an answered one after 7 days without a reply from you). The emails we send you are deleted from our system after 30 days.
 - A record that you agreed to this policy, and when, is kept as proof of your consent.
 - Consultation recordings are kept only as long as needed for the purposes above; authorised administrators delete them when they are no longer needed.
 - Your account details are kept while your account is active. You can ask us to delete your account at any time (see "Your rights" below).`,
@@ -142,7 +145,9 @@ If you are not happy with how we handle your information, you can complain to Gh
       {
         id: "emergencies",
         title: "Not for emergencies",
-        body: `This platform is not an emergency service. If you or someone else has a life-threatening problem, such as severe bleeding, chest pain, difficulty breathing, a seizure or loss of consciousness, call your local emergency number (112 in Ghana) or go to the nearest emergency facility straight away. Do not wait for an online appointment.`,
+        body: `This platform is not an emergency service. If you or someone else has a life-threatening problem, such as severe bleeding, chest pain, difficulty breathing, a seizure or loss of consciousness, call your local emergency number (112 in Ghana) or go to the nearest emergency facility straight away. Do not wait for an online appointment.
+
+Messages to our support team (the Help button) are for help with bookings, payments, video calls and your account, not for medical advice. We answer them Monday to Friday, 8:00 am to 5:00 pm (Ghana time); a message sent outside those hours is answered when we next open.`,
       },
       {
         id: "medical",
