@@ -18,7 +18,7 @@ import logo from "../../assets/logo.webp";
 import { usePageMeta } from "../../seo.js";
 
 const PATIENT_ASIDE_POINTS = [
-    "See and join your appointments",
+  "See and join your appointments",
   "Change your appointment time",
   "Your information is kept private",
 ];
@@ -160,9 +160,7 @@ export default function SignIn({ audience = "patient" }) {
             </div>
             <div>
               <strong>Holy Family Catholic Hospital</strong>
-              <small>
-                {isStaff ? "Staff portal" : "Berekum, Ghana"}
-              </small>
+              <small>{isStaff ? "Staff portal" : "Berekum, Ghana"}</small>
             </div>
           </div>
 
@@ -171,7 +169,7 @@ export default function SignIn({ audience = "patient" }) {
             <p>
               {isStaff
                 ? "Authorized hospital staff only."
-                                  : "Sign in with the email and password you signed up with."}
+                : "Sign in with the email and password you signed up with."}
             </p>
           </div>
 
@@ -190,127 +188,125 @@ export default function SignIn({ audience = "patient" }) {
               }}
             />
           ) : (
-          <>
-          {enrolledNote && (
-            <div className="auth-alert success" role="status">
-              <IconCheckCircle size={15} />
-              <span>
-                Your authenticator is set up. Sign in again: you'll be asked
-                for its code, then once for your setup code.
-              </span>
-            </div>
-          )}
-          {error && (
-            <div className="auth-alert">
-              <IconAlert size={15} />
-              <span>{error}</span>
-            </div>
-          )}
-          {resetSent && !error && (
-            <div className="auth-alert success">
-              <IconCheckCircle size={15} />
-              <span>
-                If that email has an account, a reset link is on its way. Check
-                your spam folder too.
-              </span>
-            </div>
-          )}
+            <>
+              {enrolledNote && (
+                <div className="auth-alert success" role="status">
+                  <IconCheckCircle size={15} />
+                  <span>
+                    Your authenticator is set up. Sign in again: you'll be asked
+                    for its code, then once for your setup code.
+                  </span>
+                </div>
+              )}
+              {error && (
+                <div className="auth-alert">
+                  <IconAlert size={15} />
+                  <span>{error}</span>
+                </div>
+              )}
+              {resetSent && !error && (
+                <div className="auth-alert success">
+                  <IconCheckCircle size={15} />
+                  <span>
+                    If that email has an account, a reset link is on its way.
+                    Check your spam folder too.
+                  </span>
+                </div>
+              )}
 
-          <form onSubmit={handleSubmit} noValidate>
-            <div className="auth-field">
-              <label htmlFor="email">Email</label>
-              <div className="auth-input-wrap">
-                <IconMail size={15} />
-                <input
-                  id="email"
-                  type="email"
-                  autoComplete="email"
-                  placeholder="you@example.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                />
-              </div>
-            </div>
+              <form onSubmit={handleSubmit} noValidate>
+                <div className="auth-field">
+                  <label htmlFor="email">Email</label>
+                  <div className="auth-input-wrap">
+                    <IconMail size={15} />
+                    <input
+                      id="email"
+                      type="email"
+                      autoComplete="email"
+                      placeholder="you@example.com"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                    />
+                  </div>
+                </div>
 
-            <div className="auth-field">
-              <label htmlFor="password">Password</label>
-              <div className="auth-input-wrap">
-                <IconLock size={15} />
-                <input
-                  id="password"
-                  type={showPassword ? "text" : "password"}
-                  autoComplete="current-password"
-                  placeholder="••••••••"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                />
-                <button
-                  type="button"
-                  className="toggle-visibility"
-                  onClick={() => setShowPassword((v) => !v)}
-                  aria-label={showPassword ? "Hide password" : "Show password"}
-                >
-                  {showPassword ? (
-                    <IconEyeOff size={15} />
+                <div className="auth-field">
+                  <label htmlFor="password">Password</label>
+                  <div className="auth-input-wrap">
+                    <IconLock size={15} />
+                    <input
+                      id="password"
+                      type={showPassword ? "text" : "password"}
+                      autoComplete="current-password"
+                      placeholder="••••••••"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                    />
+                    <button
+                      type="button"
+                      className="toggle-visibility"
+                      onClick={() => setShowPassword((v) => !v)}
+                      aria-label={
+                        showPassword ? "Hide password" : "Show password"
+                      }
+                    >
+                      {showPassword ? (
+                        <IconEyeOff size={15} />
+                      ) : (
+                        <IconEye size={15} />
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="auth-row-between">
+                  {isStaff ? (
+                    <span />
                   ) : (
-                    <IconEye size={15} />
+                    <label className="auth-remember">
+                      <input
+                        type="checkbox"
+                        checked={rememberMe}
+                        onChange={(e) => setRememberMe(e.target.checked)}
+                      />
+                      Remember me on this device
+                    </label>
+                  )}
+                  <button
+                    type="button"
+                    className="auth-forgot"
+                    onClick={handleForgotPassword}
+                    disabled={resetting}
+                    style={{
+                      background: "none",
+                      border: "none",
+                      color: "var(--auth-secondary)",
+                      cursor: resetting ? "default" : "pointer",
+                      opacity: resetting ? 0.6 : 1,
+                    }}
+                  >
+                    {resetting ? "Sending..." : "Forgot password?"}
+                  </button>
+                </div>
+
+                <button
+                  type="submit"
+                  className="auth-submit"
+                  disabled={submitting}
+                >
+                  {submitting ? (
+                    <HealthcarePreloader label="" size={18} />
+                  ) : (
+                    "Sign in"
                   )}
                 </button>
-              </div>
-            </div>
-
-            <div className="auth-row-between">
-              {isStaff ? (
-                <span />
-              ) : (
-                <label className="auth-remember">
-                  <input
-                    type="checkbox"
-                    checked={rememberMe}
-                    onChange={(e) => setRememberMe(e.target.checked)}
-                  />
-                  Remember me on this device
-                </label>
+              </form>
+              {!isStaff && (
+                <p className="auth-switch">
+                  No account yet? <Link to="/signup">Create one here</Link>
+                </p>
               )}
-              <button
-                type="button"
-                className="auth-forgot"
-                onClick={handleForgotPassword}
-                disabled={resetting}
-                style={{
-                  background: "none",
-                  border: "none",
-                  color: "var(--auth-secondary)",
-                  cursor: resetting ? "default" : "pointer",
-                  opacity: resetting ? 0.6 : 1,
-                }}
-              >
-                {resetting ? "Sending..." : "Forgot password?"}
-              </button>
-            </div>
-
-            <button type="submit" className="auth-submit" disabled={submitting}>
-              {submitting ? (
-                <HealthcarePreloader label="" size={18} />
-              ) : (
-                "Sign in"
-              )}
-            </button>
-          </form>
-          {!isStaff && (
-            <p className="auth-switch">
-              No account yet? <Link to="/signup">Create one here</Link>
-            </p>
-          )}
-          {isStaff && (
-            // Fake sign-in pages are the main way staff accounts get taken
-            // over, even with an authenticator.
-            <p className="auth-switch">
-              Only sign in from your saved bookmark. Nobody from the hospital
-              will ever ask for your password or authenticator code.
-            </p>
-          )}
-          </>
+            </>
           )}
         </div>
       </div>
