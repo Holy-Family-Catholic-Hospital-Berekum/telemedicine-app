@@ -354,7 +354,9 @@ installed app ("Holy Family") is separate and opens the patient dashboard.
 - **End-to-end tests:** `e2e/` (start with `e2e/helpers.mjs`).
 - **Owner scripts** (`functions/scripts/`, run locally, never deployed):
   `staffAdmin.js` (make-admin, reset-mfa, issue-setup-code, sync-claims…),
-  `resetTestPayments.js` (go-live only), `scrubStaffUids.js` (one-off,
+  `resetTestPayments.js` and then `clearDemoData.js` (go-live only: test
+  payments, then demo accounts, test recordings and records; admins kept),
+  `scrubStaffUids.js` (one-off,
   already run on both projects on 29 Oct 2026; harmless to run again).
   Each does a dry run unless given `--confirm <project id>`.
 

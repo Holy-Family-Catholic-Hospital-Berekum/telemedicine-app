@@ -348,7 +348,15 @@ Everything paid before go-live is Paystack TEST money. Do these in order.
    `node scripts/resetTestPayments.js --project live` (dry run, shows
    counts), then
    `node scripts/resetTestPayments.js --project live --confirm telemedicine-hfch`.
-   Test call recordings are not touched: delete them in the app (two admins).
+   Then the demo accounts and everything else left from testing (every
+   non-admin account with its profile and photo, call recordings, consents,
+   support conversations, room computers, slots, rate-limit counters):
+   `node scripts/clearDemoData.js --project live` (dry run, lists the
+   accounts), then
+   `node scripts/clearDemoData.js --project live --confirm telemedicine-hfch`.
+   Admin accounts, the audit log, site settings and legal text are kept.
+   Afterwards: register the room computers again and create the doctors
+   (Control panel, Users tab).
 3. **Live secret key**: `firebase functions:secrets:set PAYSTACK_SECRET_KEY --project live`
    (paste the LIVE secret key), then redeploy:
    `firebase deploy --only functions --project live`. Never put a live key
